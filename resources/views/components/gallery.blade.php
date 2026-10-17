@@ -10,7 +10,7 @@
 
             <div class="grid grid-cols-1 lg:grid-cols-12 min-h-[380px]">
                 <div class="lg:col-span-7 relative min-h-[280px] bg-[#0F1A24]">
-                    <img src="{{ asset('images/gallery-atelier.jpg') }}" alt="Galeri Butik Pandansari" class="w-full h-full object-cover">
+                    <img src="{{ asset('images/hero-bg.jpg') }}" alt="Galeri Butik Pandansari" class="w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-[#0F1A24]/90 via-transparent to-transparent flex items-end p-6">
                         <div>
                             <span class="text-[11px] font-semibold text-sky-300 uppercase tracking-wider block font-['Plus_Jakarta_Sans']">PENGRAJIN & GALERI UTAMA PANDANSARI</span>

@@ -21,7 +21,7 @@
                 description="Kemeja batik lengan panjang furing katun halus dengan potongan slimfit modern."
                 price="Rp 850.000"
                 material="Katun Primis"
-                :image="asset('images/m1.png')"
+                :image="asset('images/katalog2.webp')"
             />
             <x-product-card 
                 badge="EKSKLUSIF"
@@ -30,7 +30,7 @@
                 description="Motif Sidomukti warna sogan tradisional cocok untuk agenda kerja dan acara resmi."
                 price="Rp 920.000"
                 material="Primisima Super"
-                :image="asset('images/m2.png')"
+                :image="asset('images/hero-bg.jpg')"
             />
             <x-product-card 
                 badge="HANDMADE"
@@ -39,7 +39,7 @@
                 description="Lembaran kain batik cap halus pekalongan warna indigo eksklusif."
                 price="Rp 650.000"
                 material="Katun Paris"
-                :image="asset('images/m3.png')"
+                :image="asset('images/katalog1.webp')"
             />
             <x-product-card 
                 badge="POPULER"
@@ -48,7 +48,7 @@
                 description="Potongan regular fit dengan lapisan furing lembut anti gerah."
                 price="Rp 780.000"
                 material="Katun Halus"
-                :image="asset('images/m4.png')"
+                :image="asset('images/katalog2.webp')"
             />
         </div>
     </div>

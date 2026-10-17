@@ -16,9 +16,9 @@
             
             <!-- Card 1: BATIK TULIS -->
             <div class="relative h-64 rounded-2xl overflow-hidden shadow-md flex items-end p-6 bg-[#0F1A24] group">
-                <img src="https://images.unsplash.com/photo-1601924994987-69e26d50dc26?q=80&w=800" 
-                     alt="Batik Tulis" 
-                     class="absolute inset-0 w-full h-full object-cover transition transform duration-500 group-hover:scale-105 opacity-60">
+<img src="{{ asset('images/katalog1.webp') }}" 
+                      alt="Batik Tulis" 
+                      class="absolute inset-0 w-full h-full object-cover transition transform duration-500 group-hover:scale-105 opacity-60">
                 
                 <div class="absolute inset-0 bg-gradient-to-t from-[#0F1A24]/90 via-[#0F1A24]/40 to-transparent"></div>
                 
@@ -35,9 +35,9 @@
 
             <!-- Card 2: BATIK CAP -->
             <div class="relative h-64 rounded-2xl overflow-hidden shadow-md flex items-end p-6 bg-[#0F1A24] group">
-                <img src="https://images.unsplash.com/photo-1598033129183-c4f50c736f10?q=80&w=800" 
-                     alt="Batik Cap" 
-                     class="absolute inset-0 w-full h-full object-cover transition transform duration-500 group-hover:scale-105 opacity-60">
+<img src="{{ asset('images/katalog2.webp') }}" 
+                      alt="Batik Cap" 
+                      class="absolute inset-0 w-full h-full object-cover transition transform duration-500 group-hover:scale-105 opacity-60">
                 
                 <div class="absolute inset-0 bg-gradient-to-t from-[#0F1A24]/90 via-[#0F1A24]/40 to-transparent"></div>
                 
@@ -54,9 +54,9 @@
 
             <!-- Card 3: BATIK HANDPRINT -->
             <div class="relative h-64 rounded-2xl overflow-hidden shadow-md flex items-end p-6 bg-[#0F1A24] group">
-                <img src="https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?q=80&w=800" 
-                     alt="Batik Handprint" 
-                     class="absolute inset-0 w-full h-full object-cover transition transform duration-500 group-hover:scale-105 opacity-60">
+<img src="{{ asset('images/hero-bg.jpg') }}" 
+                      alt="Batik Handprint" 
+                      class="absolute inset-0 w-full h-full object-cover transition transform duration-500 group-hover:scale-105 opacity-60">
                 
                 <div class="absolute inset-0 bg-gradient-to-t from-[#0F1A24]/90 via-[#0F1A24]/40 to-transparent"></div>
                 

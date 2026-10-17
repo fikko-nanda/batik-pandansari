@@ -1,4 +1,6 @@
-<x-layouts.app>
+@extends('layouts.app')
+
+@section('content')
     {{-- 1. Hero Slider --}}
     <x-hero />
 
@@ -25,4 +27,4 @@
 
     {{-- 9. Banner Konsultasi --}}
     <x-consultation-banner />
-</x-layouts.app>
+@endsection

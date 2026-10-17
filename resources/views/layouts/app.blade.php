@@ -20,10 +20,9 @@
 
     <x-announcement-bar />
     <x-navbar />
-
-    <main class="flex-grow w-full overflow-hidden">
-        {{ $slot }}
-    </main>
+        <main class="flex-grow w-full overflow-hidden">
+            @yield('content')
+        </main>
 
     <x-footer />
 

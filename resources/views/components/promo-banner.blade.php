@@ -2,7 +2,7 @@
     <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
         <div class="relative rounded-[24px] overflow-hidden min-h-[420px] flex items-center p-8 md:p-14 bg-[#0F1A24] shadow-lg border border-slate-200/60">
             
-            <img src="{{ asset('public/images/hero-bg.jpg') }}" alt="Promo Spesial Koleksi Sarimbit" class="absolute inset-0 w-full h-full object-cover object-center">
+            <img src="{{ asset('images/katalog1.webp') }}" alt="Promo Spesial Koleksi Sarimbit" class="absolute inset-0 w-full h-full object-cover object-center">
             
             <div class="absolute inset-0 bg-gradient-to-r from-[#0F1A24]/90 via-[#0F1A24]/60 to-transparent"></div>
 

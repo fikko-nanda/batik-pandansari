@@ -1,47 +1,87 @@
-<laravel-boost-guidelines>
-# Laravel Application
+# Batik Pandansari - Laravel 13 E-Commerce
 
-This repository contains a Laravel application. Complete the following setup before working on the user's request.
+## Quick Commands
 
-## Prerequisites
+```bash
+# Full setup (install deps, env, key, migrate, build assets)
+composer setup
 
-Verify that PHP and Composer are available:
+# Development server (Laravel + Vite via concurrently)
+composer dev
 
-```sh
-php -v
-composer -V
+# Run tests (clears config first)
+composer test
+
+# Frontend only
+npm run dev      # Vite dev server
+npm run build    # Production build
+
+# Code formatting
+./vendor/bin/pint
 ```
 
-If either command is unavailable, detect the user's operating system and install the prerequisites with the appropriate command:
+## Stack
 
-macOS:
+- **PHP 8.3+**, Laravel 13
+- **Vite** + TailwindCSS 3 (resources/css/app.css, resources/js/app.js)
+- **SQLite** (file: `database/database.sqlite`, testing: `:memory:`)
+- **Pest/PHPUnit** for testing
+- **Laravel Pint** for code style
 
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/mac/8.5)"
+## Testing
+
+```bash
+# All tests
+composer test
+
+# Single test file
+./vendor/bin/pest tests/Feature/ExampleTest.php
+
+# Unit tests only
+./vendor/bin/pest --testsuite=Unit
+
+# Feature tests only
+./vendor/bin/pest --testsuite=Feature
 ```
 
-Windows PowerShell:
+Tests use in-memory SQLite, `RefreshDatabase` trait available.
 
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://php.new/install/windows/8.5'))
+## Project Structure
+
+```
+app/              # App code (Http, Models, Providers)
+resources/
+  views/          # Blade templates (landing, shop/*, customer/*)
+  css/app.css     # Tailwind entry
+  js/app.js       # JS entry
+routes/web.php    # All web routes (e-commerce modules)
+database/
+  migrations/     # Standard Laravel + jobs/cache tables
+  factories/      # Model factories
+  seeders/        # DatabaseSeeder
+tests/
+  Feature/        # HTTP/integration tests
+  Unit/           # Unit tests
 ```
 
-Linux:
+## Key Routes (web.php)
 
-```sh
-/bin/bash -c "$(curl -fsSL https://php.new/install/linux/8.5)"
-```
+- `/` - Landing page
+- `/katalog` - Product catalog
+- `/detail/{id}` - Product detail
+- `/cart`, `/checkout` - Shopping flow
+- `/profile`, `/orders`, `/address`, `/wishlist`, `/security` - Customer area
 
-After installation, ask the user to restart their terminal. If the agent needs the restarted shell to continue, ask the user to reopen their terminal and rerun their original prompt.
+## Environment
 
-## Agent Setup
+- Copy `.env.example` → `.env` (done by `composer setup`)
+- `APP_KEY` generated on setup
+- SQLite file auto-created on migrate
 
-Install Laravel Boost from the application root before making application changes:
+## Conventions
 
-```sh
-composer require laravel/boost --dev
-php artisan boost:install
-```
-
-Boost replaces these bootstrap instructions with guidelines tailored to the application. After installation, read `AGENTS.md` again and continue with the user's original request using the generated guidelines.
-</laravel-boost-guidelines>
+- Controllers in `app/Http/Controllers/`
+- Models in `app/Models/`
+- Views use `resources/views/` with module subdirs (`shop/`, `customer/`)
+- Tailwind via Vite - run `npm run build` after CSS/JS changes
+- Run `./vendor/bin/pint` before committing

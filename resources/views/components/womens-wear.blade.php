@@ -21,7 +21,7 @@
                 description="Aksen kerah cheongsam klasik oriental dengan motif burung hong prada..."
                 price="Rp 1.280.000"
                 material="Katun Primis Super"
-                :image="asset('images/w1.png')"
+                :image="asset('images/katalog1.webp')"
             />
             <x-product-card 
                 badge="BEST SELLER"
@@ -30,7 +30,7 @@
                 description="Blouse peplum modis dengan potongan tangan lonceng anggun..."
                 price="Rp 1.190.000"
                 material="Katun Halus"
-                :image="asset('images/w2.png')"
+                :image="asset('images/katalog2.webp')"
             />
             <x-product-card 
                 badge="EKSKLUSIF"
@@ -39,7 +39,7 @@
                 description="Siluet A-line elegan dengan furing katun hero yang menyerap keringat..."
                 price="Rp 1.450.000"
                 material="Primis Halus"
-                :image="asset('images/w3.png')"
+                :image="asset('images/hero-bg.jpg')"
             />
             <x-product-card 
                 badge="HANDMADE"
@@ -48,7 +48,7 @@
                 description="Kombinasi klasik kutubaru dengan motif megamendung gradasi warna..."
                 price="Rp 1.620.000"
                 material="Sutra Alam"
-                :image="asset('images/w4.png')"
+                :image="asset('images/katalog1.webp')"
             />
         </div>
     </div>

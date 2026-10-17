@@ -22,9 +22,9 @@
             <!-- Kartu 1: Kemeja & Hem Pria -->
             <div class="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md transition">
                 <div class="relative h-64 bg-slate-100 overflow-hidden">
-                    <img src="{{ asset('images/cat-men.jpg') }}" 
-                         alt="Kemeja & Hem Pria" 
-                         class="w-full h-full object-cover">
+<img src="{{ asset('images/katalog1.webp') }}" 
+                          alt="Kemeja & Hem Pria" 
+                          class="w-full h-full object-cover">
                     <span class="absolute top-3 left-3 bg-[#0F1A24] text-[#BAE6FD] text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
                         BUSANA PRIA
                     </span>
@@ -45,9 +45,9 @@
             <!-- Kartu 2: Dress & Tunik Elegan -->
             <div class="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md transition">
                 <div class="relative h-64 bg-slate-100 overflow-hidden">
-                    <img src="{{ asset('images/cat-women.jpg') }}" 
-                         alt="Dress & Tunik Elegan" 
-                         class="w-full h-full object-cover">
+<img src="{{ asset('images/katalog2.webp') }}" 
+                          alt="Dress & Tunik Elegan" 
+                          class="w-full h-full object-cover">
                     <span class="absolute top-3 left-3 bg-[#0369A1] text-white text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
                         BUSANA WANITA
                     </span>
@@ -68,9 +68,9 @@
             <!-- Kartu 3: Batik Anak-Anak & Remaja -->
             <div class="bg-white rounded-2xl overflow-hidden border border-sky-200/80 shadow-sm flex flex-col justify-between bg-sky-50/20 hover:shadow-md transition">
                 <div class="relative h-64 bg-sky-50 overflow-hidden">
-                    <img src="{{ asset('images/cat-kids.jpg') }}" 
-                         alt="Batik Anak-Anak & Remaja" 
-                         class="w-full h-full object-cover">
+<img src="{{ asset('images/hero-bg.jpg') }}" 
+                          alt="Batik Anak-Anak & Remaja" 
+                          class="w-full h-full object-cover">
                     <span class="absolute top-3 left-3 bg-[#0284C7] text-white text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider inline-flex items-center gap-1 font-['Plus_Jakarta_Sans']">
                         <i class="fa-solid fa-child text-[9px]"></i> KOLEKSI ANAK
                     </span>
@@ -91,9 +91,9 @@
             <!-- Kartu 4: Kain Tradisional Lembaran -->
             <div class="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md transition">
                 <div class="relative h-64 bg-slate-100 overflow-hidden">
-                    <img src="{{ asset('images/cat-fabric.jpg') }}" 
-                         alt="Kain Tradisional Lembaran" 
-                         class="w-full h-full object-cover">
+<img src="{{ asset('images/katalog1.webp') }}" 
+                          alt="Kain Tradisional Lembaran" 
+                          class="w-full h-full object-cover">
                     <span class="absolute top-3 left-3 bg-[#0F1A24] text-[#BAE6FD] text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
                         BATIK CAP
                     </span>
