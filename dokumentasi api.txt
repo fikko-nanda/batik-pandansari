@@ -1,0 +1,409 @@
+DOKUMENTASI REST API
+BACKEND BATIK PANDANSARI
+Daftar endpoint, hak akses role, alur OTP reset password,
+dan pedoman implementasi Laravel
+ROLE: ADMIN  •  CUSTOMER  •  TEKNIS
+Versi revisi — mencakup fitur lupa password dan verifikasi OTP.
+
+1. TUJUAN DAN CARA MEMBACA DOKUMEN
+----------------------------------
+Dokumen ini adalah rancangan endpoint REST API untuk backend e-commerce Batik Pandansari. Daftar disusun per modul agar dapat menjadi acuan implementasi Laravel, pengujian melalui Postman, dan integrasi frontend. Endpoint yang tercantum belum berarti seluruhnya sudah dibuat di aplikasi.
+Prefix endpoint menggunakan /api.
+GET membaca data; POST membuat data atau menjalankan aksi; PUT/PATCH memperbarui; DELETE menghapus atau menonaktifkan.
+Parameter {id} merupakan placeholder untuk ID data terkait.
+Akses 'Owner' berarti pengguna hanya boleh mengakses data miliknya sendiri; pemeriksaan harus dilakukan di backend.
+
+2. ROLE DAN KEWENANGAN
+----------------------
+
+3. MODUL AUTENTIKASI, LUPA PASSWORD, OTP, PENGGUNA, DAN ALAMAT
+--------------------------------------------------------------
+
+3.1 Alur Lupa Password dengan OTP
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Catatan keamanan: OTP sebaiknya memiliki masa berlaku singkat (contoh 5 menit), dibatasi jumlah percobaan, disimpan dalam bentuk hash, dan hanya dapat digunakan sekali. Token reset harus acak, singkat masa berlakunya, dan terpisah dari token login. Password baru harus di-hash menggunakan mekanisme Laravel.
+
+3.2 Implementasi API Autentikasi (Tahap 1 - SUDAH DIBUAT)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Status: POST /api/register, POST /api/login, POST /api/logout, dan GET /api/me
+sudah dibuat dan diuji.
+
+Catatan penting (disesuaikan dengan schema database aktual):
+- Nilai peran (role) di tabel users adalah enum('pelanggan','admin'), bukan
+  'customer'/'teknis' seperti pada rancangan awal. Registrasi publik HANYA
+  membuat akun dengan peran 'pelanggan'; field peran pada request diabaikan.
+- Autentikasi memakai token Laravel Sanctum (personal access token). Tabel
+  personal_access_tokens dibuat manual dengan tokenable_id bertipe char(36)
+  mengikuti id_user (UUID), dan tidak menjalankan migration default.
+- Kirim header "Authorization: Bearer <token>" untuk /api/logout dan /api/me.
+
+POST /api/register (publik) - body:
+  nama_pengguna   (wajib, string, maks 100)
+  email           (wajib, format email, unik, maks 150)
+  nomor_telepon   (opsional, string, maks 20)
+  kata_sandi      (wajib, min 8; wajib menyertakan kata_sandi_confirmation)
+Respons 201: data pengguna tanpa token (login dilakukan terpisah).
+
+POST /api/login (publik) - body: email, kata_sandi.
+Respons 200: { token, token_type: "Bearer", user }. Gagal -> 401.
+
+POST /api/logout (login) - menghapus token yang sedang aktif.
+GET  /api/me (login) - mengembalikan profil pengguna yang sedang login.
+
+Format respons umum: { "success": bool, "message": string, "data": ... }.
+Respons galat validasi (422): { "success": false, "message": ..., "errors": {...} }.
+Respons belum login (401): { "success": false, "message": "Tidak terautentikasi..." }.
+
+Catatan keamanan: OTP reset password pada 3.1 BELUM diimplementasikan dan
+dikerjakan pada tahap paling akhir.
+
+3.3 Implementasi API Alamat Pengguna (Tahap 2 - SUDAH DIBUAT)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Status: GET/POST /api/addresses dan GET/PUT/DELETE /api/addresses/{id} sudah
+dibuat dan diuji. Semua endpoint memerlukan login (auth:sanctum).
+
+Model: App\Models\UserAddress. Catatan schema: nama kolom primary key yang
+aktif adalah id_user_address (dokumen panduan menulis id_address, namun yang
+dipakai adalah struktur database aktif id_user_address). Tidak ada migration
+baru; tabel sudah tersedia.
+
+Kepemilikan: setiap query dibatasi id_user milik token. Alamat yang bukan
+milik pengguna yang login menghasilkan 404 (bukan 403) agar keberadaannya
+tidak terungkap.
+
+Field alamat (semua wajib kecuali alamat_utama):
+  label_alamat    (maks 30),  nama_penerima (maks 100),
+  nomor_telepon   (maks 20),  nama_provinsi (maks 60),
+  nama_kota       (maks 60),  nama_kecamatan (maks 60),
+  kode_pos        (maks 10),  alamat_lengkap (teks),
+  alamat_utama    (opsional, boolean)
+
+Aturan alamat utama: alamat pertama otomatis menjadi utama; bila sebuah alamat
+di-set alamat_utama=true maka alamat lain milik pengguna yang sama di-set
+false, sehingga hanya ada satu alamat utama per pengguna.
+
+GET    /api/addresses          - daftar alamat sendiri (urut utama lalu terbaru).
+POST   /api/addresses          - buat alamat; id_user_address = UUID, id_user = token.
+GET    /api/addresses/{id}     - detail alamat sendiri ({id} = id_user_address).
+PUT    /api/addresses/{id}     - perbarui alamat sendiri (parsial).
+DELETE /api/addresses/{id}     - hapus alamat sendiri.
+
+4. KATEGORI DAN KATALOG PRODUK
+------------------------------
+
+4.1 Implementasi API Produk (Tahap 3 - SUDAH DIBUAT)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Status: GET /api/products, GET /api/products/{id} (publik) dan POST
+/api/products, PUT /api/products/{id}, DELETE /api/products/{id} (admin)
+sudah dibuat dan diuji. Endpoint varian dan gambar sudah dibuat pada 4.2;
+data varian dan gambar juga dikembalikan menyatu pada detail produk.
+
+Model: App\Models\Product (dengan ProductVariant dan ProductImage untuk
+relasi). Nilai status_produk yang valid: draft, aktif, nonaktif
+(default 'draft' sesuai schema database).
+
+GET /api/products (publik) - parameter query opsional:
+  search    (mencari pada nama_produk dan deskripsi)
+  category  (berisi id_category)
+  page, per_page (default 10, maks 100)
+Hanya produk berstatus 'aktif' yang ditampilkan. Respons menyertakan
+"meta": current_page, per_page, total, last_page.
+
+GET /api/products/{id} (publik) - {id} adalah id_product (UUID). Menampilkan
+produk 'aktif' beserta category, variants, dan images. Jika tidak ada atau
+tidak aktif -> 404.
+
+POST /api/products (admin) - body:
+  id_category    (wajib, harus ada di tabel categories)
+  nama_produk    (wajib, string, maks 150)
+  slug           (opsional, unik, maks 180; bila kosong dibuat otomatis
+                  dari nama_produk)
+  deskripsi      (opsional, string)
+  status_produk  (opsional, salah satu draft/aktif/nonaktif, default draft)
+Respons 201 berisi data produk.
+
+PUT /api/products/{id} (admin) - bersifat parsial (semua field opsional).
+Slug tetap diperiksa unik dengan mengecualikan produk itu sendiri.
+
+DELETE /api/products/{id} (admin) - menonaktifkan produk (soft delete:
+status_produk diubah menjadi 'nonaktif'). Penghapusan permanen tidak
+dipilih karena produk yang memiliki varian terikat foreign key.
+
+Hak akses tulis memakai middleware auth:sanctum + alias 'admin' (EnsureUserIsAdmin).
+Tanpa token -> 401; login dengan peran 'pelanggan' -> 403. Format respons
+mengikuti konvensi yang sama dengan API autentikasi.
+
+4.2 Implementasi API Varian dan Gambar Produk (Tahap 3 - SUDAH DIBUAT)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Model: App\Models\ProductVariant dan App\Models\ProductImage. Tidak ada
+migration baru. Endpoint baca publik; endpoint tulis hanya admin.
+
+Catatan schema: sku varian UNIQUE (uq_variants_sku); harga decimal(12,2)
+NOT NULL; stok integer >= 0 default 0; status_varian default 'aktif'.
+product_variants direferensikan cart_items, inventory_movements, order_items,
+dan stock_opnames dengan ON DELETE RESTRICT, sehingga DELETE varian memakai
+soft delete (status_varian='nonaktif'). product_images tidak direferensikan
+tabel lain sehingga dapat dihapus permanen (file fisik ikut dihapus).
+
+VARIAN:
+GET  /api/products/{id}/variants (publik) - {id} = id_product. Hanya produk
+     'aktif' dan hanya varian berstatus 'aktif' yang ditampilkan. Selain itu 404.
+POST /api/products/{id}/variants (admin) - body:
+     sku             (wajib, unik, maks 100)
+     nama_varian     (opsional, maks 100)
+     warna           (opsional, maks 50)
+     ukuran          (opsional, maks 30)
+     harga           (wajib, numerik >= 0)
+     stok            (opsional, integer >= 0, default 0)
+     status_varian   (opsional, aktif/nonaktif, default aktif)
+PUT  /api/variants/{id} (admin) - {id} = id_variant; parsial; sku unik
+     dengan mengecualikan varian itu sendiri.
+DELETE /api/variants/{id} (admin) - soft delete: status_varian='nonaktif'.
+
+GAMBAR:
+GET  /api/products/{id}/images (publik) - {id} = id_product. Hanya produk
+     'aktif'. Urut is_primary desc lalu urutan asc. Tiap item menyertakan "url".
+POST /api/products/{id}/images (admin) - multipart/form-data:
+     gambar     (wajib, file gambar jpg/jpeg/png/webp, maks 2MB)
+     alt_text   (opsional, maks 150)
+     is_primary (opsional, boolean)
+     urutan     (opsional, integer >= 0, default max+1)
+     File disimpan di disk 'public' folder products/; kolom path_gambar berisi
+     path relatif. Gambar pertama otomatis primary; bila is_primary=true,
+     gambar lain produk di-set false.
+DELETE /api/images/{id} (admin) - {id} = id_image; hapus baris + file fisik.
+
+Catatan: agar file dapat diakses lewat URL publik, jalankan
+`php artisan storage:link` (symlink public/storage -> storage/app/public).
+
+5. WISHLIST DAN KERANJANG
+-------------------------
+
+6. VOUCHER DAN PROMOSI
+----------------------
+Penting: database yang sudah ada sebelumnya mencakup tabel vouchers dan voucher_usages. Tabel coupons/promotion_usages bersifat opsional dan tidak perlu dibuat jika hanya menggandakan fungsi voucher yang sudah tersedia.
+
+7. PESANAN DAN RINCIAN PESANAN
+------------------------------
+
+8. PEMBAYARAN
+-------------
+
+9. PENGIRIMAN DAN PEMENUHAN PESANAN
+-----------------------------------
+
+10. STOK DAN INVENTARIS
+-----------------------
+
+11. DASHBOARD, CMS, DAN LOG
+---------------------------
+
+12. CONTOH PARAMETER QUERY
+--------------------------
+
+13. PEDOMAN KEAMANAN DAN VALIDASI
+---------------------------------
+
+14. INTEGRASI EKSTERNAL
+-----------------------
+Email/SMS/WhatsApp OTP: pilih satu kanal terlebih dahulu dan konfigurasi provider yang sesuai. Jangan mengirim OTP melalui response API.
+Midtrans: endpoint pembayaran dan webhook perlu mengikuti dokumentasi provider yang digunakan; verifikasi signature webhook.
+RajaOngkir atau layanan kurir: endpoint ongkir/pelacakan perlu disesuaikan dengan provider yang benar-benar dipakai.
+Simpan kredensial pada .env atau secret manager, bukan langsung di source code maupun frontend.
+
+15. URUTAN IMPLEMENTASI YANG DISARANKAN
+---------------------------------------
+
+16. CATATAN SKEMA DATABASE
+--------------------------
+Penting: dokumen sebelumnya merangkum 24 tabel rancangan, tetapi database aktif yang pernah dicatat berisi 20 tabel: 14 tabel awal ditambah wishlist_items, order_status_histories, shipment_histories, inventory_movements, stock_opnames, dan activity_logs. Tabel coupons, promotion_usages, webhook_logs, dan cms perlu dikonfirmasi sebelum dibuat. Daftar endpoint terkait tabel opsional hanya diterapkan jika fitur tersebut memang dipilih.
+Tabel inti yang pernah tercatat: cart_items, carts, categories, order_items, orders, payments, product_images, product_variants, products, shipments, user_addresses, users, voucher_usages, vouchers.
+Tabel tambahan yang pernah dibuat: wishlist_items, order_status_histories, shipment_histories, inventory_movements, stock_opnames, activity_logs.
+Nama tabel seperti order_shipments, order_fulfillments, api_request_logs, coupons, dan promotion_usages pada rancangan perlu dicocokkan dengan schema database aktual sebelum endpoint dibuat.
+Periksa juga nilai enum role di tabel users agar mendukung role yang dipilih: admin, customer, dan teknis.
+
+17. RINGKASAN
+-------------
+Dokumen revisi ini memuat endpoint untuk autentikasi dan profil, reset password dengan OTP, katalog, wishlist, keranjang, voucher/promosi, pesanan, pembayaran, pengiriman, stok, dashboard, CMS, dan log. Implementasi disarankan dimulai dari fondasi autentikasi dan keamanan, kemudian katalog dan alur transaksi. Selalu cocokkan rancangan dengan migration serta struktur database yang benar-benar aktif.
+
+[TABEL 1]
+Role | Kewenangan utama | Batasan
+admin | Mengelola pengguna, katalog, kategori, varian, gambar, voucher/promosi, pesanan, laporan, stok, pengiriman, CMS, dan audit. | Tidak boleh membocorkan kata sandi, token, atau rahasia integrasi.
+customer | Registrasi/login, profil dan alamat sendiri, katalog, wishlist, keranjang, checkout, voucher, pembayaran, pelacakan, dan reset password. | Hanya dapat mengakses data pribadi dan transaksi miliknya.
+teknis | Operasional stok, stock opname, pemenuhan/pengemasan pesanan, dan pengiriman sesuai alur yang ditetapkan. | Tidak boleh mengubah harga atau menandai pembayaran sukses secara manual tanpa kewenangan.
+
+
+[TABEL 2]
+Method | Endpoint | Akses | Kegunaan
+POST | /api/register | Publik | Mendaftarkan akun customer.
+POST | /api/login | Publik | Memvalidasi kredensial dan memulai sesi/token.
+POST | /api/logout | Semua login | Mengakhiri sesi/token pengguna aktif.
+GET | /api/me | Semua login | Mengambil profil pengguna yang sedang login.
+POST | /api/forgot-password | Publik | Meminta OTP reset password melalui kanal yang terdaftar, misalnya email.
+POST | /api/verify-reset-otp | Publik | Memverifikasi OTP dan menerbitkan token reset sementara jika valid.
+POST | /api/reset-password | Token reset valid | Mengubah password setelah OTP berhasil diverifikasi.
+POST | /api/resend-reset-otp | Publik | Mengirim ulang OTP dengan pembatasan frekuensi.
+GET | /api/users | Admin | Melihat daftar pengguna.
+GET | /api/users/{id} | Admin | Melihat detail pengguna.
+PUT | /api/users/{id} | Admin/Owner terbatas | Memperbarui field yang diizinkan; perubahan role hanya admin.
+GET | /api/addresses | Customer | Melihat alamat sendiri.
+POST | /api/addresses | Customer | Menambahkan alamat sendiri.
+GET | /api/addresses/{id} | Owner/Admin | Melihat detail alamat dengan pengecekan akses.
+PUT | /api/addresses/{id} | Owner | Memperbarui alamat sendiri.
+DELETE | /api/addresses/{id} | Owner | Menghapus alamat sendiri jika tidak terikat pada transaksi yang perlu dipertahankan.
+
+
+[TABEL 3]
+Tahap | Request/aksi | Hasil
+1. Minta OTP | POST /api/forgot-password dengan email atau identitas akun. | Backend mengirim OTP ke kanal yang terdaftar. Respons sebaiknya tidak mengungkap apakah akun ada.
+2. Verifikasi | POST /api/verify-reset-otp dengan identitas dan kode OTP. | Jika benar dan belum kedaluwarsa, backend menerbitkan token reset sementara.
+3. Password baru | POST /api/reset-password dengan token reset dan password baru + konfirmasi. | Backend menyimpan password yang telah di-hash dan menonaktifkan token reset.
+4. Kirim ulang | POST /api/resend-reset-otp. | OTP baru dikirim jika melewati aturan jeda dan batas percobaan.
+
+
+[TABEL 4]
+Method | Endpoint | Akses | Kegunaan
+GET | /api/categories | Publik | Daftar kategori.
+POST | /api/categories | Admin | Membuat kategori.
+GET | /api/categories/{id} | Publik | Detail kategori.
+PUT | /api/categories/{id} | Admin | Memperbarui kategori.
+DELETE | /api/categories/{id} | Admin | Menghapus/menonaktifkan kategori jika aman untuk relasi data.
+GET | /api/products | Publik | Daftar produk dengan pencarian, filter, dan pagination.
+POST | /api/products | Admin | Membuat produk.
+GET | /api/products/{id} | Publik | Detail produk.
+PUT | /api/products/{id} | Admin | Memperbarui informasi produk.
+DELETE | /api/products/{id} | Admin | Menghapus/menonaktifkan produk sesuai kebijakan data.
+GET | /api/products/{id}/variants | Publik | Melihat varian produk.
+POST | /api/products/{id}/variants | Admin | Menambahkan varian produk.
+PUT | /api/variants/{id} | Admin | Memperbarui varian dan atribut yang diizinkan.
+DELETE | /api/variants/{id} | Admin | Menghapus/menonaktifkan varian.
+GET | /api/products/{id}/images | Publik | Melihat gambar produk.
+POST | /api/products/{id}/images | Admin | Menambahkan gambar produk.
+DELETE | /api/images/{id} | Admin | Menghapus gambar produk.
+
+
+[TABEL 5]
+Method | Endpoint | Akses | Kegunaan
+GET | /api/wishlist | Customer | Melihat wishlist sendiri.
+POST | /api/wishlist | Customer | Menambahkan produk ke wishlist.
+DELETE | /api/wishlist/{id} | Owner | Menghapus item wishlist sendiri.
+GET | /api/cart | Customer | Melihat keranjang sendiri.
+POST | /api/cart/items | Customer | Menambahkan varian produk ke keranjang.
+PUT | /api/cart/items/{id} | Owner | Mengubah kuantitas item keranjang.
+DELETE | /api/cart/items/{id} | Owner | Menghapus item keranjang.
+DELETE | /api/cart | Customer | Mengosongkan keranjang sendiri.
+
+
+[TABEL 6]
+Method | Endpoint | Akses | Kegunaan
+GET | /api/vouchers | Admin | Melihat daftar voucher.
+POST | /api/vouchers | Admin | Membuat voucher.
+GET | /api/vouchers/available | Customer | Melihat voucher yang tersedia.
+POST | /api/vouchers/validate | Customer | Memvalidasi kode voucher dan syarat penggunaannya.
+GET | /api/vouchers/{id} | Admin | Melihat detail voucher.
+PUT | /api/vouchers/{id} | Admin | Memperbarui voucher.
+DELETE | /api/vouchers/{id} | Admin | Menonaktifkan/menghapus voucher sesuai aturan.
+GET | /api/voucher-usages | Admin | Melihat riwayat penggunaan voucher.
+GET | /api/voucher-usages/me | Customer | Melihat penggunaan voucher milik sendiri.
+GET | /api/coupons | Admin (opsional) | Daftar kupon jika fitur ini terpisah dari voucher.
+POST | /api/coupons | Admin (opsional) | Membuat kupon jika struktur terpisah memang dibutuhkan.
+GET | /api/coupons/{id} | Admin (opsional) | Detail kupon.
+PUT | /api/coupons/{id} | Admin (opsional) | Memperbarui kupon.
+DELETE | /api/coupons/{id} | Admin (opsional) | Menonaktifkan kupon.
+GET | /api/promotion-usages | Admin (opsional) | Riwayat penggunaan promosi jika berbeda dari voucher_usages.
+GET | /api/promotion-usages/me | Customer (opsional) | Riwayat promosi sendiri jika fitur dibutuhkan.
+
+
+[TABEL 7]
+Method | Endpoint | Akses | Kegunaan
+GET | /api/orders | Admin | Melihat seluruh pesanan dengan filter status/tanggal.
+POST | /api/orders | Customer | Checkout dan membuat pesanan dari data yang divalidasi backend.
+GET | /api/orders/me | Customer | Melihat pesanan milik sendiri.
+GET | /api/orders/{id} | Owner/Admin/Teknis terbatas | Melihat detail pesanan sesuai kewenangan.
+GET | /api/orders/{id}/items | Owner/Admin/Teknis terbatas | Melihat rincian item pesanan.
+POST | /api/orders/{id}/cancel | Owner sesuai status | Meminta pembatalan jika status masih mengizinkan.
+PATCH | /api/orders/{id}/status | Admin/Teknis sesuai alur | Memperbarui status dan mencatat riwayat.
+GET | /api/orders/{id}/histories | Owner/Admin/Teknis terbatas | Melihat riwayat perubahan status.
+
+
+[TABEL 8]
+Method | Endpoint | Akses | Kegunaan
+POST | /api/orders/{id}/payments | Customer/Owner | Memulai pembayaran untuk pesanan sendiri.
+GET | /api/payments/{id} | Owner/Admin | Melihat detail pembayaran.
+GET | /api/payments/{id}/status | Owner/Admin | Memeriksa status pembayaran.
+POST | /api/payments/webhook | Penyedia pembayaran | Menerima notifikasi pembayaran setelah verifikasi signature dan data transaksi.
+
+
+[TABEL 9]
+Method | Endpoint | Akses | Kegunaan
+GET | /api/shipments | Admin/Teknis | Melihat daftar pengiriman.
+GET | /api/orders/{id}/shipment | Owner/Admin/Teknis | Melihat pengiriman untuk pesanan.
+POST | /api/orders/{id}/shipment | Admin/Teknis | Membuat data pengiriman dan nomor resi.
+PUT | /api/shipments/{id} | Admin/Teknis | Memperbarui data kurir, resi, atau status yang diizinkan.
+GET | /api/shipments/{id}/histories | Owner/Admin/Teknis | Melihat riwayat pengiriman.
+POST | /api/shipments/{id}/histories | Admin/Teknis/Integrasi | Mencatat pembaruan status pengiriman.
+GET | /api/orders/{id}/fulfillment | Admin/Teknis | Melihat proses persiapan/pemenuhan pesanan.
+POST | /api/orders/{id}/fulfillment | Admin/Teknis | Mencatat proses pemenuhan pesanan.
+PATCH | /api/fulfillments/{id} | Admin/Teknis | Memperbarui status persiapan atau pengemasan.
+
+
+[TABEL 10]
+Method | Endpoint | Akses | Kegunaan
+GET | /api/inventory-movements | Admin/Teknis | Melihat riwayat stok masuk/keluar.
+POST | /api/inventory-movements | Admin/Teknis | Mencatat pergerakan stok melalui proses backend tervalidasi.
+GET | /api/stock-opnames | Admin/Teknis | Melihat daftar stock opname.
+POST | /api/stock-opnames | Admin/Teknis | Membuat catatan stock opname.
+GET | /api/stock-opnames/{id} | Admin/Teknis | Melihat detail stock opname.
+
+
+[TABEL 11]
+Method | Endpoint | Akses | Kegunaan
+GET | /api/dashboard/summary | Admin | Ringkasan penjualan, pesanan, dan indikator utama.
+GET | /api/dashboard/sales | Admin | Data penjualan berdasarkan periode.
+GET | /api/dashboard/orders | Admin/Teknis terbatas | Ringkasan pesanan untuk operasional.
+GET | /api/dashboard/stock | Admin/Teknis | Ringkasan stok dan stok menipis.
+GET | /api/cms | Publik | Mengambil konten website yang sudah diterbitkan.
+POST | /api/cms | Admin | Membuat konten halaman.
+GET | /api/cms/{id} | Publik/Admin | Konten terbit untuk publik; admin dapat melihat draft.
+PUT | /api/cms/{id} | Admin | Memperbarui konten.
+DELETE | /api/cms/{id} | Admin | Menghapus/menonaktifkan konten.
+GET | /api/activity-logs | Admin | Melihat catatan aktivitas penting.
+GET | /api/webhook-logs | Admin | Melihat log webhook untuk troubleshooting.
+GET | /api/webhook-logs/{id} | Admin | Melihat detail log webhook.
+GET | /api/api-request-logs | Admin berwenang | Memantau permintaan API dan masalah teknis.
+
+
+[TABEL 12]
+Contoh | Fungsi
+GET /api/products?search=parang | Mencari produk berdasarkan kata kunci.
+GET /api/products?category={id}&page=1 | Memfilter kategori dan menentukan halaman.
+GET /api/orders?status=pending&from=2026-10-01&to=2026-10-31 | Memfilter pesanan berdasarkan status dan tanggal (admin).
+GET /api/inventory-movements?variant_id={id} | Melihat pergerakan stok untuk varian tertentu.
+
+
+[TABEL 13]
+Area | Pedoman
+Autentikasi | Gunakan autentikasi Laravel yang sesuai, misalnya Sanctum, dan middleware untuk endpoint privat.
+Role/permission | Lakukan pemeriksaan hak akses di backend; menyembunyikan tombol di frontend saja tidak cukup.
+Kepemilikan | Customer hanya dapat membaca/mengubah alamat, wishlist, keranjang, pesanan, dan pembayaran miliknya.
+OTP reset password | Buat OTP acak, hash OTP saat disimpan, beri masa berlaku, batasi percobaan dan resend, dan cegah penggunaan ulang.
+Pembayaran | Nominal dihitung backend; jangan menerima status sukses dari customer. Verifikasi webhook dan cocokkan order ID serta nominal.
+Checkout | Gunakan DB::transaction untuk pesanan, order_items, pemakaian voucher, dan perubahan stok.
+Stok | Perubahan stok dan inventory_movements harus konsisten serta dilakukan dalam transaksi yang sesuai.
+Log | Riwayat status, aktivitas, webhook, dan request log dibuat oleh backend; jangan memberi customer akses tulis bebas.
+Validasi | Validasi format email, panjang field, kuantitas, harga, file gambar, status transisi, dan tanggal.
+Rahasia | Jangan mengembalikan kata_sandi, OTP, token reset, token rahasia, atau kredensial provider dalam response/log.
+Rate limit | Batasi login, pengiriman OTP, verifikasi OTP, validasi voucher, dan endpoint sensitif.
+
+
+[TABEL 14]
+Tahap | Fokus | Hasil
+1 | Fondasi | Migration, model, relasi, autentikasi, middleware role, format response, dan validasi.
+2 | Akun dan keamanan | Register, login, logout, /api/me, lupa password, OTP, dan reset password.
+3 | Katalog | Kategori, produk, varian, gambar, pencarian, dan pagination.
+4 | Belanja | Alamat, wishlist, keranjang, stok, dan voucher.
+5 | Transaksi | Checkout, orders, order_items, riwayat status, dan total pesanan.
+6 | Pembayaran | Pembuatan transaksi pembayaran dan webhook terverifikasi.
+7 | Operasional | Inventaris, stock opname, fulfillment, pengiriman, dan resi.
+8 | Dashboard dan pengujian | Laporan, CMS, log, pengujian Postman, dan uji akses tiap role.
+
