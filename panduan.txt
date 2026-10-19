@@ -1,0 +1,422 @@
+Oke, kita bahas 24 tabel database Pandansari satu per satu, mulai dari fungsi tabel, isi datanya, hubungan dengan tabel lain, sampai contoh penggunaannya dalam website. Biar kamu paham alurnya saat nanti mengerjakan backend Laravel, bukan sekadar hafal nama tabel.
+
+# A. Modul pengguna dan katalog produk
+
+## 1. `users` — Data pengguna
+
+Fungsi: menyimpan akun semua pengguna yang bisa mengakses sistem, misalnya pelanggan dan admin.
+
+Contoh isi tabel:
+
+| Field           | Contoh isi      | Keterangan                    |
+| --------------- | --------------- | ----------------------------- |
+| `id_user`       | UUID            | ID unik pengguna              |
+| `nama_pengguna` | Budi Santoso    | Nama pengguna                 |
+| `email`         | budi\@email.com | Email untuk login             |
+| `nomor_telepon` | 08123456789     | Nomor telepon                 |
+| `kata_sandi`    | Hash kata sandi | Kata sandi yang sudah di-hash |
+| `peran`         | pelanggan       | Hak akses pengguna            |
+
+Alurnya: pengguna mendaftar → data disimpan ke `users` → pengguna login → sistem memeriksa identitas dan perannya.
+
+Dalam Laravel, tabel ini digunakan saat membuat fitur registrasi, login, logout, dan middleware untuk membatasi akses admin.
+
+## 2. `user_addresses` — Alamat pengguna
+
+Fungsi: menyimpan alamat pengiriman milik pelanggan. Satu pelanggan dapat mempunyai beberapa alamat.
+
+| Field            | Contoh isi         | Keterangan          |
+| ---------------- | ------------------ | ------------------- |
+| `id_address`     | UUID               | ID alamat           |
+| `id_user`        | UUID pengguna      | Pemilik alamat      |
+| `nama_penerima`  | Budi Santoso       | Nama penerima paket |
+| `nomor_telepon`  | 08123456789        | Telepon penerima    |
+| `alamat_lengkap` | Jl. Merdeka No. 10 | Alamat lengkap      |
+| `kota`           | Surakarta          | Kota tujuan         |
+| `kode_pos`       | 57100              | Kode pos            |
+
+Alurnya: pelanggan menambahkan alamat → alamat disimpan → saat checkout, pelanggan memilih alamat pengiriman.
+
+Relasi: `users` 1 ke banyak `user_addresses`.
+
+## 3. `categories` — Kategori produk
+
+Fungsi: mengelompokkan produk batik supaya pelanggan lebih mudah mencari barang.
+
+| Field           | Contoh isi         | Keterangan          |
+| --------------- | ------------------ | ------------------- |
+| `id_category`   | UUID               | ID kategori         |
+| `nama_kategori` | Batik Parang       | Nama kategori       |
+| `slug`          | batik-parang       | Identitas untuk URL |
+| `deskripsi`     | Motif batik parang | Deskripsi kategori  |
+
+Alurnya: admin membuat kategori → produk dihubungkan dengan kategori → frontend menampilkan daftar kategori.
+
+Contohnya, pelanggan memilih kategori Batik Parang, lalu website menampilkan produk yang memiliki `id_category` tersebut.
+
+## 4. `products` — Data utama produk
+
+Fungsi: menyimpan informasi umum setiap produk yang dijual.
+
+| Field           | Contoh isi          | Keterangan       |
+| --------------- | ------------------- | ---------------- |
+| `id_product`    | UUID                | ID produk        |
+| `id_category`   | UUID kategori       | Kategori produk  |
+| `nama_produk`   | Batik Parang Klasik | Nama produk      |
+| `slug`          | batik-parang-klasik | Identitas URL    |
+| `deskripsi`     | Batik motif parang  | Deskripsi produk |
+| `status_produk` | aktif               | Status penjualan |
+
+Alurnya: admin menambahkan produk → produk dihubungkan ke kategori → produk ditampilkan pada katalog website.
+
+Tabel ini menyimpan informasi utama produk, sedangkan harga, ukuran, warna, dan stok per varian disimpan di `product_variants`.
+
+## 5. `product_variants` — Varian produk
+
+Fungsi: menyimpan pilihan varian produk, seperti ukuran, warna, harga, SKU, dan stok.
+
+Misalnya produk Batik Parang Klasik memiliki tiga varian.
+
+| SKU       | Warna   | Ukuran | Harga     | Stok |
+| --------- | ------- | ------ | --------- | ---- |
+| BPK-COK-M | Cokelat | M      | Rp150.000 | 10   |
+| BPK-COK-L | Cokelat | L      | Rp150.000 | 8    |
+| BPK-BIR-M | Biru    | M      | Rp160.000 | 5    |
+
+Alurnya: pelanggan memilih warna dan ukuran → sistem menemukan `id_variant` yang sesuai → harga dan stok varian tersebut digunakan saat checkout.
+
+Relasi: satu `products` dapat mempunyai banyak `product_variants`.
+
+## 6. `product_images` — Gambar produk
+
+Fungsi: menyimpan informasi lokasi gambar produk yang ditampilkan pada website.
+
+| Field         | Contoh isi           | Keterangan         |
+| ------------- | -------------------- | ------------------ |
+| `id_image`    | UUID                 | ID gambar          |
+| `id_product`  | UUID produk          | Produk terkait     |
+| `path_gambar` | products/batik1.jpg  | Lokasi file gambar |
+| `alt_text`    | Batik parang cokelat | Deskripsi gambar   |
+| `is_primary`  | 1                    | Gambar utama       |
+| `urutan`      | 1                    | Urutan tampilan    |
+
+Alurnya: admin mengunggah gambar → file disimpan di storage → lokasi file dicatat di database → frontend menampilkan gambar produk.
+
+Biasanya satu produk memiliki beberapa gambar, misalnya tampak depan, belakang, dan detail motif.
+
+# B. Modul wishlist dan keranjang
+
+## 7. `wishlist_items` — Produk favorit
+
+Fungsi: menyimpan produk yang ditandai sebagai favorit oleh pelanggan.
+
+| Field              | Contoh isi    | Keterangan       |
+| ------------------ | ------------- | ---------------- |
+| `id_wishlist_item` | UUID          | ID wishlist      |
+| `id_user`          | UUID pengguna | Pemilik wishlist |
+| `id_product`       | UUID produk   | Produk favorit   |
+
+Alurnya: pelanggan menekan ikon hati → data masuk ke `wishlist_items` → halaman favorit menampilkan produk tersebut.
+
+Satu pelanggan tidak boleh mempunyai baris duplikat untuk produk yang sama. Aturan `UNIQUE (id_user, id_product)` yang kita buat mencegah duplikasi tersebut.
+
+## 8. `carts` — Keranjang belanja
+
+Fungsi: menyimpan keranjang milik pelanggan sebelum pesanan dibuat.
+
+| Field         | Contoh isi    | Keterangan        |
+| ------------- | ------------- | ----------------- |
+| `id_cart`     | UUID          | ID keranjang      |
+| `id_user`     | UUID pengguna | Pemilik keranjang |
+| `status_cart` | aktif         | Status keranjang  |
+
+Alurnya: pelanggan mulai belanja → sistem menyediakan keranjang → produk yang dipilih disimpan melalui `cart_items`.
+
+Keranjang berbeda dengan pesanan. Keranjang masih dapat diubah, sedangkan pesanan merupakan catatan transaksi yang sudah dibuat.
+
+## 9. `cart_items` — Detail keranjang
+
+Fungsi: menyimpan daftar varian produk dan jumlahnya dalam suatu keranjang.
+
+| Field          | Contoh isi     | Keterangan          |
+| -------------- | -------------- | ------------------- |
+| `id_cart_item` | UUID           | ID item keranjang   |
+| `id_cart`      | UUID keranjang | Keranjang terkait   |
+| `id_variant`   | UUID varian    | Varian yang dipilih |
+| `jumlah`       | 2              | Jumlah barang       |
+
+Alurnya: pelanggan memilih Batik Parang ukuran L sebanyak dua buah → data varian dan jumlah disimpan → sistem menghitung subtotal.
+
+Subtotal umumnya dihitung dari harga varian saat ini dikalikan jumlah barang. Saat checkout, harga dan jumlah harus divalidasi ulang agar tidak bergantung pada data keranjang yang sudah kedaluwarsa.
+
+# C. Modul voucher dan promosi
+
+## 10. `vouchers` — Data kode voucher
+
+Fungsi: menyimpan aturan kode diskon yang bisa dimasukkan pelanggan saat checkout.
+
+| Field               | Contoh isi | Keterangan                |
+| ------------------- | ---------- | ------------------------- |
+| `id_voucher`        | UUID       | ID voucher                |
+| `kode_voucher`      | BATIKHEMAT | Kode promo                |
+| `tipe_diskon`       | persentase | Jenis diskon              |
+| `nilai_diskon`      | 10         | Diskon 10%                |
+| `minimal_pembelian` | 100000     | Minimal belanja Rp100.000 |
+| `maksimal_diskon`   | 50000      | Batas diskon              |
+| `status_voucher`    | aktif      | Status voucher            |
+
+Alurnya: pelanggan memasukkan `BATIKHEMAT` → backend memeriksa aturan voucher → jika valid, diskon diterapkan pada checkout.
+
+Validasi juga harus memeriksa tanggal berlaku, kuota, dan batas penggunaan. Jangan hanya memeriksa apakah kode ditemukan di database.
+
+## 11. `voucher_usages` — Riwayat penggunaan voucher
+
+Fungsi: mencatat voucher yang diterapkan pada pesanan tertentu.
+
+| Field               | Contoh isi    | Keterangan             |
+| ------------------- | ------------- | ---------------------- |
+| `id_voucher_usage`  | UUID          | ID penggunaan          |
+| `id_voucher`        | UUID voucher  | Voucher yang dipakai   |
+| `id_user`           | UUID pengguna | Pengguna voucher       |
+| `id_order`          | UUID pesanan  | Pesanan terkait        |
+| `jumlah_diskon`     | 15000         | Diskon yang diterapkan |
+| `status_penggunaan` | digunakan     | Status penggunaan      |
+
+Alurnya: voucher dinyatakan valid → pelanggan menyelesaikan checkout → sistem mencatat penggunaan voucher dan jumlah diskon pada pesanan.
+
+Tabel ini juga dapat digunakan untuk menghitung jumlah pemakaian per pengguna. Untuk pembayaran yang belum selesai atau dibatalkan, status penggunaannya harus ditangani dengan aturan yang konsisten.
+
+# D. Modul pesanan dan pembayaran
+
+## 12. `orders` — Data utama pesanan
+
+Fungsi: menyimpan ringkasan transaksi yang dibuat pelanggan.
+
+| Field              | Contoh isi          | Keterangan                  |
+| ------------------ | ------------------- | --------------------------- |
+| `id_order`         | UUID                | ID pesanan                  |
+| `id_user`          | UUID pengguna       | Pemilik pesanan             |
+| `nomor_pesanan`    | ORD-20261015-001    | Nomor pesanan               |
+| `status_pesanan`   | menunggu_pembayaran | Status pesanan              |
+| `subtotal`         | 300000              | Total barang sebelum diskon |
+| `biaya_pengiriman` | 18000               | Biaya pengiriman            |
+| `diskon`           | 30000               | Total diskon                |
+| `total_pembayaran` | 288000              | Total akhir                 |
+
+Alurnya: pelanggan checkout → sistem menghitung total → pesanan disimpan → pelanggan membayar.
+
+Rumus dasarnya:
+
+\\[ \text{Total}=\text{Subtotal}+\text{Ongkir}-\text{Diskon} \\]
+
+Nominal yang disimpan harus dihitung di backend, bukan dipercaya begitu saja dari frontend.
+
+## 13. `order_items` — Detail barang dalam pesanan
+
+Fungsi: menyimpan barang yang dibeli pada saat transaksi.
+
+| Field           | Contoh isi          | Keterangan           |
+| --------------- | ------------------- | -------------------- |
+| `id_order_item` | UUID                | ID detail pesanan    |
+| `id_order`      | UUID pesanan        | Pesanan terkait      |
+| `id_variant`    | UUID varian         | Varian yang dibeli   |
+| `nama_produk`   | Batik Parang Klasik | Snapshot nama        |
+| `sku`           | BPK-COK-L           | Snapshot SKU         |
+| `harga_satuan`  | 150000              | Harga saat transaksi |
+| `jumlah`        | 2                   | Jumlah barang        |
+| `subtotal`      | 300000              | Harga dikali jumlah  |
+
+Kenapa nama dan harga disimpan lagi?
+
+Karena harga produk bisa berubah di masa depan. Pesanan lama harus tetap menunjukkan harga pada saat pelanggan membeli, bukan harga terbaru di katalog.
+
+## 14. `order_status_histories` — Riwayat status pesanan
+
+Fungsi: menyimpan setiap perubahan status pesanan.
+
+| Field                     | Contoh isi          | Keterangan                  |
+| ------------------------- | ------------------- | --------------------------- |
+| `id_order_status_history` | UUID                | ID riwayat                  |
+| `id_order`                | UUID pesanan        | Pesanan terkait             |
+| `status_sebelumnya`       | menunggu_pembayaran | Status lama                 |
+| `status_baru`             | diproses            | Status baru                 |
+| `diubah_oleh`             | UUID pengguna       | Admin atau pengguna terkait |
+| `waktu_perubahan`         | Waktu perubahan     | Kapan status berubah        |
+
+Alurnya: status di `orders` berubah → backend mencatat status lama dan status baru ke `order_status_histories`.
+
+Tabel ini memungkinkan pelanggan melihat perjalanan status pesanan, sedangkan admin dapat menelusuri kapan status diperbarui.
+
+## 15. `payments` — Data pembayaran
+
+Fungsi: menyimpan informasi pembayaran untuk pesanan.
+
+| Field               | Contoh isi   | Keterangan                |
+| ------------------- | ------------ | ------------------------- |
+| `id_payment`        | UUID         | ID pembayaran             |
+| `id_order`          | UUID pesanan | Pesanan terkait           |
+| `provider`          | sandbox      | Penyedia pembayaran       |
+| `metode_pembayaran` | QRIS         | Metode pembayaran         |
+| `jumlah_pembayaran` | 288000       | Nominal pembayaran        |
+| `status_pembayaran` | menunggu     | Status pembayaran         |
+| `paid_at`           | NULL         | Waktu pembayaran berhasil |
+
+Alurnya: pesanan dibuat → sistem membuat instruksi pembayaran → penyedia pembayaran mengonfirmasi transaksi → status pembayaran diperbarui.
+
+Untuk integrasi nyata, status pembayaran harus dikonfirmasi melalui mekanisme tepercaya dari penyedia pembayaran, bukan berdasarkan klaim frontend.
+
+# E. Modul pengiriman
+
+## 16. `shipments` — Informasi pengiriman
+
+Fungsi: menyimpan data pengiriman barang untuk pesanan.
+
+| Field                | Contoh isi   | Keterangan        |
+| -------------------- | ------------ | ----------------- |
+| `id_shipment`        | UUID         | ID pengiriman     |
+| `id_order`           | UUID pesanan | Pesanan terkait   |
+| `kurir`              | JNE          | Nama kurir        |
+| `layanan_pengiriman` | REG          | Layanan kurir     |
+| `berat_gram`         | 500          | Berat paket       |
+| `biaya_pengiriman`   | 18000        | Ongkir            |
+| `nomor_resi`         | RESI123456   | Nomor resi        |
+| `status_pengiriman`  | dikirim      | Status pengiriman |
+
+Alurnya: pembayaran dikonfirmasi → admin menyiapkan paket → data pengiriman dan nomor resi disimpan → pelanggan dapat memeriksa status pengiriman.
+
+## 17. `shipment_histories` — Riwayat pengiriman
+
+Fungsi: mencatat perkembangan paket dari waktu ke waktu.
+
+| Field                 | Contoh isi       | Keterangan           |
+| --------------------- | ---------------- | -------------------- |
+| `id_shipment_history` | UUID             | ID riwayat           |
+| `id_shipment`         | UUID pengiriman  | Pengiriman terkait   |
+| `status_sebelumnya`   | diproses         | Status sebelumnya    |
+| `status_baru`         | dalam_perjalanan | Status terbaru       |
+| `lokasi`              | Yogyakarta       | Lokasi paket         |
+| `waktu_perubahan`     | Waktu pembaruan  | Waktu status berubah |
+
+Alurnya: status pengiriman diperbarui → sistem menyimpan catatan baru → pelanggan bisa melihat riwayat pengiriman.
+
+Riwayat ini berbeda dari `order_status_histories`: yang satu mencatat status pesanan, sedangkan yang lain mencatat perjalanan paket.
+
+# F. Modul manajemen stok
+
+## 18. `inventory_movements` — Riwayat pergerakan stok
+
+Fungsi: mencatat setiap perubahan stok suatu varian produk.
+
+| Field                   | Contoh isi  | Keterangan             |
+| ----------------------- | ----------- | ---------------------- |
+| `id_inventory_movement` | UUID        | ID pergerakan          |
+| `id_variant`            | UUID varian | Varian terkait         |
+| `jenis_pergerakan`      | masuk       | Jenis perubahan        |
+| `jumlah`                | 10          | Jumlah barang          |
+| `stok_sebelum`          | 5           | Stok sebelumnya        |
+| `stok_sesudah`          | 15          | Stok setelah perubahan |
+| `referensi`             | PO-001      | Referensi transaksi    |
+
+Alurnya: stok bertambah atau berkurang → backend memperbarui `product_variants.stok` → sistem mencatat perubahan di `inventory_movements`.
+
+Kedua proses harus dilakukan secara konsisten agar jumlah stok dan riwayatnya tidak berbeda.
+
+## 19. `stock_opnames` — Pemeriksaan stok fisik
+
+Fungsi: mencatat hasil pengecekan jumlah barang yang benar-benar tersedia di gudang.
+
+| Field             | Contoh isi  | Keterangan          |
+| ----------------- | ----------- | ------------------- |
+| `id_stock_opname` | UUID        | ID pemeriksaan      |
+| `id_variant`      | UUID varian | Varian diperiksa    |
+| `stok_sistem`     | 20          | Stok menurut sistem |
+| `stok_fisik`      | 18          | Stok hasil hitung   |
+| `selisih`         | -2          | Perbedaan stok      |
+| `id_user`         | UUID admin  | Petugas pemeriksaan |
+
+Alurnya: admin menghitung stok fisik → sistem membandingkan dengan stok database → hasil pemeriksaan disimpan → jika diperlukan, admin melakukan penyesuaian stok dengan catatan yang sesuai.
+
+Jangan otomatis mengubah stok hanya karena hasil pemeriksaan dicatat. Penyesuaian harus menjadi tindakan yang jelas dan dapat diaudit.
+
+# G. Modul audit dan promosi tambahan
+
+## 20. `activity_logs` — Catatan aktivitas sistem
+
+Fungsi: mencatat tindakan penting yang dilakukan pengguna atau admin.
+
+| Field             | Contoh isi              | Keterangan        |
+| ----------------- | ----------------------- | ----------------- |
+| `id_activity_log` | UUID                    | ID log            |
+| `id_user`         | UUID pengguna           | Pelaku aktivitas  |
+| `aktivitas`       | tambah_produk           | Jenis tindakan    |
+| `jenis_entitas`   | products                | Tabel terkait     |
+| `id_entitas`      | UUID produk             | ID objek terkait  |
+| `deskripsi`       | Menambahkan produk baru | Detail aktivitas  |
+| `alamat_ip`       | 127.0.0.1               | IP saat aktivitas |
+
+Alurnya: admin menambahkan atau mengubah produk → backend menyimpan catatan aktivitas → catatan dapat dilihat ketika diperlukan untuk audit.
+
+Log ini sebaiknya tidak digunakan untuk menyimpan kata sandi, token rahasia, atau informasi sensitif.
+
+## 21. `coupons` — Kupon promosi tambahan
+
+Fungsi: menyimpan aturan kupon jika bisnis memerlukan sistem kupon yang berbeda dari voucher.
+
+Contohnya, kupon promosi untuk kampanye tertentu atau kupon yang memiliki aturan khusus.
+
+Namun, karena `vouchers` sudah menyimpan kode promo, tabel ini belum perlu dibuat jika semua promosi memakai mekanisme voucher yang sama.
+
+## 22. `promotion_usages` — Riwayat penggunaan promosi
+
+Fungsi: mencatat penggunaan promosi yang dikelola melalui sistem promosi terpisah.
+
+Contohnya, ketika suatu promosi memiliki mekanisme penerapan otomatis dan tidak menggunakan kode voucher.
+
+Jika semua diskon Pandansari memakai kode voucher, fungsi ini dapat tumpang tindih dengan `voucher_usages`. Jadi, buat hanya jika memang ada kebutuhan berbeda.
+
+## 23. `webhook_logs` — Catatan notifikasi layanan eksternal
+
+Fungsi: mencatat notifikasi yang dikirim oleh layanan eksternal ke backend, misalnya penyedia pembayaran atau layanan pengiriman.
+
+Contoh alurnya:
+
+1. Pelanggan melakukan pembayaran.
+2. Penyedia pembayaran mengirim notifikasi ke endpoint webhook Laravel.
+3. Backend memverifikasi keaslian notifikasi.
+4. Status pembayaran diperbarui.
+5. Sistem mencatat hasil pemrosesan notifikasi.
+
+Tabel ini berguna untuk membantu investigasi jika notifikasi gagal atau dikirim berulang. Data rahasia dan kredensial tidak boleh disimpan mentah.
+
+## 24. `cms` — Pengelolaan konten website
+
+Fungsi: menyimpan konten yang dapat dikelola admin tanpa harus mengubah kode frontend.
+
+Contohnya:
+
+- Banner halaman utama.
+- Halaman tentang Pandansari.
+- Informasi kontak dan alamat toko.
+- Konten promosi atau pengumuman.
+
+Alurnya: admin memperbarui konten melalui dashboard → data disimpan di `cms` → frontend mengambil dan menampilkan konten tersebut.
+
+Struktur kolom `cms` perlu ditentukan sesuai jenis konten yang akan didukung, misalnya halaman, banner, atau keduanya.
+
+# Ringkasan alur yang perlu kamu ingat
+
+Akun: `users` → `user_addresses`
+
+Produk: `categories` → `products` → `product_variants` + `product_images`
+
+Belanja: `wishlist_items` + `carts` → `cart_items`
+
+Transaksi: `vouchers` → `orders` → `order_items` → `payments`
+
+Pengiriman: `shipments` → `shipment_histories`
+
+Stok: `inventory_movements` + `stock_opnames`
+
+Riwayat: `order_status_histories` + `activity_logs`
+
+Saran praktisku: dari 24 tabel ini, fokus dulu pada 20 tabel yang sudah ada. Empat tabel tambahan tidak otomatis wajib. Setelah kamu paham relasi dan alur 20 tabel utama, implementasikan Model, Controller, dan API berdasarkan modulnya. Dengan begitu, kamu bisa membangun backend Pandansari secara bertahap dan lebih mudah melakukan pengujian.

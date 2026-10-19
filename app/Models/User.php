@@ -2,31 +2,62 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
+#[Fillable([
+    'id_user',
+    'nama_pengguna',
+    'email',
+    'nomor_telepon',
+    'kata_sandi',
+    'peran',
+])]
+#[Hidden(['kata_sandi', 'remember_token'])]
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    protected $table = 'users';
+
+    protected $primaryKey = 'id_user';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
+    protected $authPasswordName = 'kata_sandi';
+
+    const CREATED_AT = 'dibuat_pada';
+
+    const UPDATED_AT = 'diperbarui_pada';
+
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'kata_sandi' => 'hashed',
         ];
+    }
+
+    public function addresses()
+    {
+        return $this->hasMany(
+            UserAddress::class,
+            'id_user',
+            'id_user'
+        );
+    }
+
+    public function orders()
+    {
+        return $this->hasMany(
+            Order::class,
+            'id_user',
+            'id_user'
+        );
     }
 }
