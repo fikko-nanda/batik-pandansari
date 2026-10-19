@@ -19,7 +19,19 @@
  *
  * Token & profil user disimpan di localStorage (lihat getUser/setUser).
  */
-const API_URL = import.meta.env?.VITE_API_URL || 'https://overshoot-rasping-afford.ngrok-free.dev';
+/**
+ * Base URL API diambil dari VITE_API_URL di .env (JANGAN hardcode di sini).
+ * Contoh: VITE_API_URL=https://<subdomain>.ngrok-free.dev/api
+ * Catatan: ubah .env → WAJIB restart Vite (composer dev / npm run dev),
+ * atau build ulang (npm run build) untuk mode produksi.
+ */
+const API_URL = import.meta.env?.VITE_API_URL ?? '';
+if (!API_URL) {
+    console.error(
+        '[PandansariAPI] VITE_API_URL belum diset di .env — semua request API akan gagal. ' +
+        'Isi seperti: VITE_API_URL=https://<subdomain>.ngrok-free.dev/api lalu restart Vite.'
+    );
+}
 const TOKEN_KEY = 'pandansari_token';
 const USER_KEY = 'pandansari_user';
 
