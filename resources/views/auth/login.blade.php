@@ -1,8 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="bg-[#FAF8F5] min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 font-['Plus_Jakarta_Sans']"
-     x-data="{ showPassword: false }">
+<div class="bg-[#FAF8F5] min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 font-['Plus_Jakarta_Sans']">
 
     <div class="max-w-md w-full space-y-6 bg-white p-8 sm:p-10 rounded-2xl border border-slate-200/80 shadow-sm">
         
@@ -15,18 +14,53 @@
             <p class="text-xs text-slate-500">Nikmati pengalaman berbelanja wastra batik autentik Indonesia</p>
         </div>
 
-        <!-- Form Login -->
-        <form action="/login" method="POST" class="space-y-4">
-            @csrf
+        <!-- Form Login (terhubung: POST /api/login → token Sanctum disimpan + GET /api/me) -->
+        <div x-data="{
+                 email: '',
+                 kata_sandi: '',
+                 showPassword: false,
+                 loading: false,
+                 errorMessage: '',
+                 async submit() {
+                     this.loading = true;
+                     this.errorMessage = '';
 
-            <!-- Email / Nomor HP -->
+                     const res = await PandansariAPI.login(this.email, this.kata_sandi);
+                     this.loading = false;
+
+                     if (res.ok) {
+                         // Lokasi token defensif: data.token | data.data.token | data.access_token
+                         const token = res.data?.data?.token ?? res.data?.token ?? res.data?.access_token;
+                         if (token) {
+                             PandansariAPI.setToken(token);
+                             // Verifikasi + simpan data profil via /me
+                             await PandansariAPI.me();
+                             window.location.href = '/';
+                         } else {
+                             this.errorMessage = 'Login berhasil, tetapi token tidak diterima dari server.';
+                         }
+                     } else {
+                         this.errorMessage = res.message;
+                     }
+                 }
+             }"
+        >
+            <!-- Banner Error -->
+            <template x-if="errorMessage">
+                <div class="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl px-4 py-3 flex items-start gap-2">
+                    <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                    <span x-text="errorMessage"></span>
+                </div>
+            </template>
+
+            <!-- Email  -->
             <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1.5">Alamat Email / Nomor WhatsApp</label>
+                <label class="block text-xs font-bold text-slate-700 mb-1.5">Alamat EmaiL</label>
                 <div class="relative">
-                    <input type="text" 
-                           name="email"
+                    <input type="text"
+                           x-model="email"
                            required
-                           placeholder="contoh: arya.wijaya@keraton-heritage.id" 
+                           placeholder="contoh: arya.pandansari@gmail.com"
                            class="w-full text-xs font-medium border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                     <i class="fa-regular fa-envelope absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                 </div>
@@ -39,13 +73,13 @@
                     <a href="/forgot-password" class="text-xs font-semibold text-sky-600 hover:underline">Lupa Kata Sandi?</a>
                 </div>
                 <div class="relative">
-                    <input :type="showPassword ? 'text' : 'password'" 
-                           name="password"
+                    <input :type="showPassword ? 'text' : 'password'"
+                           x-model="kata_sandi"
                            required
-                           placeholder="••••••••" 
+                           placeholder="••••••••"
                            class="w-full text-xs font-medium border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 pr-10">
-                    <button type="button" 
-                            @click="showPassword = !showPassword" 
+                    <button type="button"
+                            @click="showPassword = !showPassword"
                             class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition">
                         <i class="fa-regular" :class="showPassword ? 'fa-eye-slash' : 'fa-eye'"></i>
                     </button>
@@ -55,17 +89,20 @@
             <!-- Remember Me -->
             <div class="flex items-center justify-between pt-1">
                 <label class="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-600">
-                    <input type="checkbox" name="remember" class="rounded border-slate-300 text-black focus:ring-black w-4 h-4">
+                    <input type="checkbox" class="rounded border-slate-300 text-black focus:ring-black w-4 h-4">
                     <span>Ingat saya di perangkat ini</span>
                 </label>
             </div>
 
             <!-- Submit Button -->
-            <button type="submit" 
-                    class="w-full bg-[#0F1A24] hover:bg-slate-800 text-white font-bold text-xs py-3.5 rounded-xl transition shadow-sm cursor-pointer mt-2">
-                MASUK SEKARANG →
+            <button type="button"
+                    :disabled="loading"
+                    @click="submit"
+                    class="w-full bg-[#0F1A24] hover:bg-slate-800 text-white font-bold text-xs py-3.5 rounded-xl transition shadow-sm cursor-pointer mt-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                <span x-show="!loading">MASUK SEKARANG →</span>
+                <span x-show="loading" class="inline-flex items-center gap-2"><i class="fa-solid fa-circle-notch fa-spin"></i> MEMPROSES…</span>
             </button>
-        </form>
+        </div>
 
         <!-- Divider Google / Oauth (Opsional) -->
         <div class="relative flex py-2 items-center">

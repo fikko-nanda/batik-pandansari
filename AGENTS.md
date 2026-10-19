@@ -28,6 +28,12 @@ npm run build    # Production build
 - **Pest/PHPUnit** for testing
 - **Laravel Pint** for code style
 
+## Tim & Dokumentasi
+
+- **Frontend:** team frontend (laptop ini) — Blade views, Tailwind, Alpine.js di `resources/`
+- **Backend:** team lain — controller, model, migrasi, auth, integrasi Midtrans/RajaOngkir
+- **Dokumentasi frontend & kontrak data backend:** lihat [`docs/FRONTEND.md`](docs/FRONTEND.md)
+
 ## Testing
 
 ```bash
@@ -49,14 +55,19 @@ Tests use in-memory SQLite, `RefreshDatabase` trait available.
 ## Project Structure
 
 ```
-app/              # App code (Http, Models, Providers)
+app/              # App code (Http, Models, Providers) — milik team BACKEND
 resources/
-  views/          # Blade templates (landing, shop/*, customer/*)
+  views/
+    layouts/      # app (publik), admin, teknisi
+    components/   # SEMUA komponen anonim <x-...> (auto-discovery Laravel)
+      admin/      #   <x-admin.sidebar>, <x-admin.navbar>, <x-admin.modal-add-product>
+      teknisi/    #   <x-teknisi.sidebar>
+    landing.blade.php, shop/, customer/, auth/, admin/, teknisi/
   css/app.css     # Tailwind entry
-  js/app.js       # JS entry
-routes/web.php    # All web routes (e-commerce modules)
+  js/app.js       # JS entry (masih kosong — Alpine via CDN)
+routes/web.php    # All web routes (e-commerce modules) — milik team BACKEND
 database/
-  migrations/     # Standard Laravel + jobs/cache tables
+  migrations/     # users, cache, jobs, categories, products (belum ada tabel order/cart)
   factories/      # Model factories
   seeders/        # DatabaseSeeder
 tests/
@@ -80,8 +91,12 @@ tests/
 
 ## Conventions
 
-- Controllers in `app/Http/Controllers/`
-- Models in `app/Models/`
-- Views use `resources/views/` with module subdirs (`shop/`, `customer/`)
+- Controllers in `app/Http/Controllers/` — milik team BACKEND
+- Models in `app/Models/` — milik team BACKEND
+- Views use `resources/views/` with module subdirs (`shop/`, `customer/`) — milik team FRONTEND
+- Komponen Blade reusable ditaruh di `resources/views/components/` dan dipanggil sebagai anonim: `<x-navbar />`, `<x-product-card />`, `<x-admin.sidebar />` — JANGAN pakai `@include` untuk komponen
+- Halaman mengisi konten via `@section('content')` dan `@extends('layouts.app' | 'layouts.admin' | 'layouts.teknisi')`
+- `product-card` menerima props: `badge`, `subtitle`, `title`, `description`, `price`, `material`, `image`
 - Tailwind via Vite - run `npm run build` after CSS/JS changes
+- Validasi sintaks Blade: `php artisan view:cache` lalu `php artisan view:clear`
 - Run `./vendor/bin/pint` before committing

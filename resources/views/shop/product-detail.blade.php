@@ -2,42 +2,90 @@
 
 @section('content')
 
-    <!-- Container Utama Detail Produk dengan Alpine.js -->
+    <!-- Container Utama Detail Produk dengan Alpine.js (data dari GET /api/products/{id}) -->
     <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
          x-data="{
-            // State untuk menampung gambar utama yang aktif
-            activeImage: '{{ asset('images/m1.png') }}',
-            selectedSize: 'L',
+            // Data dari API
+            productId: @json($id ?? null),
+            product: null,
+            variants: [],
+            images: [],
+            loading: true,
+            errorMsg: '',
+
+            // State UI
+            activeImage: '',
+            fallbackImage: '{{ asset('images/katalog1.webp') }}',
+            selectedVariantId: null,
             qty: 1,
+            cartBusy: false,
+            notice: '',       // pesan sukses/eror aksi (keranjang/wishlist)
+            noticeOk: false,
 
-            // Daftar Galeri Foto
-            images: [
-                { 
-                    src: '{{ asset('images/m1.png') }}', 
-                    fallback: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=800&auto=format&fit=crop', 
-                    label: 'Tampak Depan' 
-                },
-                { 
-                    src: '{{ asset('images/m2.png') }}', 
-                    fallback: 'https://images.unsplash.com/photo-1598033129183-c4f50c736f10?q=80&w=800&auto=format&fit=crop', 
-                    label: 'Motif Samping' 
-                },
-                { 
-                    src: '{{ asset('images/tulis.jpg') }}', 
-                    fallback: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?q=80&w=800&auto=format&fit=crop', 
-                    label: 'Kerah & Kancing' 
-                },
-                { 
-                    src: '{{ asset('images/cap.jpg') }}', 
-                    fallback: 'https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?q=80&w=800&auto=format&fit=crop', 
-                    label: 'Jahitan Furing' 
+            get selectedVariant() {
+                return this.variants.find(v => v.id_variant === this.selectedVariantId) ?? null;
+            },
+
+            async load() {
+                this.loading = true;
+                const [p, v] = await Promise.all([
+                    PandansariAPI.product(this.productId),
+                    PandansariAPI.productVariants(this.productId),
+                ]);
+                if (!p.ok) { this.loading = false; this.errorMsg = p.message; return; }
+                this.product = p.data;
+                this.loading = false;
+
+                // Galeri: gambar utama dulu, lalu sisanya
+                const imgs = (this.product.images ?? []);
+                this.images = imgs.map(i => ({ src: i.url, fallback: this.fallbackImage, label: i.alt_text ?? 'Foto Produk' }));
+                this.activeImage = this.images[0]?.src ?? this.fallbackImage;
+
+                // Varian aktif hanya; pilih default = varian pertama
+                this.variants = (v.data ?? []).filter(x => x.status_varian !== 'nonaktif');
+                if (this.variants.length) this.selectedVariantId = this.variants[0].id_variant;
+            },
+
+            changeImage(img) { this.activeImage = img.src; },
+
+            get pageTitle()  { return this.product?.nama_produk ?? 'Memuat…'; },
+            get categoryName() { return this.product?.category?.nama_kategori ?? ''; },
+
+            async requireLogin() {
+                if (PandansariAPI.getToken()) return true;
+                window.location.href = '/login';
+                return false;
+            },
+
+            async tambahKeKeranjang(buyNow = false) {
+                if (!await this.requireLogin()) return;
+                if (!this.selectedVariant) { this.tampilkanNotice('Pilih ukuran/varian terlebih dahulu.', false); return; }
+                this.cartBusy = true;
+                const res = await PandansariAPI.addCartItem(this.selectedVariant.id_variant, this.qty);
+                this.cartBusy = false;
+                if (res.ok) {
+                    if (buyNow) window.location.href = '/cart';
+                    else this.tampilkanNotice('Produk berhasil ditambahkan ke keranjang. ' + res.message, true);
+                } else {
+                    this.tampilkanNotice(res.message, false); // mis. 422 stok / varian nonaktif
                 }
-            ],
+            },
 
-            // Fungsi untuk mengganti gambar utama
-            changeImage(img) {
-                this.activeImage = img.src;
-            }
+            async simpanWishlist() {
+                if (!await this.requireLogin()) return;
+                const res = await PandansariAPI.addWishlist(this.productId);
+                if (res.ok) this.tampilkanNotice('Produk disimpan ke wishlist.', true);
+                else if (res.status === 422) this.tampilkanNotice('Produk sudah ada di wishlist.', true);
+                else this.tampilkanNotice(res.message, false);
+            },
+
+            tampilkanNotice(msg, ok) {
+                this.notice = msg;
+                this.noticeOk = ok;
+                setTimeout(() => { this.notice = ''; }, 4000);
+            },
+
+            async init() { await this.load(); }
          }">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
 
@@ -47,10 +95,11 @@
                     <a href="/" class="hover:text-slate-900 transition">Beranda</a>
                     <span>/</span>
                     <a href="/katalog" class="hover:text-slate-900 transition">Katalog</a>
+                    <template x-if="categoryName">
+                        <a href="/katalog" class="hover:text-slate-900 transition" x-text="categoryName"></a>
+                    </template>
                     <span>/</span>
-                    <a href="/katalog?cat=pria" class="hover:text-slate-900 transition">Pakaian Pria</a>
-                    <span>/</span>
-                    <span class="text-slate-900 font-bold">Kemeja Pria Parang Seling Indigo</span>
+                    <span class="text-slate-900 font-bold" x-text="pageTitle">Memuat produk…</span>
                 </nav>
 
                
@@ -93,16 +142,29 @@
                     
                     <!-- Title & Official Badge -->
                     <div>
-                        <h1 class="text-2xl sm:text-3xl font-bold text-[#0F1A24] tracking-tight leading-snug">
-                            Kemeja Pria Parang Seling Indigo
+                        <h1 class="text-2xl sm:text-3xl font-bold text-[#0F1A24] tracking-tight leading-snug" x-text="pageTitle">
+                            Memuat produk…
                         </h1>
                     </div>
 
-                    <!-- Price Box -->
+                    <!-- Banner Error / Notifikasi Aksi -->
+                    <div x-show="errorMsg" class="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl px-4 py-3 flex items-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <span x-text="errorMsg"></span>
+                    </div>
+                    <div x-show="notice" class="rounded-xl text-xs font-semibold px-4 py-3 flex items-center gap-2"
+                         :class="noticeOk ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-rose-50 border border-rose-200 text-rose-700'">
+                        <i :class="noticeOk ? 'fa-solid fa-circle-check' : 'fa-solid fa-triangle-exclamation'"></i>
+                        <span x-text="notice"></span>
+                    </div>
+
+                    <!-- Price Box (harga varian terpilih dari API) -->
                     <div class="flex items-baseline gap-3">
-                        <span class="text-2xl sm:text-3xl font-bold text-[#0F1A24]">Rp 1.350.000</span>
-                        <span class="text-xs sm:text-sm text-slate-400 line-through">Rp 1.550.000</span>
-                        <span class="bg-sky-100 text-[#0369A1] text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-md">Hemat 13%</span>
+                        <span class="text-2xl sm:text-3xl font-bold text-[#0F1A24]"
+                              x-text="selectedVariant ? PandansariAPI.formatRp(selectedVariant.harga * qty) : '—'"></span>
+                        <span class="text-xs sm:text-sm text-slate-400"
+                              x-show="selectedVariant && qty > 1"
+                              x-text="'@ ' + PandansariAPI.formatRp(selectedVariant?.harga)"></span>
                     </div>
 
                     <!-- Shipping Info -->
@@ -113,77 +175,46 @@
                         </div>
                     </div>
 
-                    <!-- Size Selector & Size Chart Link -->
+                    <!-- Varian Selector (dari GET /api/products/{id}/variants) -->
                     <div class="space-y-2">
                         <div class="flex items-center justify-between text-xs">
-                            <span class="font-bold text-[#0F1A24]">Ukuran:</span>
-                            <button type="button" class="text-sky-600 hover:underline font-bold flex items-center gap-1 cursor-pointer">
-                                <i class="fa-solid fa-ruler-horizontal text-xs"></i>
-                                <span>Panduan Ukuran (Size Chart)</span>
-                            </button>
+                            <span class="font-bold text-[#0F1A24]">Pilih Ukuran / Varian:</span>
+                            <span class="text-slate-400 font-medium" x-show="selectedVariant" x-text="'Warna: ' + (selectedVariant?.warna ?? '-')"></span>
                         </div>
 
                         <div class="flex flex-wrap gap-2">
-                            <template x-for="sz in ['S', 'M', 'L', 'XL', 'XXL']" :key="sz">
-                                <button @click="selectedSize = sz" 
-                                        type="button" 
-                                        class="w-11 h-10 sm:w-12 sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer"
-                                        :class="selectedSize === sz ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
-                                    <span x-text="sz"></span>
+                            <template x-for="v in variants" :key="v.id_variant">
+                                <button @click="selectedVariantId = v.id_variant; qty = 1"
+                                        type="button"
+                                        class="px-3 h-10 sm:w-auto sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center"
+                                        :class="selectedVariantId === v.id_variant ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
+                                    <span x-text="v.ukuran ? v.ukuran : (v.nama_varian ?? 'Varian')"></span>
+                                    <span class="block text-[9px] font-medium" :class="selectedVariantId === v.id_variant ? 'text-slate-300' : 'text-slate-400'" x-text="PandansariAPI.formatRp(v.harga)"></span>
                                 </button>
                             </template>
+                            <p class="text-xs text-slate-400 italic w-full" x-show="!loading && !variants.length">Varian tidak tersedia.</p>
                         </div>
                     </div>
 
                     <!-- Size Chart Table Box -->
-                    <div class="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-sm space-y-2">
+                    <div class="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-sm space-y-2" x-show="selectedVariant">
                         <div class="flex items-center justify-between text-xs font-bold text-[#0F1A24]">
-                            <span>TABEL UKURAN PRIA (cm)</span>
-                            <span class="text-[10px] text-slate-400 font-normal">Pria Dewasa Regular Fit</span>
+                            <span>INFO VARIAN TERPILIH</span>
+                            <span class="text-[10px] text-slate-400 font-normal">SKU: <span x-text="selectedVariant?.sku ?? '-'"></span></span>
                         </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-[11px] text-center border-collapse">
-                                <thead>
-                                    <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                                        <th class="py-1.5 px-2 text-left">Size</th>
-                                        <th class="py-1.5 px-2">Lingkar Dada</th>
-                                        <th class="py-1.5 px-2">Panjang</th>
-                                        <th class="py-1.5 px-2">Lengan</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-slate-100 text-slate-600">
-                                    <tr :class="selectedSize === 'S' ? 'bg-sky-50 font-bold text-[#0369A1]' : ''">
-                                        <td class="py-1.5 px-2 text-left font-bold">S</td>
-                                        <td class="py-1.5 px-2">102 cm</td>
-                                        <td class="py-1.5 px-2">71 cm</td>
-                                        <td class="py-1.5 px-2">60 cm</td>
-                                    </tr>
-                                    <tr :class="selectedSize === 'M' ? 'bg-sky-50 font-bold text-[#0369A1]' : ''">
-                                        <td class="py-1.5 px-2 text-left font-bold">M</td>
-                                        <td class="py-1.5 px-2">106 cm</td>
-                                        <td class="py-1.5 px-2">73 cm</td>
-                                        <td class="py-1.5 px-2">61 cm</td>
-                                    </tr>
-                                    <tr :class="selectedSize === 'L' ? 'bg-sky-50 font-bold text-[#0369A1]' : ''">
-                                        <td class="py-1.5 px-2 text-left font-bold">L</td>
-                                        <td class="py-1.5 px-2">112 cm</td>
-                                        <td class="py-1.5 px-2">75 cm</td>
-                                        <td class="py-1.5 px-2">62 cm</td>
-                                    </tr>
-                                    <tr :class="selectedSize === 'XL' ? 'bg-sky-50 font-bold text-[#0369A1]' : ''">
-                                        <td class="py-1.5 px-2 text-left font-bold">XL</td>
-                                        <td class="py-1.5 px-2">118 cm</td>
-                                        <td class="py-1.5 px-2">77 cm</td>
-                                        <td class="py-1.5 px-2">63 cm</td>
-                                    </tr>
-                                    <tr :class="selectedSize === 'XXL' ? 'bg-sky-50 font-bold text-[#0369A1]' : ''">
-                                        <td class="py-1.5 px-2 text-left font-bold">XXL</td>
-                                        <td class="py-1.5 px-2">124 cm</td>
-                                        <td class="py-1.5 px-2">79 cm</td>
-                                        <td class="py-1.5 px-2">64 cm</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div class="grid grid-cols-3 gap-2 text-center text-[11px]">
+                            <div class="bg-slate-50 rounded-lg py-2">
+                                <p class="text-slate-400 font-medium uppercase">Stok</p>
+                                <p class="font-bold text-[#0F1A24] text-xs" x-text="selectedVariant?.stok ?? 0"></p>
+                            </div>
+                            <div class="bg-slate-50 rounded-lg py-2">
+                                <p class="text-slate-400 font-medium uppercase">Warna</p>
+                                <p class="font-bold text-[#0F1A24] text-xs truncate" x-text="selectedVariant?.warna ?? '-'"></p>
+                            </div>
+                            <div class="bg-slate-50 rounded-lg py-2">
+                                <p class="text-slate-400 font-medium uppercase">Ukuran</p>
+                                <p class="font-bold text-[#0F1A24] text-xs" x-text="selectedVariant?.ukuran ?? '-'"></p>
+                            </div>
                         </div>
                     </div>
 
@@ -193,22 +224,31 @@
                         <div class="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
                             <button @click="if(qty > 1) qty--" type="button" class="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 font-bold transition cursor-pointer">-</button>
                             <span class="w-10 text-center text-xs font-bold text-[#0F1A24]" x-text="qty"></span>
-                            <button @click="qty++" type="button" class="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 font-bold transition cursor-pointer">+</button>
+                            <button @click="if (selectedVariant && qty < selectedVariant.stok) qty++" type="button" class="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 font-bold transition cursor-pointer">+</button>
                         </div>
-                        <span class="text-xs text-slate-400">Tersedia 8 buah</span>
+                        <span class="text-xs text-slate-400" x-show="selectedVariant" x-text="'Tersedia ' + (selectedVariant?.stok ?? 0) + ' buah'"></span>
                     </div>
 
                     <!-- CTA Buttons -->
                     <div class="space-y-2 pt-2">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <a href="/cart" class="bg-white hover:bg-slate-50 text-[#0F1A24] border border-slate-300 text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
-                                <i class="fa-solid fa-cart-plus text-xs"></i>
-                                <span>+ Keranjang</span>
-                            </a>
-                            <a href="/cart" class="bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
+                            <button type="button" :disabled="cartBusy" @click="tambahKeKeranjang(false)"
+                                    class="bg-white hover:bg-slate-50 text-[#0F1A24] border border-slate-300 text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60">
+                                <i class="fa-solid" :class="cartBusy ? 'fa-circle-notch fa-spin' : 'fa-cart-plus'" style="font-size:12px"></i>
+                                <span x-text="cartBusy ? 'MEMPROSES…' : '+ KERANJANG'"></span>
+                            </button>
+                            <button type="button" :disabled="cartBusy" @click="tambahKeKeranjang(true)"
+                                    class="bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60">
                                 <span>Beli Sekarang →</span>
-                            </a>
+                            </button>
                         </div>
+
+                        <!-- Tombol Wishlist -->
+                        <button type="button" @click="simpanWishlist()"
+                                class="w-full bg-slate-50 hover:bg-rose-50 text-slate-600 hover:text-rose-500 border border-slate-200 text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer">
+                            <i class="fa-regular fa-heart text-xs"></i>
+                            <span>Simpan ke Wishlist</span>
+                        </button>
 
                         <!-- WhatsApp Consultation Button -->
                         <a href="https://wa.me/6281234567890?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi%20ukuran%20Kemeja%20Pria%20Parang%20Seling%20Indigo" target="_blank" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
@@ -233,22 +273,9 @@
                 </h2>
 
                 <div class="text-xs sm:text-sm text-slate-600 leading-relaxed space-y-3 font-['Plus_Jakarta_Sans']">
-                    <p>
-                        <strong class="text-[#0F1A24]">Kemeja Batik Pria Parang Seling Indigo Solo Klasik:</strong> dirancang eksklusif untuk pria yang mengutamakan kerapian berbusana formal kerja, maupun acara perjamuan resmi kenegaraan dan pesta resepsi.
+                    <p x-text="product?.deskripsi ?? 'Memuat deskripsi produk…'">
+                        <strong class="text-[#0F1A24]"></strong>
                     </p>
-
-                    <ul class="space-y-2 list-disc pl-5">
-                        <li><strong class="text-[#0F1A24]">Kualitas Bahan Katun Primisima:</strong> Dibuat menggunakan kain katun primisima super halus, lembut di kulit, menyerap keringat dengan sangat baik, dan adem panas digunakan sepanjang hari.</li>
-                        <li><strong class="text-[#0F1A24]">Pola Motif Menyambung (Pattern-Matched):</strong> Jahit pada belahan kancing depan dan kantong saku dipotong serta dijahit dengan presisi tinggi sehingga motif batik tetap mengalir utuh dan simetris tanpa potongan terputus.</li>
-                        <li><strong class="text-[#0F1A24]">Lapisan Furing Katun Adem:</strong> Dilapisi furing katun hero kualitas premium yang sejuk dan tidak bikin gerah, melindungi kain batik serta memberikan siluet badan yang tegap dan kokoh saat dikenakan bersama jas maupun dasi.</li>
-                        <li><strong class="text-[#0F1A24]">Jahitan Standar Batik / Tailor Halus:</strong> Menggunakan teknik jahitan stik balik rapi tanpa obras kasar yang terlihat, kerah tegak ber-interlining berkualitas agar rapi saat dikenakan bersama jas maupun dasi.</li>
-                        <li><strong class="text-[#0F1A24]">Garansi Pengembalian & Tukar Ukuran:</strong> Garansi 7 hari tukar ukuran jika kemeja yang diterima kurang pas (Syarat: label belum dilepas dan belum dicuci).</li>
-                    </ul>
-
-                    <div class="pt-2 border-t border-slate-100 text-slate-500">
-                        <strong class="text-[#0F1A24]">Petunjuk Perawatan:</strong><br>
-                        Dianjurkan mencuci menggunakan lerak atau detergen cair lembut tanpa pemutih. Jemur di tempat teduh (jangan terpapar matahari langsung). Setrika dengan suhu sedang dari sisi furing dalam.
-                    </div>
                 </div>
             </div>
 

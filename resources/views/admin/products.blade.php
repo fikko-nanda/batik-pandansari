@@ -305,7 +305,7 @@
     </div>
 
     <!-- CALL MODAL POPUP COMPONENT -->
-    @include('admin.components.modal-add-product')
+    <x-admin.modal-add-product />
 
 </div>
 

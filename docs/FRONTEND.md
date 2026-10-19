@@ -1,0 +1,159 @@
+# Dokumentasi Frontend — Batik Pandansari
+
+> Panduan struktur komponen Blade dan konvensi untuk **team frontend** dan pegangan untuk **team backend** (data apa yang nantinya harus disediakan).
+
+## 1. Struktur Views
+
+```
+resources/views/
+├── layouts/                    # 3 layout induk
+│   ├── app.blade.php           #   Publik: announcement bar + navbar + footer + WhatsApp FAB (via Vite)
+│   ├── admin.blade.php         #   Dashboard admin (Tailwind CDN)
+│   └── teknisi.blade.php       #   Engineering console (Tailwind CDN)
+│
+├── components/                 # ★ SEMUA komponen bersifat anonim (auto-discovery Laravel)
+│   ├── announcement-bar.blade.php
+│   ├── navbar.blade.php        #   <x-navbar>
+│   ├── footer.blade.php        #   <x-footer>
+│   ├── whatsapp-button.blade.php  # <x-whatsapp-button> — tombol WA mengambang, global
+│   ├── hero.blade.php          #   <x-hero>            — slider hero landing
+│   ├── partners.blade.php      #   <x-partners>
+│   ├── categories.blade.php    #   <x-categories>
+│   ├── womens-wear.blade.php   #   <x-womens-wear>
+│   ├── mens-wear.blade.php     #   <x-mens-wear>
+│   ├── promo-banner.blade.php  #   <x-promo-banner>
+│   ├── craft-categories.blade.php # <x-craft-categories> — Tulis/Cap/Handprint
+│   ├── gallery.blade.php       #   <x-gallery>
+│   ├── consultation-banner.blade.php # <x-consultation-banner>
+│   ├── product-card.blade.php  #   <x-product-card> — kartu produk reusable (punya @props)
+│   ├── admin/                  #   Komponen khusus modul admin
+│   │   ├── sidebar.blade.php   #     <x-admin.sidebar>
+│   │   ├── navbar.blade.php    #     <x-admin.navbar>
+│   │   └── modal-add-product.blade.php # <x-admin.modal-add-product>
+│   └── teknisi/
+│       └── sidebar.blade.php   #     <x-teknisi.sidebar>
+│
+├── landing.blade.php           # Halaman utama — hanya komposisi 9 komponen (lihat §3)
+├── shop/                       # katalog, product-detail, cart, checkout
+├── customer/                   # profile, orders, address, wishlist, security
+├── auth/                       # login, register
+├── admin/                      # 11 halaman dashboard admin
+└── teknisi/                    # audit-log, webhook-logs
+```
+
+**Aturan:** Reusable component **wajib** ditaruh di `components/` (boleh subfolder per modul), sehingga bisa dipanggil `<x-...>`. Komponen halaman admin sebelumnya memakai `@include('admin.components...')` — sudah dikonversi ke `<x-admin.*>`.
+
+## 2. Aturan Pemanggilan Komponen
+
+File di `views/components/` **otomatis** terdaftar sebagai atribut Blade (anonymous component):
+
+| Lokasi file | Cara panggil |
+|---|---|
+| `components/navbar.blade.php` | `<x-navbar />` |
+| `components/admin/sidebar.blade.php` | `<x-admin.sidebar />` |
+| `components/teknisi/sidebar.blade.php` | `<x-teknisi.sidebar />` |
+| `components/product-card.blade.php` | `<x-product-card badge="PROMO" title="..." :image="$product->photo_url" />` |
+
+Contoh komponen dengan props (`product-card`):
+
+```blade
+<x-product-card
+    badge="TERBARU"
+    subtitle="SOLO • ATELIER WANITA"
+    title="Tunik Batik Cheongsam"
+    description="Aksen kerah cheongsam klasik..."
+    price="Rp 1.280.000"
+    material="Katun Primis Super"
+    :image="asset('images/katalog1.webp')"
+/>
+```
+
+Buat komponen baru via artisan: `php artisan make:component Nama --view` (hanya view, tanpa class).
+
+## 3. Cara Memasang Halaman Baru
+
+1. Pilih layout yang sesuai: publik → `layouts.app`, admin → `layouts.admin`, teknisi → `layouts.teknisi`.
+2. Jangan mengedit file layout — cukup isi konten via `@section('content')`:
+
+```blade
+@extends('layouts.app')
+
+@section('title', 'Judul Halaman')   {{-- opsional --}}
+
+@section('content')
+    ... konten ...
+@endsection
+```
+
+3. Jika halaman butuh interaktivitas, tulis Alpine.js inline (`x-data`, `x-show`, dll) di dalam bagian `content`.
+
+## 4. Konvensi Frontend
+
+- **Styling:** Tailwind 3 via Vite. Warna brand: `#0F1A24` (teks gelap), `#FAF8F5` (bg), aksen sky. Ditata pada `tailwind.config.js`.
+- **Font:** Plus Jakarta Sans (+ Playfair Display di landing) — Google Fonts.
+- **CDN vs npm:** FontAwesome & Alpine.js dimuat via CDN. Tailwind **di-Vite-kan** untuk halaman publik. Layout `admin` & `teknisi` masih memakai Tailwind CDN — TODO: migrasi ke Vite agar satu sumber build.
+- **Data dummy:** semua angka/nama produk dummy ditulis di dalam `x-data` di halaman. **Belum** terhubung ke backend.
+- **Icon:** FontAwesome 6 (`fa-brands`, `fa-solid`, `fa-regular`).
+- Setelah mengubah CSS: `npm run build` (atau `npm run dev` saat developing).
+- Validasi syntax Blade: `php artisan view:cache` (lalu `php artisan view:clear`).
+
+## 5. Kontrak untuk Team Backend
+
+Karena frontend sudah dikanoniskan, backend nantinya cukup mengganti data dummy dengan data nyata. Yang perlu backend sediakan:
+
+1. **Jangan mengubah nama route** — frontend memanggil `route('home')`, `route('katalog')`, `route('product.detail', $id)`, `route('customer.*')`, `route('admin.*')`, `route('teknisi.*')`, `route('login')`, `route('register')`.
+2. **Jangan mengubah file di `resources/views/components/`** — backend bekerja di `app/`, `routes/`, `database/`.
+3. **Model Produk** yang diharapkan frontend (`shop/katalog`, `shop/product-detail`, komponen `product-card`):
+
+   | Field dibutuhkan view | Kolom yang disarankan | Catatan |
+   |---|---|---|
+   | `title` | `nama_produk` | sudah ada |
+   | `description` | `deskripsi` | sudah ada |
+   | `price` | `harga` | belum ada — format `Rp 1.280.000` di frontend, kirim angka & format backend |
+   | `image` | `foto` / relasi `product_photos` | belum ada — `asset('images/...')` |
+   | badge / label promosi | `status_produk` / tabel promo | sudah ada enum `draft/aktif/nonaktif` |
+   | kategori | relasi `category` | sudah ada (`categories.nama`) |
+   | stok & material | `stok`, `material` | belum ada |
+
+4. **Tabel yang belum ada** (dipakai UI dummy): orders, cart_items, addresses, wishlist, payments, promos, settings, audit_log/webhook_log.
+5. Layout `admin`/`teknisi` saat ini **tanpa middleware** — backend tinggal add middleware ke route group `admin` & `teknisi` di `routes/web.php`.
+
+## 5b. Status Integrasi API
+
+### ✅ Terpusat di `resources/js/app.js` — Layer `PandansariAPI`
+Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success, message, data, errors, meta}`). Spesifikasi lengkap backend: [`docs/BACKEND-API.md`](docs/BACKEND-API.md).
+
+### ✅ Terhubung
+| Modul | Endpoint | File |
+|---|---|---|
+| Login | `POST /login` → `data.token` + `data.user` | `auth/login.blade.php` |
+| Login via Google | `POST /auth/google` *(GIS wajib client ID sama seperti backend)* | belum — tersedia helper |
+| Register | `POST /register` | `auth/register.blade.php` |
+| Profil/Keluar | `GET /me`, `POST /logout` | `components/navbar.blade.php` |
+| Katalog | `GET /categories`, `GET /products?search&category&page&per_page` | `shop/katalog.blade.php` + `components/shop/product-item.blade.php` |
+| Detail produk | `GET /products/{id}`, `GET /products/{id}/variants` | `shop/product-detail.blade.php` |
+| Tambah keranjang | `POST /cart/items { id_variant, jumlah }` | `shop/product-detail.blade.php` |
+| Wishlist | `POST /wishlist { id_product }` | katalog + detail |
+| Keranjang | `GET /cart`, `PUT/DELETE /cart/items/{id}`, `DELETE /cart`, voucher validate | `shop/cart.blade.php` |
+| Checkout | `GET /addresses`, `POST /vouchers/validate`, `POST /checkout` → `POST /orders/{id}/payment` → redirect Midtrans Snap | `shop/checkout.blade.php` |
+| Riwayat pesanan | `GET /orders?page&per_page`, bayar ulang via `POST /orders/{id}/payment`, beli-lagi via `POST /cart/items` | `customer/orders.blade.php` |
+| Buku alamat | CRUD `/addresses` (tambah/ubah/hapus via modal) | `customer/address.blade.php` |
+| Wishlist user | `GET /wishlist` (relasi `product.category/variants/images`), `DELETE /wishlist/{id}` | `customer/wishlist.blade.php` |
+| Sidebar akun | `GET /me` + logout di 3 halaman customer | orders/address/wishlist |
+
+### 🔜 Belum (butuh backend)
+- Sort katalog (`price_asc` dll) dan ongkir otomatis RajaOngkir (checkout masih pakai tarif estimasi manual) — backend belum selesai/dibutuhkan.
+- Login Google GIS — menyusul client ID disepakati.
+
+- **Helper global** ada di `resources/js/app.js` → `PandansariAPI.*`. Semua halaman cukup memanggil ini.
+- Token Sanctum disimpan di `localStorage` (kunci: `pandansari_token`) dari `data.token` response login, dikirim via header `Authorization: Bearer`. Profil user (`data.user`, diperbarui `GET /me`) tersimpan di `pandansari_user`.
+- **Base URL API** dari `VITE_API_URL` di `.env` (karena URL ngrok free berubah tiap restart tunnel). Fallback default: tunnel ngrok aktif.
+- Format respons backend: `{ success, message, data?, errors?, meta? }` — `ok` di helper = HTTP 2xx; pesan error sudah berbahasa Indonesia, langsung ditampilkan di UI.
+- Register backend TIDAK memakai OTP email — langsung aktif role `pelanggan` (API rev. Laravel). 401 → redirect `/login` otomatis di halaman keranjang/checkout/wishlist.
+
+## 6. Checklist Sebelum Merge
+
+- [ ] `npm run build` sukses
+- [ ] `php artisan view:cache` compile semua Blade tanpa error
+- [ ] Tidak mengubah `routes/web.php` dan `app/`
+- [ ] Komponen reusable baru ditaruh di `components/`, bukan inline duplikat

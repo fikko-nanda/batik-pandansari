@@ -3,24 +3,154 @@
 @section('content')
 <div class="bg-[#FAF8F5] min-h-screen py-6 font-['Plus_Jakarta_Sans']"
      x-data="{
+        // === State dari API ===
+        addresses: [],
+        selectedAddressId: null,
+        items: [],
+        voucher: null,           // hasil POST /vouchers/validate
+
+        // === State UI ===
+        loading: true,
+        needLogin: false,
+        errorMsg: '',
         selectedCourier: 'jne',
-        courierFee: 22000,
-        promoDiscount: 308800,
-        subtotal: 3080800,
+        biayaPengiriman: 22000,
+        catatan: '',
+        submitting: false,
+        submitMsg: '',
+        submitOk: false,
+        fallbackImage: '{{ asset('images/katalog1.webp') }}',
 
         couriers: [
-            { id: 'jne', name: 'JNE Reguler (REG)', price: 22000, est: 'Estimasi 2 – 3 Hari Kerja • Asuransi Penuh', badge: 'Recomended' },
-            { id: 'pos', name: 'POS Indonesia (Kilat Khusus)', price: 20000, est: 'Estimasi 2 – 4 Hari Kerja', badge: 'Termurah' },
-            { id: 'tiki', name: 'TIKI Reguler (REG)', price: 24000, est: 'Estimasi 2 – 3 Hari Kerja', badge: 'Paling Cepat' }
+            { id: 'jne', name: 'JNE Reguler (REG)', price: 22000, est: 'Estimasi 2 – 3 Hari Kerja' },
+            { id: 'pos', name: 'POS Indonesia (Kilat Khusus)', price: 20000, est: 'Estimasi 2 – 4 Hari Kerja' },
+            { id: 'tiki', name: 'TIKI Reguler (REG)', price: 24000, est: 'Estimasi 2 – 3 Hari Kerja' }
         ],
+
+        voucherCode: '',
+        voucherMsg: '',
+        voucherOk: false,
+        busyVoucher: false,
+
+        get selectedAddress() {
+            return this.addresses.find(a => a.id_user_address === this.selectedAddressId) ?? null;
+        },
+        get selectedCourierObj() {
+            return this.couriers.find(c => c.id === this.selectedCourier) ?? null;
+        },
+        get subtotal() {
+            return this.items.reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
+        },
+        get discountAmount() {
+            if (!this.voucher) return 0;
+            let d = this.voucher.tipe_diskon === 'persentase'
+                ? this.subtotal * Number(this.voucher.nilai_diskon) / 100
+                : Number(this.voucher.nilai_diskon);
+            if (this.voucher.maksimal_diskon) d = Math.min(d, Number(this.voucher.maksimal_diskon));
+            return Math.round(Math.min(d, this.subtotal));
+        },
+        get totalPembayaran() {
+            return Math.max(0, this.subtotal + Number(this.biayaPengiriman || 0) - this.discountAmount);
+        },
+        get itemCount() {
+            return this.items.reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
+        },
+
+        // === Helper render ===
+        formatRupiah(number) { return PandansariAPI.formatRp(number); },
+        titleOf(i) { return i.variant?.product?.nama_produk ?? 'Produk'; },
+        variantLabel(i) {
+            const v = i.variant;
+            if (!v) return '';
+            return [v.ukuran && ('Size ' + v.ukuran), v.warna].filter(Boolean).join(' • ');
+        },
+        priceOf(i) { return Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1); },
+        imageOf(i) {
+            const img = (i.variant?.product?.images ?? []).find(x => x.url);
+            return img?.url ?? this.fallbackImage;
+        },
 
         selectCourier(courier) {
             this.selectedCourier = courier.id;
-            this.courierFee = courier.price;
+            this.biayaPengiriman = courier.price;
         },
 
-        formatRupiah(number) {
-            return 'Rp ' + number.toLocaleString('id-ID');
+        // === Loader ===
+        async loadCart() {
+            const res = await PandansariAPI.cart();
+            if (res.ok) {
+                const cart = res.data ?? {};
+                this.items = cart.items ?? (Array.isArray(cart) ? cart : []);
+            } else if (res.status === 401) {
+                this.needLogin = true;
+            } else {
+                this.errorMsg = res.message;
+            }
+            return res;
+        },
+        async loadAddresses() {
+            const res = await PandansariAPI.addresses();
+            if (res.ok) {
+                this.addresses = res.data ?? [];
+                const utama = this.addresses.find(a => a.alamat_utama) ?? this.addresses[0];
+                if (utama) this.selectedAddressId = utama.id_user_address;
+            }
+            return res;
+        },
+        async applyVoucher() {
+            if (!this.voucherCode.trim()) return;
+            this.busyVoucher = true;
+            const res = await PandansariAPI.validateVoucher(this.voucherCode.trim().toUpperCase(), this.subtotal);
+            this.busyVoucher = false;
+            if (res.ok) {
+                this.voucher = res.data;
+                this.voucherOk = true;
+                this.voucherMsg = res.message;
+            } else {
+                this.voucher = null;
+                this.voucherOk = false;
+                this.voucherMsg = res.message;
+            }
+        },
+        hapusVoucher() { this.voucher = null; this.voucherMsg = ''; this.voucherOk = false; this.voucherCode = ''; },
+
+        // === Submit checkout → Midtrans Snap ===
+        async submit() {
+            if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
+            this.submitMsg = ''; this.submitOk = false;
+
+            if (!this.selectedAddressId) { this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.'; return; }
+            if (!this.items.length) { this.submitMsg = 'Keranjang Anda kosong.'; return; }
+
+            this.submitting = true;
+            const res = await PandansariAPI.checkout({
+                id_user_address: this.selectedAddressId,
+                kode_voucher: this.voucherCode.trim() || undefined,
+                biaya_pengiriman: Number(this.biayaPengiriman || 0) || undefined,
+                catatan: this.catatan.trim() || undefined,
+            });
+            if (!res.ok) {
+                this.submitting = false;
+                this.submitMsg = res.message;
+                return;
+            }
+
+            const order = res.data ?? {};
+            const pay = await PandansariAPI.payOrder(order.id_order ?? order.id);
+            this.submitting = false;
+
+            if (pay.ok && pay.data?.redirect_url) {
+                // Redirect ke halaman bayar Midtrans Snap (sandbox)
+                window.location.href = pay.data.redirect_url;
+            } else {
+                this.submitMsg = 'Pesanan ' + (order.nomor_pesanan ?? '') + ' dibuat, tetapi halaman pembayaran gagal dimuat. ' + (pay.message ?? '');
+                this.submitOk = false;
+            }
+        },
+
+        async init() {
+            await Promise.all([this.loadCart(), this.loadAddresses()]);
+            this.loading = false;
         }
      }">
 
@@ -72,66 +202,46 @@
                     </div>
 
                     <div class="space-y-3">
-                        <!-- Saved Address Dropdown -->
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Saved Addresses</label>
-                            <select class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                                <option value="1">Utama: Home Address</option>
-                                <option value="2">Kantor: Office Address</option>
-                            </select>
-                        </div>
-
-                        <!-- Country/Region -->
-                        <div>
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Country/Region</label>
-                            <select class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                                <option>Indonesia</option>
-                            </select>
-                        </div>
-
-                        <!-- First Name & Last Name -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <input type="text" value="Raden Arya" placeholder="Nama Depan" class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                        <!-- Status -->
+                        <template x-if="!loading && !addresses.length">
+                            <div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                                <span><i class="fa-solid fa-triangle-exclamation mr-1.5"></i> Anda belum memiliki alamat tersimpan.</span>
+                                <a href="/address" class="bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg whitespace-nowrap">TAMBAH ALAMAT</a>
                             </div>
-                            <div>
-                                <input type="text" value="Wijaya" placeholder="Nama Belakang" class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                            </div>
-                        </div>
+                        </template>
 
-                        <!-- Address Lines -->
-                        <div>
-                            <input type="text" value="Jl. Teuku Umar No. 18" placeholder="Alamat Jalan" class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                        </div>
-                        <div>
-                            <input type="text" value="Menteng Pavilion, Blok B" placeholder="Patokan / Catatan Alamat" class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                        </div>
+                        <!-- Saved Addresses (dari API, radio pilih) -->
+                        <template x-for="a in addresses" :key="a.id_user_address">
+                            <label class="flex items-start gap-3 p-3.5 rounded-xl border-2 transition cursor-pointer"
+                                   :class="selectedAddressId === a.id_user_address ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-200' : 'border-slate-200 hover:border-slate-300 bg-white'">
+                                <input type="radio" name="alamat" :value="a.id_user_address" :checked="selectedAddressId === a.id_user_address" @change="selectedAddressId = a.id_user_address" class="mt-0.5 text-sky-600 focus:ring-sky-500">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-bold text-[#0F1A24]" x-text="a.label_alamat"></span>
+                                        <span x-show="a.alamat_utama" class="text-[9px] bg-sky-100 text-[#0369A1] font-bold px-1.5 py-0.5 rounded uppercase">UTAMA</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-600 leading-relaxed mt-0.5">
+                                        <span x-text="a.nama_penerima"></span> • <span x-text="a.nomor_telepon"></span><br>
+                                        <span x-text="a.alamat_lengkap"></span>, <span x-text="a.nama_kecamatan"></span>, <span x-text="a.nama_kota"></span>, <span x-text="a.nama_provinsi"></span> <span x-text="a.kode_pos"></span>
+                                    </p>
+                                </div>
+                            </label>
+                        </template>
 
-                        <!-- City & Province & Postal Code -->
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div>
-                                <input type="text" value="Jakarta Pusat" placeholder="Kota/Kabupaten" class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                            </div>
-                            <div>
-                                <select class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                                    <option>DKI Jakarta</option>
-                                    <option>Jawa Barat</option>
-                                    <option>Jawa Tengah</option>
-                                </select>
-                            </div>
-                            <div>
-                                <input type="text" value="10310" placeholder="Kode Pos" class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                            </div>
-                        </div>
+                        <p class="text-[11px] text-slate-400 text-right">
+                            Kelola daftar alamat di <a href="/address" class="text-sky-600 font-bold hover:underline">/address</a> →
+                        </p>
 
-                        <!-- Phone -->
+                        <!-- Kondisi/Catatan (→ body checkout `catatan`) -->
                         <div>
-                            <input type="text" value="+62 812-3456-7890" placeholder="Nomor WhatsApp/HP" class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1">Patokan / Catatan Alamat (opsional)</label>
+                            <input type="text" x-model="catatan" placeholder="Patokan / catatan alamat..."
+                                   class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                         </div>
                     </div>
                 </div>
 
-                <!-- Box 2: Pilihan Layanan Ekspedisi (RajaOngkir) -->
+                <!-- Box 2: Pilihan Layanan Ekspedisi -->
                 <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
                     <div class="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div class="flex items-center gap-2 text-xs font-bold text-[#0F1A24]">
@@ -139,11 +249,11 @@
                             <span>Pilihan Layanan Ekspedisi</span>
                         </div>
                         <span class="text-[10px] bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md font-semibold">
-                            Berat: 685g (3 item)
+                            <span x-text="itemCount"></span> item
                         </span>
                     </div>
 
-                    <p class="text-[11px] text-slate-400">Tarif otomatis terverifikasi sistem logistik kurir.</p>
+                    <p class="text-[11px] text-slate-400">Tarif estimasi manual — integrasi RajaOngkir menyusul di backend.</p>
 
                     <div class="space-y-3">
                         <template x-for="c in couriers" :key="c.id">
@@ -155,7 +265,6 @@
                                     <div>
                                         <div class="flex items-center gap-2">
                                             <span class="text-xs font-bold text-[#0F1A24]" x-text="c.name"></span>
-                                            <span class="text-[9px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold uppercase" x-text="c.badge"></span>
                                         </div>
                                         <span class="text-[10px] text-slate-500 block mt-0.5" x-text="c.est"></span>
                                     </div>
@@ -212,27 +321,88 @@
                         </div>
                     </div>
 
-                    <!-- Promo Voucher Badge -->
-                    <div class="bg-sky-50/80 border border-sky-100 p-2.5 rounded-xl flex items-center justify-between text-xs text-sky-800 font-medium">
-                        <span class="flex items-center gap-1.5 font-bold text-[11px]">
-                            <i class="fa-solid fa-ticket text-sky-600"></i> PANDANSARIPRO10
-                        </span>
-                        <span class="font-bold text-sky-600 text-xs">- Rp 308.800</span>
+                    <!-- Status loading -->
+                    <template x-if="loading && !errorMsg">
+                        <div class="py-8 text-center"><i class="fa-solid fa-circle-notch fa-spin text-xl text-sky-500"></i><p class="text-xs text-slate-500 mt-3 font-semibold">Memuat data checkout…</p></div>
+                    </template>
+                    <template x-if="needLogin">
+                        <div class="bg-sky-50 border border-sky-200 text-[#0369A1] text-xs font-semibold rounded-xl px-4 py-3 flex items-center justify-between gap-2">
+                            <span><i class="fa-solid fa-lock mr-1"></i> Silakan masuk terlebih dahulu.</span>
+                            <a href="/login" class="bg-[#0F1A24] text-white px-3 py-1.5 rounded-lg text-[11px] font-bold">MASUK</a>
+                        </div>
+                    </template>
+                    <template x-if="errorMsg">
+                        <div class="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl px-4 py-3">
+                            <span x-text="errorMsg"></span>
+                        </div>
+                    </template>
+
+                    <div x-show="!loading && !needLogin">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <h2 class="text-sm font-bold text-[#0F1A24]">Ringkasan Pesanan <span class="text-xs text-slate-400 font-normal">(<span x-text="itemCount"></span> Item)</span></h2>
+                        <a href="/cart" class="text-xs font-bold text-sky-600 hover:underline">Ubah Item</a>
+                    </div>
+
+                    <!-- Items List -->
+                    <div class="space-y-3 max-h-[260px] overflow-y-auto pr-1 mt-3">
+                        <template x-for="item in items" :key="item.id_cart_item">
+                            <div class="flex items-center gap-3 text-xs">
+                                <img :src="imageOf(item)" class="w-12 h-14 object-cover rounded-lg border border-slate-100 shrink-0 bg-slate-100" :onerror="`this.src='${fallbackImage}'`">
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="font-bold text-[#0F1A24] truncate" x-text="titleOf(item)"></h4>
+                                    <p class="text-[10px] text-slate-400 truncate" x-text="variantLabel(item)"></p>
+                                    <span class="font-bold text-[#0F1A24] text-xs block mt-0.5" x-text="formatRupiah(priceOf(item))"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Voucher -->
+                    <div class="mt-3 space-y-2">
+                        <div class="flex items-center gap-2">
+                            <div class="relative flex-1">
+                                <i class="fa-solid fa-tag absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                                <input type="text" x-model="voucherCode" @keydown.enter="applyVoucher()" placeholder="Kode voucher..."
+                                       class="w-full pl-7 pr-2 py-2 text-[11px] font-mono uppercase font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            </div>
+                            <button type="button" @click="applyVoucher()" :disabled="busyVoucher"
+                                    class="bg-[#0F1A24] text-white text-[11px] font-bold px-3 py-2 rounded-xl cursor-pointer disabled:opacity-60">
+                                <span x-show="!busyVoucher">CEK</span>
+                                <span x-show="busyVoucher"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+                            </button>
+                        </div>
+                        <p x-show="voucherMsg" class="text-[10px] font-semibold flex items-center gap-1"
+                           :class="voucherOk ? 'text-emerald-600' : 'text-rose-600'">
+                            <i :class="voucherOk ? 'fa-solid fa-circle-check' : 'fa-solid fa-triangle-exclamation'"></i>
+                            <span x-text="voucherMsg"></span>
+                        </p>
+                        <button type="button" x-show="voucher" @click="hapusVoucher()"
+                                class="w-full bg-sky-50/80 border border-sky-100 p-2 rounded-xl flex items-center justify-between text-xs text-sky-800 font-medium cursor-pointer"></think>Perbaikan kecil — tag penutup `</button>` diakhiri:<tool_call>edit<arg_key>newString</arg_key><arg_value>                        <button type="button" x-show="voucher" @click="hapusVoucher()"
+                                class="w-full bg-sky-50/80 border border-sky-100 p-2 rounded-xl flex items-center justify-between text-xs text-sky-800 font-medium cursor-pointer">
+                            <span class="flex items-center gap-1.5 font-bold text-[11px]">
+                                <i class="fa-solid fa-ticket text-sky-600"></i>
+                                <span x-text="voucher?.nama_voucher ?? 'VOUCHER'"></span>
+                            </span>
+                            <span class="flex items-center gap-1 font-bold text-sky-600 text-xs">
+                                <span x-text="'- ' + formatRupiah(discountAmount)"></span>
+                                <i class="fa-solid fa-xmark text-slate-400"></i>
+                            </span>
+                        </button>
                     </div>
 
                     <!-- Breakdown Table -->
-                    <div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-3">
+                    <div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-3 mt-3">
                         <div class="flex justify-between">
-                            <span>Subtotal (3 item)</span>
-                            <span class="font-semibold text-[#0F1A24]">Rp 3.080.800</span>
+                            <span>Subtotal (<span x-text="itemCount"></span> item)</span>
+                            <span class="font-semibold text-[#0F1A24]" x-text="formatRupiah(subtotal)"></span>
                         </div>
                         <div class="flex justify-between">
-                            <span>Ongkos Kirim (JNE Reguler)</span>
-                            <span class="font-semibold text-[#0F1A24]" x-text="formatRupiah(courierFee)"></span>
+                            <span>Ongkos Kirim (<span x-text="selectedCourierObj?.name ?? '-'"></span>)</span>
+                            <span class="font-semibold text-[#0F1A24]" x-text="formatRupiah(biayaPengiriman)"></span>
                         </div>
-                        <div class="flex justify-between text-red-500">
-                            <span>Diskon HakPrivilege Wasim</span>
-                            <span class="font-semibold">- Rp 308.800</span>
+                        <div class="flex justify-between" x-show="voucher" :class="voucher ? 'text-rose-500' : 'text-slate-400'">
+                            <span>Diskon Voucher</span>
+                            <span class="font-semibold" x-text="'- ' + formatRupiah(discountAmount)"></span>
                         </div>
                     </div>
 
@@ -241,15 +411,23 @@
                         <div class="flex justify-between items-baseline mb-4">
                             <div>
                                 <span class="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">TOTAL PEMBAYARAN</span>
-                                <span class="text-xs text-slate-400">Termasuk Pajak & Asuransi</span>
+                                <span class="text-xs text-slate-400">Dihitung backend saat checkout</span>
                             </div>
-                            <span class="text-xl font-bold text-[#0F1A24]" x-text="formatRupiah(subtotal + courierFee - promoDiscount)"></span>
+                            <span class="text-xl font-bold text-[#0F1A24]" x-text="formatRupiah(totalPembayaran)"></span>
                         </div>
 
-                        <!-- CTA Button to Midtrans Payment -->
-                        <a href="/checkout/payment" class="w-full bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] font-bold text-xs py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm">
-                            <span>LANJUT KE PEMBAYARAN MIDTRANS →</span>
-                        </a>
+                        <!-- Pesan hasil submit -->
+                        <p x-show="submitMsg && !submitOk" class="text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 mb-3">
+                            <i class="fa-solid fa-triangle-exclamation mr-1"></i><span x-text="submitMsg"></span>
+                        </p>
+
+                        <!-- CTA Button: POST /checkout → POST /orders/{id}/payment → redirect Midtrans Snap -->
+                        <button type="button" :disabled="submitting" @click="submit()"
+                                class="w-full bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] font-bold text-xs py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60">
+                            <span x-show="!submitting">LANJUT KE PEMBAYARAN MIDTRANS →</span>
+                            <span x-show="submitting"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> MEMBUAT PESANAN…</span>
+                        </button>
+                    </div>
                     </div>
 
                 </div>

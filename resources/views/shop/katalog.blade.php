@@ -2,34 +2,99 @@
 
 @section('content')
 
-    <!-- Container Utama Katalog dengan Alpine.js Data Binding Interaktif -->
+    <!-- Container Utama Katalog dengan Alpine.js Data Binding Interaktif (data dari GET /api) -->
     <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
-         x-data="{ 
-            selectedCategory: 'pria',
+         x-data="{
+            selectedCategory: '',
             searchQuery: '',
             sortBy: 'terpopuler',
             viewMode: 'grid',
-            
-            categories: {
-                '': { label: 'Semua Koleksi', count: 114 },
-                'pria': { label: 'Pakaian Pria', count: 18 },
-                'wanita': { label: 'Pakaian Wanita', count: 16 },
-                'anak': { label: 'Pakaian Anak-Anak', count: 12 },
-                'tulis': { label: 'Batik Tulis', count: 14 },
-                'cap': { label: 'Batik Cap', count: 32 },
-                'handprint': { label: 'Bahan Handprint', count: 8 },
-                'sarimbit': { label: 'Sarimbit', count: 8 },
-                'kain': { label: 'Kain Tradisional', count: 10 }
+
+            // --- State dari API ---
+            categories: [],       // GET /api/categories → [{ id_category, nama_kategori }]
+            products: [],         // GET /api/products → data
+            loading: true,
+            errorMsg: '',
+            page: 1,
+            perPage: 12,
+            total: 0,
+            lastPage: 1,
+            wishlisted: {},
+            fallbackImage: '{{ asset('images/katalog1.webp') }}',
+
+            get activeCategoryLabel() {
+                const c = this.categories.find(c => c.id_category === this.selectedCategory);
+                return c ? c.nama_kategori : 'Semua Koleksi';
             },
-            
+
+            // --- Loader ---
+            async loadProducts(page = 1) {
+                this.loading = true;
+                this.errorMsg = '';
+                const res = await PandansariAPI.products({
+                    search: this.searchQuery,
+                    category: this.selectedCategory,
+                    page: page,
+                    per_page: this.perPage,
+                });
+                this.loading = false;
+                if (res.ok) {
+                    this.products = res.data ?? [];
+                    this.total = res.meta?.total ?? this.products.length;
+                    this.lastPage = res.meta?.last_page ?? 1;
+                    this.page = res.meta?.current_page ?? page;
+                } else {
+                    this.products = [];
+                    this.errorMsg = res.message;
+                }
+            },
+            async loadCategories() {
+                const res = await PandansariAPI.categories();
+                if (res.ok) this.categories = res.data ?? [];
+            },
+
+            // --- Helper kartu produk ---
+            coverOf(p) {
+                const img = (p.images ?? []).find(i => i.url);
+                return img?.url ?? this.fallbackImage;
+            },
+            priceOf(p) {
+                const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);
+                if (!v.length) return 'Lihat Detail';
+                return PandansariAPI.formatRp(Math.min(...v.map(x => Number(x.harga))));
+            },
+            sizesOf(p) {
+                const v = (p.variants ?? []).map(x => x.ukuran).filter(Boolean);
+                return v.length ? [...new Set(v)].join(', ') : '';
+            },
+            async toggleWishlist(p) {
+                if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
+                if (this.wishlisted[p.id_product]) return;
+                const res = await PandansariAPI.addWishlist(p.id_product);
+                if (res.ok || res.status === 422) this.wishlisted[p.id_product] = true; // 422 = sudah ada
+                else this.errorMsg = res.message;
+            },
+
+            // --- Aksi filter ---
             selectCategory(key) {
                 this.selectedCategory = key;
+                this.loadProducts(1);
             },
             clearCategory() {
-                this.selectedCategory = '';
+                this.selectCategory('');
             },
             clearSearch() {
                 this.searchQuery = '';
+                this.loadProducts(1);
+            },
+            gotoPage(n) {
+                if (n < 1 || n > this.lastPage || n === this.page) return;
+                this.loadProducts(n);
+                document.querySelector('input[placeholder*=\"Cari kata kunci\"]')?.blur();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+            async init() {
+                await Promise.all([this.loadCategories(), this.loadProducts(1)]);
             }
          }">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
@@ -40,7 +105,7 @@
                 <span>/</span>
                 <a href="/katalog" class="hover:text-slate-900 transition">Katalog Mahakarya Wastra</a>
                 <span>/</span>
-                <span class="text-slate-900 font-bold" x-text="categories[selectedCategory] ? categories[selectedCategory].label : 'Semua Koleksi'">Kemeja Busana Pria</span>
+                <span class="text-slate-900 font-bold" x-text="activeCategoryLabel">Semua Koleksi</span>
             </nav>
 
             <!-- 2. Page Header Title & Subtitle -->
@@ -77,11 +142,13 @@
             <!-- Pencarian Kata Kunci Motif / Produk -->
             <div class="relative w-full mb-4">
                 <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                <input type="text" 
+                <input type="text"
                        x-model="searchQuery"
-                       placeholder="Cari kata kunci motif, kain, sarimbit, warna di katalog..." 
+                       @input.debounce.500ms="if (page === 1) { loadProducts(1) } else { page = 1; loadProducts(1) }"
+                       placeholder="Cari kata kunci motif, kain, sarimbit, warna di katalog..."
                        class="w-full pl-11 pr-20 sm:pr-24 py-2.5 sm:py-3 text-xs sm:text-sm bg-white border border-slate-200 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500 font-['Plus_Jakarta_Sans'] placeholder:text-slate-400">
-                <button type="button" 
+                <button type="button"
+                        @click="loadProducts(1)"
                         class="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 bg-[#0F1A24] text-white text-[11px] sm:text-xs font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl hover:bg-slate-800 transition font-['Plus_Jakarta_Sans']">
                     Cari
                 </button>
@@ -89,13 +156,21 @@
 
             <!-- 4. Filter Category Pills (Rapi Flex-Wrap Tanpa Geser) -->
             <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-4 sm:mb-6 text-[11px] sm:text-xs font-semibold font-['Plus_Jakarta_Sans']">
-                <template x-for="(cat, key) in categories" :key="key">
-                    <button @click="selectCategory(key)" 
+                <!-- Pill: Semua (tanpa filter kategori) -->
+                <button @click="clearCategory()"
+                        type="button"
+                        class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border transition whitespace-nowrap shadow-sm font-['Plus_Jakarta_Sans'] cursor-pointer"
+                        :class="selectedCategory === '' ? 'bg-[#BAE6FD] text-[#0F1A24] font-bold border-sky-300' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'">
+                    <span x-show="selectedCategory === ''">✓ </span> Semua Koleksi
+                </button>
+                <!-- Pill dari API: GET /api/categories -->
+                <template x-for="cat in categories" :key="cat.id_category">
+                    <button @click="selectCategory(cat.id_category)"
                             type="button"
                             class="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border transition whitespace-nowrap shadow-sm font-['Plus_Jakarta_Sans'] cursor-pointer"
-                            :class="selectedCategory === key ? 'bg-[#BAE6FD] text-[#0F1A24] font-bold border-sky-300' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'">
-                        <span x-show="selectedCategory === key">✓ </span>
-                        <span x-text="cat.label + ' (' + cat.count + ')'"></span>
+                            :class="selectedCategory === cat.id_category ? 'bg-[#BAE6FD] text-[#0F1A24] font-bold border-sky-300' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'">
+                        <span x-show="selectedCategory === cat.id_category">✓ </span>
+                        <span x-text="cat.nama_kategori"></span>
                     </button>
                 </template>
             </div>
@@ -106,13 +181,13 @@
                 <!-- Applied Filter Tags -->
                 <div class="flex flex-wrap items-center gap-2 text-xs">
                     <span class="text-slate-500 font-medium text-[11px] sm:text-xs">
-                        Menampilkan <span class="font-bold text-slate-900" x-text="categories[selectedCategory] ? categories[selectedCategory].count : 114"></span> Mahakarya Busana:
+                        Menampilkan <span class="font-bold text-slate-900" x-text="total"></span> Mahakarya Busana:
                     </span>
 
                     <!-- Tag Kategori Aktif -->
                     <template x-if="selectedCategory !== ''">
                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 border border-slate-200 rounded-md text-slate-800 font-bold transition-all duration-200 text-[11px] sm:text-xs">
-                            <span x-text="categories[selectedCategory].label"></span>
+                            <span x-text="activeCategoryLabel"></span>
                             <button @click="clearCategory()" 
                                     type="button" 
                                     class="hover:text-red-500 font-bold ml-0.5 text-slate-500 hover:bg-slate-200 rounded px-1 transition">
@@ -169,319 +244,54 @@
             <div class="grid gap-3 sm:gap-6 mb-10"
                  :class="viewMode === 'grid' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'">
 
-                <!-- Item 1: Kemeja Pria Parang Seling Indigo -->
-                <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
-                    <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
-                        <img src="{{ asset('images/katalog1.webp') }}" alt="Kemeja Pria" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
-                        
-                        <span class="absolute top-2 left-2 sm:top-3 sm:left-3 bg-[#BAE6FD] text-[#0F1A24] text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded sm:rounded-md uppercase tracking-wide shadow-sm z-10">
-                            PAKAIAN PRIA
-                        </span>
-                        
-                        <button class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10">
-                            <i class="fa-regular fa-heart text-[10px] sm:text-xs"></i>
-                        </button>
-
-                        <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4">
-                            <a href="#" class="bg-white/95 text-[#0F1A24] hover:bg-[#0F1A24] hover:text-white text-[11px] font-bold px-3.5 py-2 rounded-xl shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                                Detail Produk
-                            </a>
-                        </div>
-                    </div>
-                    <div class="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5 line-clamp-1">
-                                PAKAIAN PRIA • BATIK TULIS SOLO
-                            </span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2">
-                                Kemeja Pria Parang Seling Indigo
-                            </h3>
-                            <p class="text-xs text-slate-500 line-clamp-2 hidden sm:block">
-                                Kemeja pria motif pakem parang seling...
-                            </p>
-                        </div>
-                        <div class="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span class="font-bold text-[#0F1A24] text-xs sm:text-base">Rp 1.350.000</span>
-                            <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto">
-                                M, L, XL
-                            </span>
-                        </div>
-                    </div>
+            <!-- State API: Skeleton / Error / Kosong -->
+            <template x-if="loading">
+                <div class="col-span-full h-56 flex items-center justify-center text-slate-400 text-xs font-semibold font-['Plus_Jakarta_Sans']">
+                    <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Memuat katalog dari server…
                 </div>
+            </template>
 
-                <!-- Item 2: Tunik Batik Pesisir Cheongsam -->
-                <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
-                    <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
-                        <img src="{{ asset('images/katalog2.webp') }}" alt="Tunik Cheongsam" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
-                        <span class="absolute top-2 left-2 sm:top-3 sm:left-3 bg-[#BAE6FD] text-[#0F1A24] text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded sm:rounded-md uppercase tracking-wide shadow-sm z-10">
-                            PAKAIAN WANITA
-                        </span>
-                        <button class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10">
-                            <i class="fa-regular fa-heart text-[10px] sm:text-xs"></i>
-                        </button>
-                        <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4">
-                            <a href="#" class="bg-white/95 text-[#0F1A24] hover:bg-[#0F1A24] hover:text-white text-[11px] font-bold px-3.5 py-2 rounded-xl shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                                Detail Produk
-                            </a>
-                        </div>
-                    </div>
-                    <div class="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5 line-clamp-1">
-                                PAKAIAN WANITA • CHEONGSAM MODERN
-                            </span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2">
-                                Tunik Batik Pesisir Cheongsam
-                            </h3>
-                            <p class="text-xs text-slate-500 line-clamp-2 hidden sm:block">
-                                Siluet tunik kerah shanghai dengan motif...
-                            </p>
-                        </div>
-                        <div class="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span class="font-bold text-[#0F1A24] text-xs sm:text-base">Rp 1.280.000</span>
-                            <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto">
-                                S, M, L
-                            </span>
-                        </div>
-                    </div>
+            <template x-if="!loading && errorMsg">
+                <div class="col-span-full bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl px-4 py-3 flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span x-text="errorMsg"></span>
                 </div>
+            </template>
 
-                <!-- Item 3: Dress Anak Bunga Sekar Navy -->
-                <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
-                    <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
-                        <img src="{{ asset('images/katalog1.webp') }}" alt="Dress Anak" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
-                        <span class="absolute top-2 left-2 sm:top-3 sm:left-3 bg-[#BAE6FD] text-[#0F1A24] text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded sm:rounded-md uppercase tracking-wide shadow-sm z-10">
-                            PAKAIAN ANAK-ANAK
-                        </span>
-                        <button class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10">
-                            <i class="fa-regular fa-heart text-[10px] sm:text-xs"></i>
-                        </button>
-                        <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4">
-                            <a href="#" class="bg-white/95 text-[#0F1A24] hover:bg-[#0F1A24] hover:text-white text-[11px] font-bold px-3.5 py-2 rounded-xl shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                                Detail Produk
-                            </a>
-                        </div>
-                    </div>
-                    <div class="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5 line-clamp-1">
-                                PAKAIAN ANAK-ANAK • DRESS KATUN
-                            </span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2">
-                                Dress Anak Bunga Sekar Navy
-                            </h3>
-                            <p class="text-xs text-slate-500 line-clamp-2 hidden sm:block">
-                                Gaun anak bahan katun primisima lembut...
-                            </p>
-                        </div>
-                        <div class="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span class="font-bold text-[#0F1A24] text-xs sm:text-base">Rp 450.000</span>
-                            <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto">
-                                2-8 Thn
-                            </span>
-                        </div>
-                    </div>
+            <template x-if="!loading && !errorMsg && products.length === 0">
+                <div class="col-span-full text-center py-16 text-slate-500 text-xs font-medium font-['Plus_Jakarta_Sans']">
+                    <i class="fa-regular fa-face-frown text-2xl block mb-3 text-slate-300"></i>
+                    Tidak ada produk yang cocok dengan pencarian atau filter yang dipilih.
                 </div>
+            </template>
 
-                <!-- Item 4: Megamendung Indigo Silk -->
-                <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
-                    <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
-                        <img src="{{ asset('images/katalog2.webp') }}" alt="Kain Megamendung" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
-                        <span class="absolute top-2 left-2 sm:top-3 sm:left-3 bg-[#BAE6FD] text-[#0F1A24] text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded sm:rounded-md uppercase tracking-wide shadow-sm z-10">
-                            HANDPRINT
-                        </span>
-                        <button class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10">
-                            <i class="fa-regular fa-heart text-[10px] sm:text-xs"></i>
-                        </button>
-                        <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4">
-                            <a href="#" class="bg-white/95 text-[#0F1A24] hover:bg-[#0F1A24] hover:text-white text-[11px] font-bold px-3.5 py-2 rounded-xl shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                                Detail Produk
-                            </a>
-                        </div>
-                    </div>
-                    <div class="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5 line-clamp-1">
-                                CIREBON • MEGAMENDUNG
-                            </span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2">
-                                Megamendung Indigo Silk
-                            </h3>
-                            <p class="text-xs text-slate-500 line-clamp-2 hidden sm:block">
-                                Gradasi biru teduh indigo khas dengan...
-                            </p>
-                        </div>
-                        <div class="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span class="font-bold text-[#0F1A24] text-xs sm:text-base">Rp 1.480.000</span>
-                            <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto">
-                                XL, LL
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Item 5: Sekar Jagad Pesisir Royal -->
-                <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
-                    <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
-                        <img src="{{ asset('images/hero-bg.jpg') }}" alt="Sekar Jagad" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
-                        <span class="absolute top-2 left-2 sm:top-3 sm:left-3 bg-[#EE4D2D] text-white text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded sm:rounded-md uppercase tracking-wide shadow-sm z-10">
-                            BATIK TULIS
-                        </span>
-                        <button class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10">
-                            <i class="fa-regular fa-heart text-[10px] sm:text-xs"></i>
-                        </button>
-                        <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4">
-                            <a href="#" class="bg-white/95 text-[#0F1A24] hover:bg-[#0F1A24] hover:text-white text-[11px] font-bold px-3.5 py-2 rounded-xl shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                                Detail Produk
-                            </a>
-                        </div>
-                    </div>
-                    <div class="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5 line-clamp-1">
-                                PEKALONGAN • SEKAR JAGAD
-                            </span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2">
-                                Sekar Jagad Pesisir Royal
-                            </h3>
-                            <p class="text-xs text-slate-500 line-clamp-2 hidden sm:block">
-                                Kain seni corak mosaik nusantara klasik...
-                            </p>
-                        </div>
-                        <div class="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span class="font-bold text-[#0F1A24] text-xs sm:text-base">Rp 1.150.000</span>
-                            <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto">
-                                Ukuran: L
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Item 6: Blouse Batik Cap -->
-                <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
-                    <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
-                        <img src="{{ asset('images/katalog1.webp') }}" alt="Blouse Batik Cap" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
-                        <span class="absolute top-2 left-2 sm:top-3 sm:left-3 bg-[#BAE6FD] text-[#0F1A24] text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded sm:rounded-md uppercase tracking-wide shadow-sm z-10">
-                            PAKAIAN WANITA
-                        </span>
-                        <button class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10">
-                            <i class="fa-regular fa-heart text-[10px] sm:text-xs"></i>
-                        </button>
-                        <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4">
-                            <a href="#" class="bg-white/95 text-[#0F1A24] hover:bg-[#0F1A24] hover:text-white text-[11px] font-bold px-3.5 py-2 rounded-xl shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                                Detail Produk
-                            </a>
-                        </div>
-                    </div>
-                    <div class="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5 line-clamp-1">
-                                PAKAIAN WANITA • BATIK CAP
-                            </span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2">
-                                Blouse Batik Cap
-                            </h3>
-                            <p class="text-xs text-slate-500 line-clamp-2 hidden sm:block">
-                                Blouse batik cap modern wanita motif khas...
-                            </p>
-                        </div>
-                        <div class="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span class="font-bold text-[#0F1A24] text-xs sm:text-base">Rp 1.190.000</span>
-                            <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto">
-                                S, M, L
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Item 7: Kemeja Sutra Parang Kencana -->
-                <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
-                    <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
-                        <img src="{{ asset('images/katalog2.webp') }}" alt="Kemeja Sutra" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
-                        <span class="absolute top-2 left-2 sm:top-3 sm:left-3 bg-[#BAE6FD] text-[#0F1A24] text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded sm:rounded-md uppercase tracking-wide shadow-sm z-10">
-                            PAKAIAN PRIA
-                        </span>
-                        <button class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10">
-                            <i class="fa-regular fa-heart text-[10px] sm:text-xs"></i>
-                        </button>
-                        <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4">
-                            <a href="#" class="bg-white/95 text-[#0F1A24] hover:bg-[#0F1A24] hover:text-white text-[11px] font-bold px-3.5 py-2 rounded-xl shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                                Detail Produk
-                            </a>
-                        </div>
-                    </div>
-                    <div class="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5 line-clamp-1">
-                                PAKAIAN PRIA • SUTRA HALUS
-                            </span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2">
-                                Kemeja Sutra Parang Kencana
-                            </h3>
-                            <p class="text-xs text-slate-500 line-clamp-2 hidden sm:block">
-                                Kemeja sutra lembut dengan motif parang...
-                            </p>
-                        </div>
-                        <div class="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span class="font-bold text-[#0F1A24] text-xs sm:text-base">Rp 1.450.000</span>
-                            <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto">
-                                M, L, XL
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Item 8: Kain Panjang Sogan Primissima -->
-                <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
-                    <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
-                        <img src="{{ asset('images/hero-bg.jpg') }}" alt="Kain Sogan" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
-                        <span class="absolute top-2 left-2 sm:top-3 sm:left-3 bg-[#BAE6FD] text-[#0F1A24] text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded sm:rounded-md uppercase tracking-wide shadow-sm z-10">
-                            BATIK CAP
-                        </span>
-                        <button class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10">
-                            <i class="fa-regular fa-heart text-[10px] sm:text-xs"></i>
-                        </button>
-                        <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4">
-                            <a href="#" class="bg-white/95 text-[#0F1A24] hover:bg-[#0F1A24] hover:text-white text-[11px] font-bold px-3.5 py-2 rounded-xl shadow-lg transform translate-y-3 group-hover:translate-y-0 transition-all duration-300">
-                                Detail Produk
-                            </a>
-                        </div>
-                    </div>
-                    <div class="p-2.5 sm:p-4 flex-1 flex flex-col justify-between">
-                        <div>
-                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5 line-clamp-1">
-                                KAIN TRADISIONAL • CAP TEMBAGA
-                            </span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2">
-                                Kain Panjang Sogan Primissima
-                            </h3>
-                            <p class="text-xs text-slate-500 line-clamp-2 hidden sm:block">
-                                Lembaran kain katun primisima siap jahit...
-                            </p>
-                        </div>
-                        <div class="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <span class="font-bold text-[#0F1A24] text-xs sm:text-base">Rp 850.000</span>
-                            <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto">
-                                Pjg: 2.4 m
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
+            <!-- Kartu Produk (data dari GET /api/products) -->
+            <template x-for="p in products" :key="p.id_product">
+                @include('components.shop.product-item')
+            </template>
             </div>
 
-            <!-- 7. Pagination Bar -->
+            <!-- 7. Pagination Bar (dari meta GET /api/products) -->
             <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-200/80 mb-12 font-['Plus_Jakarta_Sans']">
                 <span class="text-xs text-slate-500 text-center sm:text-left">
-                    Halaman <span class="font-bold text-slate-900">1</span> dari <span class="font-bold text-slate-900">4</span> (Menampilkan <span x-text="categories[selectedCategory] ? categories[selectedCategory].count : 114"></span> mahakarya)
+                    Halaman <span class="font-bold text-slate-900" x-text="page"></span> dari <span class="font-bold text-slate-900" x-text="lastPage"></span> (Menampilkan <span x-text="total"></span> mahakarya)
                 </span>
                 <div class="flex items-center gap-1.5 text-xs font-bold">
-                    <a href="#" class="w-8 h-8 rounded-lg bg-[#BAE6FD] text-[#0F1A24] flex items-center justify-center">1</a>
-                    <a href="#" class="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center">2</a>
-                    <a href="#" class="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center">3</a>
-                    <a href="#" class="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center">4</a>
-                    <span class="px-1 text-slate-400">...</span>
-                    <a href="#" class="px-3 h-8 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center">Berikutnya →</a>
+                    <button type="button" @click="gotoPage(page - 1)"
+                            class="px-3 h-8 rounded-lg flex items-center justify-center transition"
+                            :class="page > 1 ? 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer' : 'bg-slate-50 text-slate-300 cursor-not-allowed'">← Sebelumnya</button>
+
+                    <template x-for="n in Math.min(lastPage, Math.max(5, page + 2))" :key="n">
+                        <button type="button" @click="gotoPage(n)"
+                                class="w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition"
+                                :class="n === page ? 'bg-[#BAE6FD] text-[#0F1A24]' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'"
+                                x-show="n > Math.max(0, page - 3) && n <= Math.min(lastPage, page + 2)"
+                                x-text="n"></button>
+                    </template>
+
+                    <button type="button" @click="gotoPage(page + 1)"
+                            class="px-3 h-8 rounded-lg flex items-center justify-center transition"
+                            :class="page < lastPage ? 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer' : 'bg-slate-50 text-slate-300 cursor-not-allowed'">Berikutnya →</button>
                 </div>
             </div>
 

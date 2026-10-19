@@ -71,11 +71,61 @@
                     <span>WhatsApp CS</span>
                 </a>
 
-             <!-- User Profile Button (Menuju ke Halaman Profil Customer) -->
-                    <a href="/profile" 
-                    class="w-8 h-8 bg-black text-white rounded-full flex items-center justify-center text-xs hover:bg-slate-800 transition {{ request()->is('profile') || request()->is('orders') || request()->is('address') || request()->is('security') ? 'ring-2 ring-sky-500' : '' }}">
-                        <i class="fa-regular fa-user"></i>
-                    </a>
+             <!-- User Profile Button (status dari API: GET /me — dropdown profil/keluar) -->
+             <div class="relative" x-data="{
+                     open: false,
+                     logged: false,
+                     name: 'Pengguna',
+                     async init() {
+                         if (!PandansariAPI.getToken()) return;
+                         const res = await PandansariAPI.me();
+                         if (res.ok) {
+                             this.logged = true;
+                             this.name = res.data?.data?.nama_pengguna ?? res.data?.data?.name ?? res.data?.nama_pengguna ?? res.data?.name ?? 'Pengguna';
+                         } else {
+                             // Token usang tidak valid — bersihkan
+                             PandansariAPI.clearToken();
+                         }
+                     },
+                     async keluar() {
+                         // Coba cabut token di server lebih dulu, lalu selalu bersihkan token di sisi client
+                         await PandansariAPI.logout();
+                         PandansariAPI.clearToken();
+                         window.location.href = '/';
+                     }
+                 }" @click.outside="open = false">
+                 <button @click="open = !open" 
+                 class="w-8 h-8 bg-black text-white rounded-full flex items-center justify-center text-xs hover:bg-slate-800 transition {{ request()->is('profile') || request()->is('orders') || request()->is('address') || request()->is('security') ? 'ring-2 ring-sky-500' : '' }}">
+                     <i class="fa-regular" :class="logged ? 'fa-user-check' : 'fa-user'"></i>
+                 </button>
+
+                 <!-- Dropdown -->
+                 <div x-show="open" x-transition.opacity.duration.150ms
+                      class="absolute right-0 mt-2 w-52 bg-white border border-slate-200/80 rounded-xl shadow-lg py-2 z-50 font-['Plus_Jakarta_Sans']">
+                     
+                     <template x-if="logged">
+                         <div>
+                             <div class="px-4 py-2 border-b border-slate-100">
+                                 <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Masuk sebagai</p>
+                                 <p class="text-xs font-bold text-slate-800 truncate" x-text="name"></p>
+                             </div>
+                             <a href="/profile" class="block px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"><i class="fa-regular fa-user w-4 mr-1.5"></i>Profil Saya</a>
+                             <a href="/orders" class="block px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"><i class="fa-solid fa-box w-4 mr-1.5"></i>Pesanan Saya</a>
+                             <button @click="keluar()"
+                                     class="w-full text-left px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 border-t border-slate-100 mt-1">
+                                 <i class="fa-solid fa-arrow-right-from-bracket w-4 mr-1.5"></i> Keluar
+                             </button>
+                         </div>
+                     </template>
+
+                     <template x-if="!logged">
+                         <div>
+                             <a href="/login" class="block px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"><i class="fa-solid fa-arrow-right-to-bracket w-4 mr-1.5"></i> Masuk</a>
+                             <a href="/register" class="block px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"><i class="fa-regular fa-id-card w-4 mr-1.5"></i> Daftar</a>
+                         </div>
+                     </template>
+                 </div>
+             </div>
 
                 <!-- Mobile Hamburger Button -->
                 <button @click="mobileMenuOpen = !mobileMenuOpen" class="lg:hidden p-1.5 text-slate-800 hover:text-black">

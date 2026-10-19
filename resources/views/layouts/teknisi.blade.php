@@ -32,7 +32,7 @@
 
 
    <!-- SIDEBAR TEKNISI -->
-@include('teknisi.components.sidebar')
+    <x-teknisi.sidebar />
 
     <!-- MAIN CONTENT AREA -->
     <div class="flex-1 flex flex-col min-w-0">
