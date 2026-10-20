@@ -115,11 +115,17 @@ window.PandansariAPI = {
         const token = this.getToken();
         if (token) headers.Authorization = `Bearer ${token}`;
 
+        // Batas waktu tunggu: 30 detik biasa, 90 detik untuk upload (FormData) —
+        // supaya request yang menggantung ("pending" selamanya) berubah jadi pesan jelas.
+        const timeoutMs = (isForm || raw) ? 90000 : 30000;
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
             const res = await fetch(buildUrl(path), {
                 method,
                 headers,
                 body: body === null ? undefined : (raw || isForm ? body : JSON.stringify(body)),
+                signal: ctrl.signal,
             });
             let payload = null;
             try { payload = await res.json(); } catch { /* non-JSON */ }
@@ -132,10 +138,15 @@ window.PandansariAPI = {
                 errors: payload?.errors ?? {},
             };
         } catch (e) {
+            const timedOut = !!e && (e.name === 'AbortError' || e.name === 'TimeoutError');
             return {
                 ok: false, status: 0, data: null, meta: null, errors: {},
-                message: 'Tidak dapat menghubungi server. Pastikan tunnel backend (ngrok) aktif.',
+                message: timedOut
+                    ? `Server tidak merespons selama ${Math.round(timeoutMs / 1000)} detik (timeout). Kemungkinan koneksi lambat atau tunnel ngrok terputus — periksa lalu coba lagi.`
+                    : 'Tidak dapat menghubungi server. Pastikan tunnel backend (ngrok) aktif.',
             };
+        } finally {
+            clearTimeout(timer);
         }
     },
 
@@ -419,6 +430,29 @@ window.PandansariAPI = {
     formatRp(value) {
         const n = Number(value ?? 0);
         return 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
+    },
+
+    /**
+     * URL lengkap gambar dari field backend `path_gambar` (relatif, mis. "products/x.jpg").
+     * Backend menyimpan file di disk public → disajikan di {origin}/storage/{path}.
+     * Jika sudah absolut (http...), dikembalikan apa adanya.
+     */
+    imgUrl(path) {
+        const p = String(path ?? '').trim();
+        if (!p) return '';
+        if (/^https?:\/\//i.test(p)) return p;
+        const origin = API_URL.replace(/\/api\/?$/i, ''); // buang suffix /api
+        return origin + '/storage/' + p.replace(/^\/+/, '');
+    },
+
+    /**
+     * Ambil URL gambar utama dari daftar `images` produk.
+     * Utama = is_primary true, fallback elemen pertama. Kosong '' jika belum ada gambar.
+     */
+    coverUrl(images) {
+        const list = Array.isArray(images) ? images : [];
+        const img = list.find(x => x && x.is_primary) ?? list[0];
+        return this.imgUrl(img?.path_gambar ?? img?.url ?? '');
     },
 };
 

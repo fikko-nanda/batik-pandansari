@@ -28,9 +28,42 @@
     savingProduk: false,
     namaFoto: '',
 
+    // === Tambah/Ubah foto langsung dari tabel (tanpa modal) ===
+    fotoTarget: null,
+    uploadingFoto: false,
+    pilihFotoProduk(p) {
+        if (this.uploadingFoto) return; // jangan buka picker saat masih upload
+        this.fotoTarget = p;
+        this.$refs.inputFotoProduk.click();
+    },
+    async onFotoProdukPicked(e) {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        const target = this.fotoTarget;
+        this.fotoTarget = null;
+        if (!file || !target) return;
+        if (file.size > 2 * 1024 * 1024) {
+            this.pesan(false, 'Ukuran foto ' + (file.size / 1048576).toFixed(1) + ' MB melebihi batas 2 MB. Kompres foto dulu, lalu ulangi.');
+            return;
+        }
+        this.uploadingFoto = true;
+        this.pesan(true, 'Mengunggah foto ' + target.nama_produk + ' (' + (file.size / 1024).toFixed(0) + ' KB)… mohon tunggu.');
+        const fd = new FormData();
+        fd.append('gambar', file);
+        fd.append('is_primary', '1');
+        const up = await PandansariAPI.admin.addProductImage(target.id_product, fd);
+        this.uploadingFoto = false;
+        if (up.ok) this.pesan(true, 'Foto ' + target.nama_produk + ' berhasil diunggah dan tampil di katalog. ✔');
+        else {
+            const errs = Object.values(up.errors ?? {}).flat();
+            this.pesan(false, 'Foto GAGAL diunggah: ' + (errs[0] ?? up.message));
+        }
+        this.loadProduk();
+    },
+
     fmt(n) { return PandansariAPI.formatRp(n); },
     num(n) { return Number(n ?? 0).toLocaleString('id-ID'); },
-    coverOf(p) { return (p.images ?? []).find(i => i.url)?.url ?? '{{ asset('images/katalog1.webp') }}'; },
+    coverOf(p) { return PandansariAPI.coverUrl(p.images) || '{{ asset('images/katalog1.webp') }}'; },
     stokOf(p) {
         const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif');
         return v.reduce((s, x) => s + Number(x.stok ?? 0), 0);
@@ -39,7 +72,7 @@
         const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);
         return v.length ? Math.min(...v.map(x => Number(x.harga))) : null;
     },
-    pesan(ok, msg) { this.noticeOk = ok; this.notice = msg; setTimeout(() => this.notice = '', 4000); },
+    pesan(ok, msg) { this.noticeOk = ok; this.notice = msg; clearTimeout(this._t); this._t = setTimeout(() => this.notice = '', 8000); },
 
     async loadProduk() {
         this.loading = true;
@@ -56,7 +89,17 @@
     },
     async loadKategori() {
         const res = await PandansariAPI.categories();
-        if (res.ok) this.categories = res.data ?? [];
+        // buang kategori nonaktif (soft delete) + urut sesuai daftar toko
+        const URUT = ['Batik Tulis', 'Batik Cap', 'Bahan Handprint', 'Pakaian Wanita', 'Pakaian Pria', 'Pakaian Anak-Anak', 'Sarimbit'];
+        const list = (res.data ?? []).filter(c => c.status_aktif !== false);
+        list.sort((a, b) => {
+            const ia = URUT.indexOf(a.nama_kategori), ib = URUT.indexOf(b.nama_kategori);
+            if (ia === -1 && ib === -1) return (a.nama_kategori ?? '').localeCompare(b.nama_kategori ?? '');
+            if (ia === -1) return 1;
+            if (ib === -1) return -1;
+            return ia - ib;
+        });
+        this.categories = list;
     },
     setKategori(id) { this.selectedCategory = id; this.page = 1; this.loadProduk(); },
     goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadProduk(); },
@@ -81,6 +124,11 @@
     },
     async tambahProduk(form) {
         // form: { nama_produk, id_category, deskripsi?, harga, stok, file? }
+        // Validasi ukuran foto DULU sebelum membuat produk (batas backend: 2 MB)
+        if (form.file && form.file.size > 2 * 1024 * 1024) {
+            this.pesan(false, 'Ukuran foto ' + (form.file.size / 1048576).toFixed(1) + ' MB melebihi batas 2 MB. Kompres foto dulu, lalu ulangi.');
+            return;
+        }
         this.savingProduk = true;
         const res = await PandansariAPI.admin.createProduct({
             id_category: form.id_category,
@@ -99,17 +147,23 @@
                 stok: Number(form.stok ?? 0),
             });
         }
-        // upload gambar opsional
+        // upload gambar opsional — hasilnya DICEK supaya gagal tidak diam-diam
+        let fotoGagal = '';
         if (form.file) {
             const fd = new FormData();
             fd.append('gambar', form.file);
             fd.append('is_primary', '1');
-            await PandansariAPI.admin.addProductImage(produk.id_product, fd);
+            const up = await PandansariAPI.admin.addProductImage(produk.id_product, fd);
+            if (!up.ok) {
+                const errs = Object.values(up.errors ?? {}).flat();
+                fotoGagal = errs[0] ?? up.message;
+            }
         }
         this.savingProduk = false;
         this.showModalTambah = false;
         this.namaFoto = '';
-        this.pesan(true, 'Produk ' + produk.nama_produk + ' berhasil ditambahkan.');
+        if (fotoGagal) this.pesan(false, 'Produk ' + produk.nama_produk + ' tersimpan, TETAPI foto gagal diunggah: ' + fotoGagal);
+        else this.pesan(true, 'Produk ' + produk.nama_produk + ' berhasil ditambahkan.');
         this.loadProduk();
     },
 
@@ -198,11 +252,14 @@
         </div>
     </div>
 
-    <!-- Pesan -->
-    <div x-show="notice" x-cloak
-         class="text-xs font-bold rounded-xl px-4 py-3 border"
-         :class="noticeOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'"
-         x-text="notice"></div>
+    <!-- Pesan: toast melayang di pojok kanan atas — selalu terlihat dari posisi mana pun -->
+    <div x-show="notice" x-cloak x-transition
+         class="fixed top-4 right-4 z-[9999] max-w-md text-sm font-bold rounded-2xl px-5 py-4 shadow-2xl border flex items-start gap-3"
+         :class="noticeOk ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-rose-600 text-white border-rose-700'"
+         role="alert">
+        <i class="fa-solid mt-0.5" :class="noticeOk ? 'fa-circle-check' : 'fa-triangle-exclamation'"></i>
+        <span x-text="notice"></span>
+    </div>
 
     <!-- 2. STATS SUMMARY CARDS -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -277,7 +334,13 @@
                             <tr class="hover:bg-slate-50/80 transition">
                                 <td class="py-3.5 px-4">
                                     <div class="flex items-center gap-3">
-                                        <img :src="coverOf(p)" class="w-12 h-12 object-cover rounded-xl border border-slate-200 shrink-0 bg-slate-100">
+                                        <button type="button" @click="pilihFotoProduk(p)" :title="(p.images ?? []).length ? 'Ganti foto produk' : 'Tambah foto produk'"
+                                                class="relative shrink-0 group cursor-pointer rounded-xl">
+                                            <img :src="coverOf(p)" class="w-12 h-12 object-cover rounded-xl border border-slate-200 bg-slate-100">
+                                            <span class="absolute inset-0 rounded-xl bg-slate-950/55 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-sm">
+                                                <i class="fa-solid" :class="(p.images ?? []).length ? 'fa-camera' : 'fa-plus'"></i>
+                                            </span>
+                                        </button>
                                         <div class="space-y-0.5">
                                             <div class="flex items-center gap-2">
                                                 <span class="bg-[#0A192F] text-white text-[9px] font-bold px-1.5 py-0.5 rounded" x-text="(p.category?.nama_kategori ?? 'TANPA').toUpperCase()"></span>
@@ -306,6 +369,11 @@
                                     <div class="flex flex-col items-center gap-1">
                                         <button @click="editHarga(p)" class="bg-sky-100 hover:bg-sky-200 text-sky-800 text-[10px] font-bold px-2.5 py-1 rounded-lg w-24 transition cursor-pointer">Edit Harga</button>
                                         <button @click="loadVarian(p)" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold px-2.5 py-1 rounded-lg w-24 transition cursor-pointer">Lihat Varian</button>
+                                        <button @click="pilihFotoProduk(p)" :disabled="uploadingFoto"
+                                                class="bg-emerald-100 hover:bg-emerald-200 disabled:opacity-60 text-emerald-800 text-[10px] font-bold px-2.5 py-1 rounded-lg w-24 transition cursor-pointer inline-flex items-center justify-center gap-1">
+                                            <i class="fa-solid fa-spinner fa-spin" x-show="uploadingFoto"></i>
+                                            <span x-text="uploadingFoto ? 'Mengunggah…' : ((p.images ?? []).length ? 'Ubah Foto' : 'Tambah Foto')"></span>
+                                        </button>
                                         <button @click="nonaktifkan(p)" class="bg-rose-100 hover:bg-rose-200 text-rose-700 text-[10px] font-bold px-2.5 py-1 rounded-lg w-24 transition cursor-pointer">Nonaktifkan</button>
                                     </div>
                                 </td>
@@ -400,6 +468,10 @@
     </div>
 
     </div>
+
+    <!-- INPUT FILE tersembunyi: dipakai tombol Tambah/Ubah Foto di tabel -->
+    <input type="file" x-ref="inputFotoProduk" accept="image/jpeg,image/png,image/webp" class="hidden"
+           @change="onFotoProdukPicked($event)">
 
     <!-- MODAL: terima submit dari komponen (panggil tambahProduk) -->
     <x-admin.modal-add-product />

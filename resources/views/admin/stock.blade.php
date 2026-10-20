@@ -31,7 +31,7 @@
         return this.activeVariants(p).reduce((s, v) => s + Number(v.stok ?? 0), 0);
     },
     coverOf(p) {
-        return (p.images ?? []).find(i => i.url)?.url ?? '{{ asset('images/katalog1.webp') }}';
+        return PandansariAPI.coverUrl(p.images) || '{{ asset('images/katalog1.webp') }}';
     },
     statusInfo(p) {
         const t = this.totalStok(p);

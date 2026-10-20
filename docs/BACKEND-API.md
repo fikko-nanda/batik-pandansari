@@ -320,7 +320,11 @@ Catatan:
 | `is_primary` | boolean | nullable, jika true primary lain di-unset |
 | `urutan` | integer | nullable, min:0; default = max(urutan)+1; jika gambar pertama otomatis primary |
 
-Gambar disimpan di disk `public` (`storage/app/public/products/`). Response menyertakan `url` = `Storage::disk('public')->url(path_gambar)`.
+Gambar disimpan di disk `public` (`storage/app/public/products/`).
+
+> ⚠️ **Koreksi (probe live 20 Okt 2026):** respons **TIDAK menyertakan field `url`** — hanya `path_gambar` relatif (mis. `products/abc.jpg`). Frontend membangun URL lengkap sendiri: `{origin_backend}/storage/{path_gambar}` (lihat helper `PandansariAPI.imgUrl()`). Field respons: `id_image, id_product, path_gambar, alt_text, is_primary, urutan, dibuat_pada`.
+>
+> ⚠️ **Desain vs implementasi:** desain yang disampaikan tim frontend — "1 varian bisa punya banyak gambar" — **belum terimplementasi di API**: `product_images` menempel di `id_product` (bukan `id_variant`), dan objek varian di respons tidak punya `images`. Jika memang diinginkan per-varian, backend perlu menambah endpoint `POST /variants/{id}/images` (dst).
 
 Ordering response GET: `is_primary` desc, lalu `urutan` asc.
 
@@ -497,9 +501,16 @@ Status penggunaan voucher: `menunggu` | `digunakan` | `dibatalkan`.
   "id_user_address": "string (required)",
   "kode_voucher": "string (nullable, max:50)",
   "biaya_pengiriman": "numeric (nullable, min:0, max:9999999999.99)",
-  "catatan": "string (nullable)"
+  "catatan": "string (nullable)",
+  "kurir": "string (required — kode kurir, divalidasi enum backend)",
+  "layanan": "string (required — kode layanan, mis. REG/YES/OKE)"
 }
 ```
+
+> ⚠️ **Update live 20 Okt 2026 (probe):** backend kini mewajibkan `kurir` + `layanan` (422 `{"kurir":["The kurir field is required."]}` jika kosong). Temuan probe:
+> - `kurir` enum: **`tiki` diterima**, tapi **`jne` ditolak** `"The selected kurir is invalid."` — padahal `jne` berstatus `aktif: true` di `/admin/shipping/couriers`. Daftar enum checkout ≠ daftar kurir aktif → **perlu kesepakatan nilai enum** antara backend & frontend.
+> - Setelah `kurir` lolos, checkout gagal **422 `ALAMAT_TANPA_TUJUAN_RAJAONGKIR`** — resolusi tujuan RajaOngkir dari alamat user (kembug yang sama dengan `POST /shipping/cost` 422 `RAJAONGKIR_DESTINATION_NOT_FOUND`).
+> - Alur frontend setelah checkout sukses: `POST /orders/{id}/payment` → redirect `data.redirect_url` (Snap). Endpoint payment TERBUKTI bekerja (3 payment `menunggu` dengan `redirect_url` sandbox ada di DB) — jadi error "Snap" yang dikeluhkan terjadi HULUAN di `POST /checkout`, bukan di payment.
 
 **Proses (dalam transaksi DB):**
 1. Validasi alamat milik user → **404** jika tidak ada

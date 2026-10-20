@@ -48,8 +48,7 @@
                 return [v.nama_varian, v.warna && ('Warna: ' + v.warna), v.ukuran && ('Ukuran: ' + v.ukuran)].filter(Boolean).join(' • ');
             },
             imageOf(i) {
-                const img = (i.variant?.product?.images ?? []).find(x => x.url);
-                return img?.url ?? this.fallbackImage;
+                return PandansariAPI.coverUrl(i.variant?.product?.images) || this.fallbackImage;
             },
             formatRupiah(n) { return PandansariAPI.formatRp(n); },
 

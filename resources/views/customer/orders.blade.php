@@ -75,7 +75,6 @@
                     items: (o.items ?? []).map(it => {
                         const v = it.variant ?? {};
                         const p = v.product ?? {};
-                        const img = (p.images ?? []).find(x => x.url);
                         const harga = Number(v.harga ?? it.harga_satuan ?? it.harga ?? 0);
                         const ukuran = v.ukuran ?? it.ukuran;
                         const warna = v.warna ?? it.warna;
@@ -84,7 +83,7 @@
                             name: p.nama_produk ?? it.nama_produk ?? 'Produk',
                             variant: [ukuran && ('Ukuran ' + ukuran), warna, jumlah > 1 && (jumlah + ' pcs')].filter(Boolean).join(' • '),
                             price: harga * jumlah,
-                            image: img?.url ?? this.fallbackImage,
+                            image: PandansariAPI.coverUrl(p.images) || this.fallbackImage,
                             id_variant: v.id_variant ?? it.id_variant,
                         };
                     }),

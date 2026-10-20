@@ -75,8 +75,7 @@
         },
         priceOf(i) { return Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1); },
         imageOf(i) {
-            const img = (i.variant?.product?.images ?? []).find(x => x.url);
-            return img?.url ?? this.fallbackImage;
+            return PandansariAPI.coverUrl(i.variant?.product?.images) || this.fallbackImage;
         },
 
         get selectedCourier() {
@@ -203,11 +202,16 @@
             if (!this.items.length) { this.submitMsg = 'Keranjang Anda kosong.'; return; }
 
             this.submitting = true;
+            // kurir + layanan dari pilihan user (wajib — divalidasi backend)
+            const kurirDipilih = this.serviceTerpilih?.kurir ?? this.selectedCourierId ?? 'jne';
+            const layananDipilih = this.serviceTerpilih?.service ?? String(kurirDipilih).toUpperCase();
             const res = await PandansariAPI.checkout({
                 id_user_address: this.selectedAddressId,
                 kode_voucher: this.voucherCode.trim() || undefined,
                 biaya_pengiriman: Number(this.biayaPengiriman || 0) || undefined,
                 catatan: this.catatan.trim() || undefined,
+                kurir: kurirDipilih,
+                layanan: layananDipilih,
             });
             if (!res.ok) {
                 this.submitting = false;

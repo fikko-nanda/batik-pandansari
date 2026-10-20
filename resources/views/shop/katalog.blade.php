@@ -50,13 +50,22 @@
             },
             async loadCategories() {
                 const res = await PandansariAPI.categories();
-                if (res.ok) this.categories = res.data ?? [];
+                // buang kategori nonaktif + urut sesuai daftar toko
+                const URUT = ['Batik Tulis', 'Batik Cap', 'Bahan Handprint', 'Pakaian Wanita', 'Pakaian Pria', 'Pakaian Anak-Anak', 'Sarimbit'];
+                const list = (res.data ?? []).filter(c => c.status_aktif !== false);
+                list.sort((a, b) => {
+                    const ia = URUT.indexOf(a.nama_kategori), ib = URUT.indexOf(b.nama_kategori);
+                    if (ia === -1 && ib === -1) return (a.nama_kategori ?? '').localeCompare(b.nama_kategori ?? '');
+                    if (ia === -1) return 1;
+                    if (ib === -1) return -1;
+                    return ia - ib;
+                });
+                this.categories = list;
             },
 
             // --- Helper kartu produk ---
             coverOf(p) {
-                const img = (p.images ?? []).find(i => i.url);
-                return img?.url ?? this.fallbackImage;
+                return PandansariAPI.coverUrl(p.images) || this.fallbackImage;
             },
             priceOf(p) {
                 const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);

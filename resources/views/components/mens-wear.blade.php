@@ -8,8 +8,7 @@
 
             // --- Helper kartu (sama seperti katalog) ---
             coverOf(p) {
-                const img = (p.images ?? []).find(i => i.url);
-                return img?.url ?? this.fallbackImage;
+                return PandansariAPI.coverUrl(p.images) || this.fallbackImage;
             },
             priceOf(p) {
                 const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);

@@ -36,9 +36,9 @@
                 this.product = p.data;
                 this.loading = false;
 
-                // Galeri: gambar utama dulu, lalu sisanya
-                const imgs = (this.product.images ?? []);
-                this.images = imgs.map(i => ({ src: i.url, fallback: this.fallbackImage, label: i.alt_text ?? 'Foto Produk' }));
+                // Galeri: gambar utama dulu, lalu sisanya (URL dari path_gambar backend)
+                const imgs = (this.product.images ?? []).filter(i => i.path_gambar || i.url);
+                this.images = imgs.map(i => ({ src: PandansariAPI.imgUrl(i.path_gambar ?? i.url), fallback: this.fallbackImage, label: i.alt_text ?? 'Foto Produk' }));
                 this.activeImage = this.images[0]?.src ?? this.fallbackImage;
 
                 // Varian aktif hanya; pilih default = varian pertama

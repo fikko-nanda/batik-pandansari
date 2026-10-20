@@ -37,8 +37,7 @@
             titleOf(it) { return it.product?.nama_produk ?? 'Produk'; },
             descOf(it) { return it.product?.deskripsi ?? ''; },
             imageOf(it) {
-                const img = (it.product?.images ?? []).find(x => x.url);
-                return img?.url ?? this.fallbackImage;
+                return PandansariAPI.coverUrl(it.product?.images) || this.fallbackImage;
             },
             catOf(it) { return (it.product?.category?.nama_kategori ?? 'Batik Pandansari').toUpperCase(); },
             ukuranOf(it) {
