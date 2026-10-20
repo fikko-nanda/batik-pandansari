@@ -7,6 +7,8 @@
     
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- app.js (window.PandansariAPI) HARUS dimuat SEBELUM Alpine.js, agar saat Alpine eval x-data global sudah ada -->
+    @vite(['resources/js/app.js'])
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <!-- Font Awesome -->

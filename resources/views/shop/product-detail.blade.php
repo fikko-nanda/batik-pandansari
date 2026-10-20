@@ -6,7 +6,7 @@
     <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
          x-data="{
             // Data dari API
-            productId: @json($id ?? null),
+            productId: '{{ $id ?? '' }}',
             product: null,
             variants: [],
             images: [],

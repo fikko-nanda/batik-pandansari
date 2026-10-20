@@ -92,7 +92,7 @@ Buat komponen baru via artisan: `php artisan make:component Nama --view` (hanya 
 - **Styling:** Tailwind 3 via Vite. Warna brand: `#0F1A24` (teks gelap), `#FAF8F5` (bg), aksen sky. Ditata pada `tailwind.config.js`.
 - **Font:** Plus Jakarta Sans (+ Playfair Display di landing) — Google Fonts.
 - **CDN vs npm:** FontAwesome & Alpine.js dimuat via CDN. Tailwind **di-Vite-kan** untuk halaman publik. Layout `admin` & `teknisi` masih memakai Tailwind CDN — TODO: migrasi ke Vite agar satu sumber build.
-- **Data dummy:** semua angka/nama produk dummy ditulis di dalam `x-data` di halaman. **Belum** terhubung ke backend.
+- **Data:** semua halaman utama (publik, customer, admin) sudah terhubung API nyata via `PandansariAPI` (lihat §5b). Angka statis hanya tersisa di halaman teknisi & placeholder banner/galeri.
 - **Icon:** FontAwesome 6 (`fa-brands`, `fa-solid`, `fa-regular`).
 - Setelah mengubah CSS: `npm run build` (atau `npm run dev` saat developing).
 - Validasi syntax Blade: `php artisan view:cache` (lalu `php artisan view:clear`).
@@ -135,15 +135,37 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 | Tambah keranjang | `POST /cart/items { id_variant, jumlah }` | `shop/product-detail.blade.php` |
 | Wishlist | `POST /wishlist { id_product }` | katalog + detail |
 | Keranjang | `GET /cart`, `PUT/DELETE /cart/items/{id}`, `DELETE /cart`, voucher validate | `shop/cart.blade.php` |
-| Checkout | `GET /addresses`, `POST /vouchers/validate`, `POST /checkout` → `POST /orders/{id}/payment` → redirect Midtrans Snap | `shop/checkout.blade.php` |
+| Checkout | `GET /addresses`, `GET /shipping/destinations`, `POST /shipping/cost`, `POST /vouchers/validate`, `POST /checkout` → `POST /orders/{id}/payment` → redirect Midtrans Snap | `shop/checkout.blade.php` |
 | Riwayat pesanan | `GET /orders?page&per_page`, bayar ulang via `POST /orders/{id}/payment`, beli-lagi via `POST /cart/items` | `customer/orders.blade.php` |
 | Buku alamat | CRUD `/addresses` (tambah/ubah/hapus via modal) | `customer/address.blade.php` |
 | Wishlist user | `GET /wishlist` (relasi `product.category/variants/images`), `DELETE /wishlist/{id}` | `customer/wishlist.blade.php` |
+| Profil | `GET /me` (sinkron), `PUT /me { nama_pengguna, email, nomor_telepon }` | `customer/profile.blade.php` |
+| Keamanan | `PUT /me/password { kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation }` | `customer/security.blade.php` |
+| Voucher saya | `GET /voucher-usages/me` | `customer/orders.blade.php` (tab voucher) |
 | Sidebar akun | `GET /me` + logout di 3 halaman customer | orders/address/wishlist |
 
+### ✅ Terhubung — Modul Admin (semua gate: cek token + `peran === 'admin'`)
+| Halaman | Endpoint | File |
+|---|---|---|
+| Dashboard | `GET /admin/{orders,payments,users}/summary`, list `GET /admin/orders` | `admin/dashboard.blade.php` |
+| Produk | `GET /admin/products` (list+search+filter), `PUT /products/{id}`, `DELETE /products/{id}`, `POST /products` (+ varian + gambar via modal), CSV `/admin/products/export` | `admin/products.blade.php` + `components/admin/modal-add-product.blade.php` |
+| Stok | `GET /admin/products` (variants), stepper stok → `PUT /variants/{id}`, toggle toko → `PUT /products/{id}` | `admin/stock.blade.php` |
+| Pesanan | `GET /admin/orders` (filter status), `GET /admin/orders/{id}` (detail), `PUT /admin/orders/{id}/status`, `POST /admin/orders/{id}/fulfillments`, `GET /admin/order-fulfillments` | `admin/orders.blade.php` |
+| Userlist | `GET /users` (dinormalisasi helper), `GET /admin/users/summary`, `POST /users`, CSV `/users/export` | `admin/userlist.blade.php` |
+| Promo/Voucher | `GET /vouchers`, `POST /vouchers`, `GET /vouchers/summary`, `PUT /vouchers/{id}/publish|unpublish`, `DELETE /vouchers/{id}` | `admin/create-promo.blade.php` |
+| Midtrans | `GET /admin/payments` (filter status/provider), `GET /admin/payments/summary` | `admin/midtrans.blade.php` |
+| RajaOngkir | `GET /admin/shipping/{config,health,couriers}`, `PUT /admin/shipping/couriers/{code}`, `GET /shipping/destinations`, `POST /admin/shipping/simulate` | `admin/rajaongkir.blade.php` |
+| Laporan | `GET /admin/{orders,payments}/summary`, buku kas `GET /admin/payments` | `admin/sales-report.blade.php` |
+| Pengaturan | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories` | `admin/settings.blade.php` |
+
+> Halaman admin **tanpa endpoint API** (placeholder jujur di UI): kelola banner hero & galeri foto (`settings` tab "Banner & Galeri") — menunggu backend.
+
 ### 🔜 Belum (butuh backend)
-- Sort katalog (`price_asc` dll) dan ongkir otomatis RajaOngkir (checkout masih pakai tarif estimasi manual) — backend belum selesai/dibutuhkan.
+- Ongkir otomatis saat checkout — `POST /shipping/cost` & `/admin/shipping/simulate` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis.
+- CRUD user admin (ubah/hapus) — `GET /users` hanya punya list/detail + `POST /users`.
+- Banner hero, logo, galeri atelier — belum ada endpoint.
 - Login Google GIS — menyusul client ID disepakati.
+- Sort katalog (`price_asc` dll) — belum didukung API produk.
 
 - **Helper global** ada di `resources/js/app.js` → `PandansariAPI.*`. Semua halaman cukup memanggil ini.
 - Token Sanctum disimpan di `localStorage` (kunci: `pandansari_token`) dari `data.token` response login, dikirim via header `Authorization: Bearer`. Profil user (`data.user`, diperbarui `GET /me`) tersimpan di `pandansari_user`.

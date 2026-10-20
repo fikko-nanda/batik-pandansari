@@ -1,4 +1,43 @@
-<section class="bg-white py-14 border-b border-slate-100">
+{{-- KOLEKSI BUSANA PRIA — kartu produk dari GET /api/products (halaman 1) --}}
+<section class="bg-white py-14 border-b border-slate-100"
+         x-data="{
+            produk: [],
+            loading: true,
+            wishlisted: {},
+            fallbackImage: '{{ asset('images/katalog1.webp') }}',
+
+            // --- Helper kartu (sama seperti katalog) ---
+            coverOf(p) {
+                const img = (p.images ?? []).find(i => i.url);
+                return img?.url ?? this.fallbackImage;
+            },
+            priceOf(p) {
+                const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);
+                if (!v.length) return 'Lihat Detail';
+                return PandansariAPI.formatRp(Math.min(...v.map(x => Number(x.harga))));
+            },
+            sizesOf(p) {
+                const v = (p.variants ?? []).map(x => x.ukuran).filter(Boolean);
+                return v.length ? [...new Set(v)].join(', ') : '';
+            },
+            async toggleWishlist(p) {
+                if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
+                if (this.wishlisted[p.id_product]) return;
+                const res = await PandansariAPI.addWishlist(p.id_product);
+                if (res.ok || res.status === 422) this.wishlisted[p.id_product] = true; // 422 = sudah ada
+            },
+            async keKeranjang(p) {
+                const res = await PandansariAPI.keKeranjangProduk(p.id_product);
+                if (res.login) { window.location.href = '/login'; return; }
+                PandansariAPI.toast(res.ok ? 'Ditambahkan ke keranjang!' : (res.message ?? 'Gagal menambahkan.'), res.ok);
+            },
+
+            async init() {
+                const res = await PandansariAPI.products({ page: 1, per_page: 4 });
+                this.loading = false;
+                this.produk = res.ok ? (res.data ?? []) : [];
+            }
+         }">
     <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
         <div class="flex justify-between items-center border-b border-slate-200 pb-3 mb-8">
             <div class="flex items-center gap-3">
@@ -8,48 +47,29 @@
                     <h2 class="text-2xl font-bold text-[#0F1A24] tracking-wide font-['Plus_Jakarta_Sans']">MEN'S WEAR</h2>
                 </div>
             </div>
-            <a href="#men" class="text-xs font-bold text-slate-800 uppercase px-5 py-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 font-['Plus_Jakarta_Sans']">
+            <a href="/katalog" class="text-xs font-bold text-slate-800 uppercase px-5 py-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 font-['Plus_Jakarta_Sans']">
                 VIEW ALL
             </a>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <x-product-card 
-                badge="BEST SELLER"
-                subtitle="SOLO • KEMEJA PRIA"
-                title="Kemeja Parang Barong"
-                description="Kemeja batik lengan panjang furing katun halus dengan potongan slimfit modern."
-                price="Rp 850.000"
-                material="Katun Primis"
-                :image="asset('images/katalog2.webp')"
-            />
-            <x-product-card 
-                badge="EKSKLUSIF"
-                subtitle="YOGYAKARTA • HEM PRIA"
-                title="Kemeja Sidomukti Klasik"
-                description="Motif Sidomukti warna sogan tradisional cocok untuk agenda kerja dan acara resmi."
-                price="Rp 920.000"
-                material="Primisima Super"
-                :image="asset('images/hero-bg.jpg')"
-            />
-            <x-product-card 
-                badge="HANDMADE"
-                subtitle="PEKALONGAN • KAIN"
-                title="Kain Megamendung Indigo"
-                description="Lembaran kain batik cap halus pekalongan warna indigo eksklusif."
-                price="Rp 650.000"
-                material="Katun Paris"
-                :image="asset('images/katalog1.webp')"
-            />
-            <x-product-card 
-                badge="POPULER"
-                subtitle="SOLO • KEMEJA"
-                title="Kemeja Kawung Elegant"
-                description="Potongan regular fit dengan lapisan furing lembut anti gerah."
-                price="Rp 780.000"
-                material="Katun Halus"
-                :image="asset('images/katalog2.webp')"
-            />
+        <!-- Loading -->
+        <div x-show="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <template x-for="i in 4" :key="i">
+                <div class="bg-slate-50 rounded-2xl h-80 animate-pulse"></div>
+            </template>
+        </div>
+
+        <!-- Kosong -->
+        <div x-show="!loading && !produk.length" class="bg-slate-50 rounded-2xl py-10 text-center">
+            <p class="text-sm font-bold text-[#0F1A24]">Belum ada produk tersedia</p>
+            <a href="/katalog" class="inline-block mt-3 bg-[#0F1A24] text-white text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-slate-800 transition">LIHAT KATALOG →</a>
+        </div>
+
+        <!-- Grid Produk (kartu sama dengan katalog) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" x-show="!loading && produk.length">
+            <template x-for="p in produk" :key="p.id_product">
+                <x-shop.product-item />
+            </template>
         </div>
     </div>
 </section>

@@ -391,6 +391,8 @@ Validasi:
 
 Response menyertakan relasi `variant.product`.
 
+**Catatan (frontend):** `variant.harga` datang sebagai string (`"180000.00"`) — sudah di-`Number()` di frontend. `variant.product` **belum menyertakan `images`/`category`** — jika bisa, tolong eager-load `variant.product.images` supaya gambar produk tampil di halaman keranjang/checkout (saat ini memakai gambar fallback).
+
 ---
 
 ## 9. Wishlist (Login, milik sendiri)
@@ -412,6 +414,8 @@ Validasi:
 - Tidak boleh duplikat → **422** `"Produk sudah ada di wishlist."`
 
 GET menyertakan relasi `product.category`, `product.variants` (aktif), `product.images` (urut). **404** jika item wishlist bukan milik user.
+
+**Catatan (penting untuk frontend):** field ID item wishlist pada respons GET & POST adalah **`id_wishlist_item`** (bukan `id_wishlist`/`id`) — gunakan ini untuk `DELETE /wishlist/{id}`.
 
 ---
 
@@ -657,6 +661,142 @@ Response sukses:
   "success": true,
   "message": "Notifikasi berhasil diproses."
 }
+```
+
+---
+
+## 14. Pengiriman (Shipments, Admin)
+
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| GET | `/admin/shipments` | `admin` | Daftar shipment + relasi `order` |
+| PUT | `/admin/shipments/{id}/status` | `admin` | Update `status_pengiriman` |
+
+**Query GET `/admin/shipments`:** `status` (status_pengiriman), `kurir`, `page`, `per_page` (default 15). Meta paginator: `{current_page, per_page, total, last_page}`.
+
+**Field item shipment (live probe):**
+
+```json
+{
+  "id_shipment": "uuid", "id_order": "uuid",
+  "provider": "rajaongkir", "kurir": "JNE", "layanan_pengiriman": "REG",
+  "kode_layanan": null, "berat_gram": 500, "biaya_pengiriman": "18000.00",
+  "nomor_resi": null, "status_pengiriman": "menunggu",
+  "tanggal_dikirim": null, "tanggal_diterima": null,
+  "dibuat_pada": "...", "diperbarui_pada": "...",
+  "order": { "id_order": "...", "nomor_pesanan": "...", "...": "relasi order" }
+}
+```
+
+`status_pengiriman` ∈ `menunggu | diproses | dikirim | diterima | dibatalkan | dalam_perjalanan`.
+
+**GET `/admin/order-fulfillments`** — daftar fulfillment (packing): `{ id_fulfillment, id_order, status_fulfillment (dikemas|selesai), ... }`, meta paginator. **Catatan:** respons GET `/admin/orders/{id}` TIDAK menyertakan `fulfillments` — frontend memuatnya via endpoint ini.
+
+---
+
+## 15. Mesin Ekspedisi (Admin Shipping)
+
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| GET | `/admin/shipping/config` | `admin` | Konfigurasi RajaOngkir |
+| GET | `/admin/shipping/health` | `admin` | Cek kesehatan koneksi |
+| GET | `/admin/shipping/couriers` | `admin` | Daftar kurir + status aktif |
+| PUT | `/admin/shipping/couriers/{code}` | `admin` | Aktif/nonaktifkan kurir `{ aktif: bool }` |
+| POST | `/admin/shipping/simulate` | `admin` | Simulasi tarif (**memakai kuota API**) |
+
+**Respons live:**
+
+```json
+// GET /admin/shipping/config
+{ "origin_id": "99999", "sumber_origin": "env",
+  "base_url": "https://rajaongkir.komerce.id/api/v1",
+  "api_key_terisi": true, "kurir_aktif": ["jne","tiki","sicepat","jnt","anteraja","jxpress","lex","lion","ninja","pos"] }
+
+// GET /admin/shipping/health
+{ "status": "ok", "checks": { "api_key_terisi": true, "base_url_valid": true, "origin_terisi": true, "konektivitas_https": true },
+  "base_url": "...", "origin_id": "99999", "jumlah_kurir_aktif": 10, "memakai_kuota_api": false }
+
+// GET /admin/shipping/couriers → data: [ { "kode": "jne", "aktif": true }, ... ], meta: { total: 10, aktif: 10 }
+```
+
+**POST `/admin/shipping/simulate` Body:** `{ destination: int (id hasil /shipping/destinations), weight: int (gram), courier: string|null }`.
+
+> ⚠️ **BUG DILAPORKAN (per 20 Okt 2026):** `/shipping/cost` (publik login) dan `/admin/shipping/simulate` selalu **422 `RAJAONGKIR_DESTINATION_NOT_FOUND`** untuk SEMUA format tujuan (id search, city id, zip, string) walau config sehat (origin `99999`, base `rajaongkir.komerce.id`). Menunggu perbaikan backend; checkout pelanggan fallback ke tarif manual statis.
+
+---
+
+## 16. Ringkasan & Ekspor (Admin)
+
+| Method | Endpoint | Respons `data` |
+|---|---|---|
+| GET | `/admin/orders/summary` | `{ total_pesanan, total_nilai, rata_rata_nilai, per_status: {…} }` |
+| GET | `/admin/payments/summary` | `{ total_pembayaran, total_nilai, nilai_dibayar, per_status: {…}, per_provider: {midtrans: n, sandbox: n} }` |
+| GET | `/admin/users/summary` | `{ total_pengguna, pengguna_aktif, per_peran: {pelanggan: n, admin: n} }` |
+| GET | `/vouchers/summary` | `{ total_voucher, aktif, nonaktif, berjalan, terjadwal, kadaluarsa, total_penggunaan, total_diskon_diberikan }` |
+| GET | `/users/export` | CSV (text/csv) seluruh pengguna |
+| GET | `/admin/products/export` | CSV (text/csv) seluruh produk |
+
+**`GET /admin/payments` Query:** `status` (status_pembayaran: `menunggu|dibayar|ditolak|kedaluwarsa|dibatalkan`), `provider` (`midtrans|sandbox`), `page`, `per_page`. Field item (live probe):
+
+```json
+{
+  "id_payment": "uuid", "id_order": "uuid",
+  "provider": "midtrans", "provider_transaction_id": null,
+  "metode_pembayaran": null, "jumlah_pembayaran": "184000.00",
+  "status_pembayaran": "menunggu",
+  "payment_url": "https://app.sandbox.midtrans.com/snap/v4/redirection/...",
+  "payment_reference": "snap-token", "expires_at": "...", "paid_at": null,
+  "dibuat_pada": "...", "diperbarui_pada": "...",
+  "order": { "nomor_pesanan": "...", "user": { "nama_pengguna": "...", "email": "..." } }
+}
+```
+
+---
+
+## 17. Kontrak Live Tambahan (Probe 20 Okt 2026)
+
+**GET `/admin/orders` (list) — field per item:**
+
+```json
+{
+  "id_order": "uuid", "id_user": "uuid", "nomor_pesanan": "ORD-20261019-0002",
+  "status_pesanan": "menunggu_pembayaran",
+  "subtotal": "180000.00", "biaya_pengiriman": "22000.00",
+  "diskon": "18000.00", "total_pembayaran": "184000.00",
+  "nama_penerima": "...", "nomor_telepon_penerima": "0812...",
+  "alamat_pengiriman": "Jl. ..., Laweyan, Surakarta, Jawa Tengah, 57141",
+  "kode_tujuan_pengiriman": "Surakarta", "catatan": "...",
+  "dibuat_pada": "...", "diperbarui_pada": "...",
+  "items": [ { "id_order_item": "uuid", "id_variant": "uuid",
+    "nama_produk": "...", "sku": "...", "warna": "Cokelat", "ukuran": "M",
+    "harga_satuan": "180000.00", "jumlah": 1, "subtotal": "180000.00", "variant": {…} } ],
+  "user": { "id_user": "uuid", "nama_pengguna": "...", "email": "...", "nomor_telepon": "...", "peran": "pelanggan" }
+}
+```
+
+> Penting: **tidak ada** `nama_kota`/`nama_kecamatan` terpisah — alamat sebagai string `alamat_pengiriman` + `kode_tujuan_pengiriman`. Telepon = `nomor_telepon_penerima` (bukan `nomor_telepon`).
+
+**GET `/admin/orders/{id}` — tambahan relasi:** `payments[]` (lihat §16), `voucher_usages[]`, `status_histories[]`:
+
+```json
+{ "id_order_status_history": "uuid", "status_sebelumnya": null,
+  "status_baru": "menunggu_pembayaran", "catatan": "Pesanan dibuat.",
+  "diubah_oleh": "uuid", "waktu_perubahan": "...",
+  "changed_by": { "id_user": "...", "nama_pengguna": "..." } }
+```
+
+> Field `status_histories[].status_pesanan` TIDAK ada — gunakan `status_baru`. Waktu = `waktu_perubahan`.
+
+**GET `/vouchers` — field per item:** `id_voucher, kode_voucher, nama_voucher, deskripsi, tipe_diskon, nilai_diskon, minimal_pembelian, maksimal_diskon, kuota_total, kuota_per_pengguna, tanggal_mulai, tanggal_selesai, status_voucher, dibuat_pada, diperbarui_pada`. (Tidak ada `total_penggunaan` per baris — ambil dari `/vouchers/summary`.)
+
+**GET `/users` — paginator:** beda dari endpoint lain — seluruh paginator (`data[]` + `current_page/per_page/total/last_page`) berada DI DALAM `data`. Helper `PandansariAPI.admin.users()` sudah menormalkan ke `{data, meta}`.
+
+**GET `/shipping/destinations?search=`** — param literal `search`, min. 3 karakter:
+
+```json
+{ "id": 17466, "label": "SURAKARTA, SURANENGGALA, CIREBON, JAWA BARAT, 45152",
+  "province_name": "JAWA BARAT", "city_name": "CIREBON",
+  "district_name": "SURANENGGALA", "subdistrict_name": "SURAKARTA", "zip_code": "45152" }
 ```
 
 ---

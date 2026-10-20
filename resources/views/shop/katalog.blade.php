@@ -74,6 +74,11 @@
                 if (res.ok || res.status === 422) this.wishlisted[p.id_product] = true; // 422 = sudah ada
                 else this.errorMsg = res.message;
             },
+            async keKeranjang(p) {
+                const res = await PandansariAPI.keKeranjangProduk(p.id_product);
+                if (res.login) { window.location.href = '/login'; return; }
+                PandansariAPI.toast(res.ok ? 'Ditambahkan ke keranjang!' : (res.message ?? 'Gagal menambahkan.'), res.ok);
+            },
 
             // --- Aksi filter ---
             selectCategory(key) {
@@ -90,7 +95,7 @@
             gotoPage(n) {
                 if (n < 1 || n > this.lastPage || n === this.page) return;
                 this.loadProducts(n);
-                document.querySelector('input[placeholder*=\"Cari kata kunci\"]')?.blur();
+                document.querySelector('input[placeholder*=\'Cari kata kunci\']')?.blur();
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             },
             async init() {

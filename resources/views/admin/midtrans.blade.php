@@ -3,252 +3,275 @@
 @section('content')
 
 <div x-data="{
-    searchQuery: '',
+    // === Gate admin ===
+    needLogin: false,
+    notAdmin: false,
+
+    // === Data API ===
+    payments: [],
+    meta: null,
+    page: 1,
+    perPage: 10,
     selectedStatus: 'ALL',
+    selectedProvider: 'ALL',
+    summary: null,
+    loading: true,
+    notice: '', noticeOk: true,
 
-    // Data Rekonsiliasi & Audit Log Midtrans Snap
-    transactions: [
-        {
-            id: 1,
-            orderId: '#PS-2026-0891',
-            date: '14 Okt 2026 • 14:22 WIB',
-            collector: 'G.K.R. Mangkubumi',
-            itemTitle: 'Batik Tulis Parang Rusak Barong (Sutra ATBM)',
-            channel: 'BCA Virtual Account',
-            grossAmount: 18500000,
-            fee: 4500,
-            netAmount: 18495500,
-            status: 'Settlement Berhasil',
-            statusDot: 'bg-sky-400',
-            statusBadge: 'bg-sky-50 text-sky-800 border border-sky-200',
-            img: '{{ asset('images/m1.png') }}'
-        },
-        {
-            id: 2,
-            orderId: '#PS-2026-0890',
-            date: '14 Okt 2026 • 13:58 WIB',
-            collector: 'Bramantyo Wardhana',
-            itemTitle: 'Kain Panjang Sido Mukti Prada Emas',
-            channel: 'QRIS Dinamis (GoPay)',
-            grossAmount: 6200000,
-            fee: 43400,
-            netAmount: 6156600,
-            status: 'Settlement Berhasil',
-            statusDot: 'bg-sky-400',
-            statusBadge: 'bg-sky-50 text-sky-800 border border-sky-200',
-            img: '{{ asset('images/tulis.jpg') }}'
-        },
-        {
-            id: 3,
-            orderId: '#PS-2026-0889',
-            date: '14 Okt 2026 • 12:10 WIB',
-            collector: 'Tantri Puspitasari',
-            itemTitle: 'Selendang Kawung Seling Nitik Primissima',
-            channel: 'Mandiri Bill Payment',
-            grossAmount: 4750000,
-            fee: 4000,
-            netAmount: 4746000,
-            status: 'Menunggu Bayar',
-            statusDot: 'bg-slate-400',
-            statusBadge: 'bg-slate-100 text-slate-700 border border-slate-200',
-            img: '{{ asset('images/cap.jpg') }}'
-        },
-        {
-            id: 4,
-            orderId: '#PS-2026-0888',
-            date: '13 Okt 2026 • 21:04 WIB',
-            collector: 'R.A. Anindita Kirana',
-            itemTitle: 'Kain Panjang Sekar Jagad Indigofera',
-            channel: 'Kartu Kredit Visa 3DS',
-            grossAmount: 9800000,
-            fee: 284200,
-            netAmount: 9515800,
-            status: 'Kadaluarsa / Batal',
-            statusDot: 'bg-rose-500',
-            statusBadge: 'bg-rose-50 text-rose-800 border border-rose-200',
-            img: '{{ asset('images/m2.png') }}'
-        }
-    ],
+    STATUS_LIST: ['menunggu', 'dibayar', 'ditolak', 'kedaluwarsa', 'dibatalkan'],
+    PROVIDER_LIST: ['midtrans', 'sandbox'],
 
-    get filteredTransactions() {
-        return this.transactions.filter(t => {
-            let matchSearch = t.orderId.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                                t.collector.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                                t.itemTitle.toLowerCase().includes(this.searchQuery.toLowerCase());
-            let matchStatus = this.selectedStatus === 'ALL' || t.status === this.selectedStatus;
-            return matchSearch && matchStatus;
+    fmt(n) { return PandansariAPI.formatRp(n); },
+    num(n) { return Number(n ?? 0).toLocaleString('id-ID'); },
+    waktu(s) {
+        if (!s) return '—';
+        try { return new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return s; }
+    },
+    statusStyle(s) {
+        return {
+            dibayar: 'bg-emerald-100 text-emerald-800',
+            menunggu: 'bg-amber-100 text-amber-800',
+            ditolak: 'bg-rose-100 text-rose-800',
+            kedaluwarsa: 'bg-slate-100 text-slate-600',
+            dibatalkan: 'bg-slate-200 text-slate-700',
+        }[s] ?? 'bg-slate-100 text-slate-700';
+    },
+    providerStyle(p) {
+        return p === 'midtrans' ? 'bg-sky-100 text-sky-800' : 'bg-violet-100 text-violet-800';
+    },
+    expired(p) {
+        return p.expires_at && new Date(p.expires_at) < new Date() && p.status_pembayaran === 'menunggu';
+    },
+    pesan(ok, msg) { this.noticeOk = ok; this.notice = msg; setTimeout(() => this.notice = '', 4500); },
+
+    async loadPayments() {
+        this.loading = true;
+        const res = await PandansariAPI.admin.payments({
+            page: this.page, per_page: this.perPage,
+            status: this.selectedStatus !== 'ALL' ? this.selectedStatus : undefined,
+            provider: this.selectedProvider !== 'ALL' ? this.selectedProvider : undefined,
         });
+        this.loading = false;
+        if (res.ok) {
+            this.payments = res.data ?? [];
+            this.meta = res.meta;
+            this.page = res.meta?.current_page ?? this.page;
+        } else this.pesan(false, res.message);
+    },
+    async loadSummary() {
+        const res = await PandansariAPI.admin.paymentsSummary();
+        if (res.ok) this.summary = res.data;
+    },
+    setStatus(s) { this.selectedStatus = s; this.page = 1; this.loadPayments(); },
+    setProvider(p) { this.selectedProvider = p; this.page = 1; this.loadPayments(); },
+    goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadPayments(); },
+    resetFilter() { this.selectedStatus = 'ALL'; this.selectedProvider = 'ALL'; this.page = 1; this.loadPayments(); },
+
+    // === Ekspor CSV client-side (halaman aktif) ===
+    eksporCsv() {
+        const Q = '\x22';
+        const head = ['nomor_pesanan', 'provider', 'metode', 'jumlah', 'status', 'dibuat_pada', 'paid_at'];
+        const rows = this.payments.map(p => [
+            p.order?.nomor_pesanan, p.provider, p.metode_pembayaran,
+            p.jumlah_pembayaran, p.status_pembayaran, p.dibuat_pada, p.paid_at,
+        ]);
+        const csv = [head, ...rows].map(r => r.map(c => Q + String(c ?? '').split(Q).join(Q + Q) + Q).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'pembayaran.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    },
+
+    async init() {
+        if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
+        const me = await PandansariAPI.me();
+        if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
+        await Promise.all([this.loadPayments(), this.loadSummary()]);
+        this.loading = false;
     }
 }" class="space-y-6 text-slate-800 font-sans">
 
-    <!-- 1. HEADER TITLE & TOTAL DANA CARD -->
-    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+    <!-- Gate -->
+    <div x-show="needLogin" x-cloak class="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4">
+        <i class="fa-solid fa-lock text-3xl text-slate-300"></i>
+        <p class="text-sm font-bold text-[#0F1A24]">Silakan login (akun admin) untuk membuka rekonsiliasi pembayaran</p>
+        <a href="/login" class="inline-block bg-[#0A192F] text-white text-xs font-bold px-6 py-3 rounded-xl">LOGIN</a>
+    </div>
+    <div x-show="notAdmin" x-cloak class="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4">
+        <i class="fa-solid fa-user-slash text-3xl text-slate-300"></i>
+        <p class="text-sm font-bold text-[#0F1A24]">Akun ini bukan admin — akses ditolak.</p>
+    </div>
+
+    <div x-show="!needLogin && !notAdmin" x-cloak class="space-y-6">
+
+    <!-- 1. HEADER -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                Gerbang Pembayaran Digital &<br class="hidden    sm:inline"> Rekonsiliasi Midtrans Snap
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                Rekonsiliasi Pembayaran Midtrans
             </h1>
+            <p class="text-xs text-slate-500 mt-1">
+                GET /admin/payments — status transaksi diperbarui otomatis oleh webhook Midtrans.
+            </p>
         </div>
+        <button type="button" @click="eksporCsv()" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
+            <i class="fa-solid fa-file-export text-xs"></i>
+            <span>Ekspor CSV (halaman ini)</span>
+        </button>
+    </div>
 
-        <!-- TOTAL DANA BANNER CARD -->
-        <div class="bg-[#188cc6] text-white rounded-[24px] p-6 relative overflow-hidden shadow-md w-full sm:w-[380px] shrink-0">
-            <div class="relative z-10 space-y-2">
-                <!-- Label Total Dana -->
-                <span class="text-[11px] font-black text-white/90 uppercase tracking-widest block">TOTAL DANA</span>
-                
-                <!-- Nominal Angka -->
-                <div class="text-3xl sm:text-[34px] font-black text-white tracking-tight leading-none pb-2">
-                    Rp 128.450.000
-                </div>
+    <!-- Pesan -->
+    <div x-show="notice" x-cloak
+         class="text-xs font-bold rounded-xl px-4 py-3 border"
+         :class="noticeOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'"
+         x-text="notice"></div>
 
-                <div class="pt-2 border-t border-white/20"></div>
-
-                <!-- Label Bottom & Icon Gedung -->
-                <div class="flex items-center justify-between text-[10px] font-black text-white/90 tracking-wider uppercase">
-                    <span>RINGKASAN KAS MASUK</span>
-                    <i class="fa-solid fa-building-columns text-sm text-white/90"></i>
-                </div>
+    <!-- 2. SUMMARY CARDS -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex items-center justify-between">
+            <div>
+                <span class="text-[9px] font-black uppercase tracking-widest text-slate-400 block">TOTAL TRANSAKSI</span>
+                <div class="text-3xl font-black text-slate-900" x-text="summary ? num(summary.total_pembayaran) : '…'"></div>
+                <span class="text-[10px] font-bold text-slate-500 block mt-0.5" x-text="summary ? ('menunggu: ' + (summary.per_status?.menunggu ?? 0) + ' • dibayar: ' + (summary.per_status?.dibayar ?? 0)) : '…'"></span>
             </div>
-
-            <!-- Panel Transparan Kanan (Wayang & Wallet Badge) -->
-            <div class="absolute right-0 top-0 bottom-0 w-[120px] bg-white/10 backdrop-blur-[2px] z-0 flex flex-col justify-between items-end p-4 pointer-events-none">
-                <!-- Icon Wallet Badge -->
-                <div class="w-8 h-8 bg-white/30 rounded-xl flex items-center justify-center text-white text-sm shadow-sm">
-                    <i class="fa-solid fa-wallet"></i>
-                </div>
+            <div class="w-10 h-10 bg-sky-100 rounded-xl flex items-center justify-center text-sky-700 text-lg"><i class="fa-solid fa-receipt"></i></div>
+        </div>
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex items-center justify-between">
+            <div>
+                <span class="text-[9px] font-black uppercase tracking-widest text-slate-400 block">TOTAL NILAI</span>
+                <div class="text-2xl font-black text-slate-900" x-text="summary ? fmt(summary.total_nilai) : '…'"></div>
+                <span class="text-[10px] font-bold text-slate-500 block mt-0.5">Seluruh transaksi (termasuk belum dibayar)</span>
             </div>
-
-            <!-- Wayang Silhouette Background Kanan -->
-            <div class="absolute right-[-10px] bottom-[-15px] z-0 opacity-20 pointer-events-none">
-                <img src="{{ asset('images/wayang.png') }}" alt="Wayang" class="h-36 w-auto object-contain filter brightness-200">
+            <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-700 text-lg"><i class="fa-solid fa-coins"></i></div>
+        </div>
+        <div class="bg-emerald-50 rounded-2xl border border-emerald-200 shadow-sm p-5 flex items-center justify-between">
+            <div>
+                <span class="text-[9px] font-black uppercase tracking-widest text-emerald-700 block">SUDAH DIBAYAR</span>
+                <div class="text-2xl font-black text-emerald-800" x-text="summary ? fmt(summary.nilai_dibayar) : '…'"></div>
+                <span class="text-[10px] font-bold text-emerald-700 block mt-0.5" x-text="summary ? ('provider: ' + Object.keys(summary.per_provider ?? {}).map(k => k + ' ' + summary.per_provider[k]).join(' • ')) : '…'"></span>
             </div>
+            <div class="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-700 text-lg"><i class="fa-solid fa-circle-check"></i></div>
         </div>
     </div>
 
-    <!-- 2. REKONSILIASI KEUANGAN & AUDIT LOG CARD -->
-    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-5">
-        
-        <!-- Section Header & Filter Controls -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-                <span class="text-[10px] font-black text-sky-700 uppercase tracking-widest block">REKONSILIASI KEUANGAN & AUDIT LOG</span>
-                <h2 class="text-base font-extrabold text-slate-900">Jurnal Transaksi Masuk & Integrasi Webhook</h2>
-            </div>
+    <!-- 3. FILTER STATUS + PROVIDER -->
+    <div class="bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center gap-1 text-xs font-bold">
+        <button @click="setStatus('ALL')"
+                :class="selectedStatus === 'ALL' ? 'bg-[#0A192F] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
+                class="px-4 py-2 rounded-xl transition cursor-pointer">
+            Semua status
+        </button>
+        <template x-for="s in STATUS_LIST" :key="s">
+            <button @click="setStatus(s)"
+                    :class="selectedStatus === s ? 'bg-[#0A192F] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
+                    class="px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-2">
+                <span x-text="s"></span>
+                <span class="px-1.5 py-0.5 text-[10px] rounded-md font-black"
+                      :class="selectedStatus === s ? 'bg-sky-500/30 text-sky-300' : 'bg-slate-100 text-slate-600'"
+                      x-text="summary ? num(summary.per_status?.[s] ?? 0) : '…'"></span>
+            </button>
+        </template>
 
-            <div class="flex items-center gap-2 self-start sm:self-auto">
-                <div class="relative">
-                    <select x-model="selectedStatus" class="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl pl-8 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer">
-                        <option value="ALL">Filter Status: Semua Terdata</option>
-                        <option value="Settlement Berhasil">Settlement Berhasil</option>
-                        <option value="Menunggu Bayar">Menunggu Bayar</option>
-                        <option value="Kadaluarsa / Batal">Kadaluarsa / Batal</option>
-                    </select>
-                    <i class="fa-solid fa-sliders absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                </div>
+        <span class="mx-2 w-px h-6 bg-slate-200"></span>
 
-                <button type="button" @click="selectedStatus = 'ALL'; searchQuery = ''" class="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition flex items-center justify-center cursor-pointer" title="Reset Filter">
-                    <i class="fa-solid fa-rotate-left text-xs"></i>
-                </button>
-            </div>
-        </div>
+        <button @click="setProvider('ALL')"
+                :class="selectedProvider === 'ALL' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
+                class="px-3 py-2 rounded-xl transition cursor-pointer">Semua provider</button>
+        <template x-for="p in PROVIDER_LIST" :key="p">
+            <button @click="setProvider(p)"
+                    :class="selectedProvider === p ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
+                    class="px-3 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5">
+                <span x-text="p"></span>
+                <span class="px-1.5 py-0.5 text-[10px] rounded-md font-black"
+                      :class="selectedProvider === p ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'"
+                      x-text="summary ? num(summary.per_provider?.[p] ?? 0) : '…'"></span>
+            </button>
+        </template>
+    </div>
 
-        <!-- Transactions Table -->
+    <!-- 4. TABEL TRANSAKSI -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
+            <table class="w-full text-left border-collapse text-xs">
                 <thead>
-                    <tr class="bg-sky-50/70 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
-                        <th class="py-3.5 px-4">ID PESANAN</th>
-                        <th class="py-3.5 px-4">KOLEKTOR & WASTRA</th>
-                        <th class="py-3.5 px-4">KANAL BAYAR</th>
-                        <th class="py-3.5 px-4 text-right">NILAI KOTOR</th>
-                        <th class="py-3.5 px-4 text-right">BIAYA GATEWAY</th>
-                        <th class="py-3.5 px-4 text-right">NETTO BERSIH</th>
-                        <th class="py-3.5 px-4 text-center">STATUS WEBHOOK</th>
+                    <tr class="bg-[#AEE2F0]/40 text-slate-700 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
+                        <th class="py-3.5 px-4">PESANAN</th>
+                        <th class="py-3.5 px-4">PELANGGAN</th>
+                        <th class="py-3.5 px-4">PROVIDER & METODE</th>
+                        <th class="py-3.5 px-4 text-right">JUMLAH</th>
+                        <th class="py-3.5 px-4">STATUS</th>
+                        <th class="py-3.5 px-4">WAKTU</th>
+                        <th class="py-3.5 px-4 text-center">TAUTAN</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 text-xs font-medium">
-                    <template x-for="item in filteredTransactions" :key="item.id">
+                <tbody class="divide-y divide-slate-100 font-medium">
+                    <template x-if="loading">
+                        <tr><td colspan="7" class="py-10 text-center text-slate-400 font-semibold"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Memuat pembayaran…</td></tr>
+                    </template>
+                    <template x-if="!loading && !payments.length">
+                        <tr><td colspan="7" class="py-10 text-center text-slate-400 font-semibold">Tidak ada transaksi untuk filter ini.</td></tr>
+                    </template>
+
+                    <template x-for="p in payments" :key="p.id_payment">
                         <tr class="hover:bg-slate-50/80 transition">
-                            
-                            <!-- ID Pesanan & Tanggal -->
-                            <td class="py-4 px-4">
-                                <strong class="text-slate-900 font-extrabold block text-xs" x-text="item.orderId"></strong>
-                                <span class="text-[10px] text-slate-400 block" x-text="item.date"></span>
+                            <td class="py-3.5 px-4">
+                                <strong class="text-slate-900 font-extrabold block" x-text="p.order?.nomor_pesanan ?? p.id_order"></strong>
+                                <span class="text-[10px] text-slate-400 font-mono block" x-text="(p.payment_reference ?? '').slice(0, 16)"></span>
                             </td>
-
-                            <!-- Kolektor & Wastra -->
-                            <td class="py-4 px-4">
-                                <div class="flex items-center gap-3">
-                                    <img :src="item.img" class="w-10 h-10 object-cover rounded-xl border border-slate-200 shrink-0" onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=100'">
-                                    <div>
-                                        <strong class="text-slate-900 text-xs font-bold block" x-text="item.collector"></strong>
-                                        <span class="text-[10px] text-slate-500 block" x-text="item.itemTitle"></span>
-                                    </div>
-                                </div>
+                            <td class="py-3.5 px-4">
+                                <strong class="text-slate-900 block" x-text="p.order?.user?.nama_pengguna ?? '—'"></strong>
+                                <span class="text-[10px] text-slate-500 block" x-text="p.order?.user?.email ?? ''"></span>
                             </td>
-
-                            <!-- Kanal Bayar -->
-                            <td class="py-4 px-4">
-                                <div class="flex items-center gap-2">
-                                    <span class="w-2 h-2 rounded-full shrink-0" :class="item.statusDot"></span>
-                                    <span class="font-extrabold text-slate-800 text-xs" x-text="item.channel"></span>
-                                </div>
+                            <td class="py-3.5 px-4">
+                                <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase inline-block" :class="providerStyle(p.provider)" x-text="p.provider"></span>
+                                <span class="block text-[10px] text-slate-500 mt-1" x-text="p.metode_pembayaran ?? 'menunggu snap/VA dipilih'"></span>
                             </td>
-
-                            <!-- Nilai Kotor -->
-                            <td class="py-4 px-4 text-right">
-                                <strong class="text-slate-900 font-black text-xs" x-text="'Rp ' + item.grossAmount.toLocaleString('id-ID')"></strong>
+                            <td class="py-3.5 px-4 text-right">
+                                <strong class="text-slate-900 text-sm font-black block" x-text="fmt(p.jumlah_pembayaran)"></strong>
                             </td>
-
-                            <!-- Biaya Gateway -->
-                            <td class="py-4 px-4 text-right">
-                                <span class="text-slate-400 text-[11px] font-mono" x-text="'- Rp ' + item.fee.toLocaleString('id-ID')"></span>
+                            <td class="py-3.5 px-4">
+                                <span class="text-[9px] font-extrabold px-2.5 py-1 rounded-md uppercase inline-block" :class="statusStyle(p.status_pembayaran)" x-text="p.status_pembayaran"></span>
+                                <span x-show="expired(p)" class="block text-[9px] font-bold text-rose-500 mt-1">kedaluwarsa waktu</span>
                             </td>
-
-                            <!-- Netto Bersih -->
-                            <td class="py-4 px-4 text-right">
-                                <strong class="text-emerald-700 font-black text-xs" x-text="'Rp ' + item.netAmount.toLocaleString('id-ID')"></strong>
+                            <td class="py-3.5 px-4">
+                                <span class="text-slate-600 block text-[11px]" x-text="waktu(p.dibuat_pada)"></span>
+                                <span class="text-[10px] text-emerald-700 font-bold block" x-text="p.paid_at ? ('dibayar ' + waktu(p.paid_at)) : ''"></span>
                             </td>
-
-                            <!-- Status Webhook -->
-                            <td class="py-4 px-4 text-center">
-                                <span class="px-3 py-1 rounded-full text-[10px] font-extrabold inline-block" :class="item.statusBadge" x-text="item.status"></span>
+                            <td class="py-3.5 px-4 text-center">
+                                <a :href="p.payment_url ?? '#'" target="_blank" rel="noopener"
+                                   x-show="p.payment_url"
+                                   class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-sky-100 hover:text-sky-700 text-slate-600 transition inline-flex items-center justify-center" title="Buka halaman bayar (Snap)">
+                                    <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                                </a>
                             </td>
-
                         </tr>
                     </template>
                 </tbody>
             </table>
         </div>
 
-        <!-- Table Footer Legend & Pagination -->
-        <div class="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs font-semibold text-slate-500">
-            
-            <!-- Status Legend Indicator -->
-            <div class="flex flex-wrap items-center gap-4 text-[11px]">
-                <div class="flex items-center gap-1.5">
-                    <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
-                    <span>Settlement Berhasil</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-                    <span>Menunggu Bayar</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                    <span>Kadaluarsa / Batal</span>
-                </div>
+        <!-- Footer + pagination -->
+        <div class="p-4 bg-slate-50/80 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs font-medium text-slate-500">
+            <div>
+                Menampilkan halaman <strong x-text="meta?.current_page ?? 1"></strong> — total <strong x-text="num(meta?.total ?? 0)"></strong> transaksi
             </div>
-
-            <!-- Pagination Controls -->
             <div class="flex items-center gap-1.5 self-end sm:self-auto font-bold">
-                <button type="button" class="w-7 h-7 rounded-xl bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-100 cursor-pointer">&lt;</button>
-                <button type="button" class="w-7 h-7 rounded-xl bg-[#AEE2F0] text-slate-900 flex items-center justify-center font-extrabold">1</button>
-                <button type="button" class="w-7 h-7 rounded-xl bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-100 cursor-pointer">2</button>
-                <button type="button" class="w-7 h-7 rounded-xl bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-100 cursor-pointer">3</button>
-                <button type="button" class="w-7 h-7 rounded-xl bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-100 cursor-pointer">&gt;</button>
+                <button type="button" @click="goto(page - 1)" :disabled="page <= 1"
+                        class="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40">&lt; Sebelumnya</button>
+                <span class="px-2 text-slate-700" x-text="(meta?.current_page ?? 1) + ' / ' + (meta?.last_page ?? 1)"></span>
+                <button type="button" @click="goto(page + 1)" :disabled="meta && page >= meta.last_page"
+                        class="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40">Selanjutnya &gt;</button>
             </div>
-
         </div>
+    </div>
+
+    <!-- 5. INFO WEBHOOK -->
+    <div class="p-3 bg-slate-100 rounded-xl border border-slate-200/80 flex items-start gap-2 text-[11px] font-bold text-slate-700">
+        <i class="fa-solid fa-link text-slate-500 mt-0.5"></i>
+        <span>Status transaksi berubah otomatis saat webhook <span class="font-mono">POST /payments/midtrans/notification</span> diterima — halaman ini tidak perlu sinkronisasi manual.</span>
+    </div>
 
     </div>
 

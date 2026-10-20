@@ -70,17 +70,22 @@
             if (res.ok) {
                 this.orders = (res.data ?? []).map(o => ({
                     ...o,
+                    // Items pesanan dari backend bersifat FLAT (nama_produk, warna, ukuran,
+                    // harga_satuan, jumlah, id_variant) — fallback ke bentuk nested bila ada
                     items: (o.items ?? []).map(it => {
                         const v = it.variant ?? {};
                         const p = v.product ?? {};
                         const img = (p.images ?? []).find(x => x.url);
-                        const harga = Number(v.harga ?? it.harga ?? 0);
+                        const harga = Number(v.harga ?? it.harga_satuan ?? it.harga ?? 0);
+                        const ukuran = v.ukuran ?? it.ukuran;
+                        const warna = v.warna ?? it.warna;
+                        const jumlah = Number(it.jumlah ?? 1);
                         return {
                             name: p.nama_produk ?? it.nama_produk ?? 'Produk',
-                            variant: [v.ukuran && ('Ukuran ' + v.ukuran), v.warna, (it.jumlah > 1) ? (it.jumlah + ' pcs') : '1 pcs'].filter(Boolean).join(' • '),
-                            price: harga * Number(it.jumlah ?? 1),
+                            variant: [ukuran && ('Ukuran ' + ukuran), warna, jumlah > 1 && (jumlah + ' pcs')].filter(Boolean).join(' • '),
+                            price: harga * jumlah,
                             image: img?.url ?? this.fallbackImage,
-                            id_variant: v.id_variant,
+                            id_variant: v.id_variant ?? it.id_variant,
                         };
                     }),
                 }));

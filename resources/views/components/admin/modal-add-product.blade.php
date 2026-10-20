@@ -28,25 +28,17 @@
                 </button>
             </div>
 
-            <!-- Form Body (Scrollable) -->
+            <!-- Form Body (Scrollable) — submit → POST /products (+ varian awal + gambar) -->
             <form @submit.prevent="
-                products.push({
-                    id: Date.now(),
+                tambahProduk({
+                    nama_produk: $event.target.nama.value,
+                    id_category: $event.target.kategori.value,
+                    deskripsi: $event.target.deskripsi.value,
                     sku: $event.target.sku.value,
-                    name: $event.target.nama.value,
-                    category: 'BARU',
-                    catGroup: 'TULIS',
-                    fabric: $event.target.bahan.value || 'Sutra Alam Baron',
-                    badge: '✓ MAHAKARYA BARU',
-                    stock: parseInt($event.target.stok.value || 0),
-                    unit: $event.target.satuan.value || 'Lembar',
-                    price: parseInt($event.target.harga.value || 0),
-                    priceNote: 'Katalog Baru',
-                    status: 'AKTIF',
-                    img: '{{ asset('images/tulis.jpg') }}'
+                    harga: $event.target.harga.value,
+                    stok: $event.target.stok.value,
+                    file: ($refs.foto.files || [])[0] || null
                 });
-                showModalTambah = false;
-                alert('Mahakarya batik baru berhasil ditambahkan!');
             " class="p-6 overflow-y-auto space-y-6 text-xs text-slate-700 font-medium">
 
                 <!-- Grid Main Content (2 Column Layout) -->
@@ -72,14 +64,11 @@
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label class="block font-bold text-slate-700 mb-1">Kategori produk <span class="text-sky-500">*</span></label>
-                                    <select name="kategori_select" class="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium">
-                                        <option value="Batik Tulis">Batik Tulis</option>
-                                        <option value="Batik Cap">Batik Cap</option>
-                                        <option value="Bahan Handprint">Bahan Handprint</option>
-                                        <option value="Pakaian Wanita">Pakaian Wanita</option>
-                                        <option value="Pakaian Pria">Pakaian Pria</option>
-                                        <option value="Pakaian Anak-Anak">Pakaian Anak-Anak</option>
-                                        <option value="Sarimbit">Sarimbit</option>
+                                    <select name="kategori" required class="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium">
+                                        <option value="">Pilih kategori…</option>
+                                        <template x-for="c in categories" :key="c.id_category">
+                                            <option :value="c.id_category" x-text="c.nama_kategori"></option>
+                                        </template>
                                     </select>
                                 </div>
                                 <div>
@@ -264,22 +253,24 @@
                         </div>
 
                         <!-- Upload Drag & Drop Box -->
-                        <div class="border-2 border-dashed border-sky-200/80 rounded-2xl p-6 text-center bg-sky-50/30 hover:bg-sky-50/60 transition cursor-pointer space-y-3">
+                        <label class="border-2 border-dashed border-sky-200/80 rounded-2xl p-6 text-center bg-sky-50/30 hover:bg-sky-50/60 transition cursor-pointer space-y-3 block">
+                            <input type="file" name="foto" x-ref="foto" accept="image/jpeg,image/png,image/webp" class="hidden"
+                                   @change="namaFoto = ($refs.foto.files || [])[0]?.name ?? ''">
                             <div class="w-12 h-12 bg-white rounded-xl shadow-sm text-sky-500 flex items-center justify-center mx-auto text-xl">
                                 <i class="fa-regular fa-image"></i>
                             </div>
                             <div>
-                                <p class="font-bold text-slate-700 text-xs">Seret foto ke sini</p>
-                                <p class="text-[11px] text-slate-400">atau pilih dari perangkat</p>
+                                <p class="font-bold text-slate-700 text-xs" x-text="namaFoto || 'Klik untuk pilih foto'"></p>
+                                <p class="text-[11px] text-slate-400">JPG / PNG / WebP, maks. 2 MB</p>
                             </div>
-                            <button type="button" class="inline-flex items-center gap-1.5 px-4 py-2 border border-sky-400/40 text-sky-700 bg-white hover:bg-sky-50 font-bold rounded-xl text-xs transition shadow-sm">
+                            <span class="inline-flex items-center gap-1.5 px-4 py-2 border border-sky-400/40 text-sky-700 bg-white hover:bg-sky-50 font-bold rounded-xl text-xs transition shadow-sm">
                                 <i class="fa-solid fa-arrow-up-from-bracket text-xs"></i>
-                                <span>Pilih Foto</span>
-                            </button>
-                        </div>
+                                <span x-text="namaFoto ? 'Ganti Foto' : 'Pilih Foto'"></span>
+                            </span>
+                        </label>
 
                         <p class="text-[10px] text-slate-400 leading-relaxed">
-                            JPG atau PNG, maks. 5 MB per foto. Maksimal 5 foto. Foto pertama menjadi sampul produk.
+                            Foto pertama menjadi sampul produk. Foto dapat ditambahkan lagi setelah produk tersimpan.
                         </p>
                     </div>
 
@@ -290,9 +281,10 @@
                     <span class="text-[11px] text-slate-400"><span class="text-sky-500">*</span> Kolom wajib diisi</span>
                     <div class="flex items-center gap-2">
                         <button type="button" @click="showModalTambah = false" class="px-5 py-2.5 border border-slate-200 hover:bg-slate-100 rounded-xl font-bold text-slate-600 transition text-xs">Batal</button>
-                        <button type="submit" class="px-5 py-2.5 bg-sky-400 hover:bg-sky-500 text-slate-900 font-extrabold rounded-xl transition shadow-sm text-xs flex items-center gap-2">
+                        <button type="submit" :disabled="savingProduk" class="px-5 py-2.5 bg-sky-400 hover:bg-sky-500 text-slate-900 font-extrabold rounded-xl transition shadow-sm text-xs flex items-center gap-2 disabled:opacity-60">
                             <i class="fa-solid fa-floppy-disk"></i>
-                            <span>Simpan Mahakarya</span>
+                            <span x-show="!savingProduk">Simpan Mahakarya</span>
+                            <span x-show="savingProduk"><i class="fa-solid fa-circle-notch fa-spin"></i> Menyimpan…</span>
                         </button>
                     </div>
                 </div>

@@ -76,7 +76,7 @@
             }
         },
         async hapus(a) {
-            if (!confirm('Hapus alamat "' + (a.label_alamat ?? '') + '"?')) return;
+            if (!confirm('Hapus alamat ' + (a.label_alamat ?? '') + '?')) return;
             const res = await PandansariAPI.deleteAddress(a.id_user_address);
             if (res.ok) { this.tampil('Alamat berhasil dihapus.', true); await this.load(); }
             else this.tampil(res.message, false);

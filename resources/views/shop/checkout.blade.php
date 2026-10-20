@@ -13,7 +13,7 @@
         loading: true,
         needLogin: false,
         errorMsg: '',
-        selectedCourier: 'jne',
+        selectedCourierId: 'jne',   // kurir manual statis terpilih (null bila pakai layanan RajaOngkir nyata)
         biayaPengiriman: 22000,
         catatan: '',
         submitting: false,
@@ -32,11 +32,20 @@
         voucherOk: false,
         busyVoucher: false,
 
+        // === RajaOngkir: cek ongkir nyata (GET /shipping/destinations + POST /shipping/cost) ===
+        destQuery: '',
+        destinations: [],
+        destBusy: false,
+        destPicked: null,        // hasil pilih dari daftar destinasi { id, label, ... }
+        beratGram: 500,
+        ongkirBusy: false,
+        ongkirMsg: '',
+        ongkirOk: true,
+        ongkirLayanan: [],       // layanan dari POST /shipping/cost
+        serviceTerpilih: null,   // { kurir, service, cost, etd } → dipakai sbg biaya pengiriman
+
         get selectedAddress() {
             return this.addresses.find(a => a.id_user_address === this.selectedAddressId) ?? null;
-        },
-        get selectedCourierObj() {
-            return this.couriers.find(c => c.id === this.selectedCourier) ?? null;
         },
         get subtotal() {
             return this.items.reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
@@ -70,9 +79,80 @@
             return img?.url ?? this.fallbackImage;
         },
 
+        get selectedCourier() {
+            // prioritas: layanan RajaOngkir nyata → kurir manual statis
+            if (this.serviceTerpilih) return (this.serviceTerpilih.kurir + ' ' + (this.serviceTerpilih.service ?? '')).toUpperCase();
+            return this.couriers.find(c => c.id === this.selectedCourierId)?.name ?? '-';
+        },
         selectCourier(courier) {
-            this.selectedCourier = courier.id;
+            this.selectedCourierId = courier.id;
             this.biayaPengiriman = courier.price;
+            this.serviceTerpilih = null;
+        },
+
+        // === RajaOngkir: cari tujuan pengiriman ===
+        async cariDestinasi() {
+            const q = this.destQuery.trim();
+            if (q.length < 3) { this.destBusy = false; return; }
+            this.destBusy = true;
+            const res = await PandansariAPI.shippingDestinations(q);
+            this.destBusy = false;
+            this.destinations = res.ok ? (res.data ?? []) : [];
+        },
+        pilihDestinasi(d) {
+            this.destPicked = d;
+            this.destQuery = d.label;
+            this.destinations = [];
+            this.ongkirLayanan = [];
+            this.serviceTerpilih = null;
+            this.ongkirMsg = '';
+        },
+        resetOngkir() {
+            this.destPicked = null;
+            this.destQuery = '';
+            this.destinations = [];
+            this.ongkirLayanan = [];
+            this.serviceTerpilih = null;
+            this.ongkirMsg = '';
+            this.biayaPengiriman = 22000;   // kembali ke tarif manual default
+        },
+
+        // === RajaOngkir: hitung ongkir nyata (pilih kurir aktif) ===
+        async hitungOngkir(kurir) {
+            if (!this.destPicked) { this.ongkirOk = false; this.ongkirMsg = 'Pilih dulu tujuan pengiriman dari daftar.'; return; }
+            this.ongkirBusy = true; this.ongkirMsg = '';
+            const res = await PandansariAPI.shippingCost(this.destPicked.id, this.beratGram, kurir);
+            this.ongkirBusy = false;
+            if (res.ok) {
+                const hasil = (res.data?.hasil ?? []).find(h => h.berhasil) ?? null;
+                if (hasil?.layanan?.length) {
+                    this.ongkirLayanan = hasil.layanan.map(l => ({
+                        kurir, service: l.service ?? l.name ?? kurir.toUpperCase(),
+                        cost: Number(l.cost ?? l.price ?? l.shipping_cost ?? 0),
+                        etd: l.etd ?? l.description ?? '',
+                    }));
+                    this.ongkirOk = true;
+                    this.ongkirMsg = 'Layanan ditemukan — pilih salah satu.';
+                } else {
+                    this.ongkirOk = false;
+                    const err = hasil?.error;
+                    this.ongkirMsg = err === 'RAJAONGKIR_DESTINATION_NOT_FOUND'
+                        ? 'Tarif ' + kurir.toUpperCase() + ' tidak tersedia dari server ongkir. Silakan pakai tarif manual di bawah.'
+                        : (err ?? 'Tarif tidak tersedia untuk kurir ini.');
+                }
+            } else {
+                this.ongkirOk = false;
+                this.ongkirMsg = res.message === 'RAJAONGKIR_DESTINATION_NOT_FOUND'
+                    ? 'Layanan ongkir sedang tidak dapat dihubungi (kendala di backend). Pakai tarif manual di bawah.'
+                    : res.message;
+            }
+        },
+        pilihLayanan(l) {
+            this.serviceTerpilih = l;
+            this.biayaPengiriman = l.cost;
+            this.selectedCourierId = null;
+            this.ongkirMsg = 'Ongkir ' + (l.kurir + ' ' + l.service).toUpperCase() + ' (' + this.formatRupiah(l.cost) + ') dipakai.';
+            this.ongkirOk = true;
         },
 
         // === Loader ===
@@ -241,27 +321,134 @@
                     </div>
                 </div>
 
+                <!-- Box 1b: Cek Ongkir RajaOngkir (API nyata) -->
+                <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div class="flex items-center gap-2 text-xs font-bold text-[#0F1A24]">
+                            <i class="fa-solid fa-calculator text-sky-600 text-sm"></i>
+                            <span>Cek Ongkos Kirim (RajaOngkir)</span>
+                        </div>
+                        <button type="button" x-show="serviceTerpilih || destPicked" @click="resetOngkir()"
+                                class="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition cursor-pointer">
+                            RESET
+                        </button>
+                    </div>
+
+                    <!-- 1) Cari tujuan -->
+                    <div class="space-y-2">
+                        <label class="block text-[11px] font-semibold text-slate-600">1. Cari tujuan (kecamatan/kota)</label>
+                        <div class="flex gap-2">
+                            <div class="relative flex-1">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
+                                <input type="text" x-model="destQuery" @keydown.enter="cariDestinasi()"
+                                       placeholder="Contoh: Banjarsari, Surakarta..."
+                                       class="w-full pl-7 pr-3 py-2.5 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            </div>
+                            <button type="button" @click="cariDestinasi()" :disabled="destBusy"
+                                    class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold px-4 py-2.5 rounded-xl cursor-pointer disabled:opacity-60">
+                                <span x-show="!destBusy">CARI</span>
+                                <span x-show="destBusy"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+                            </button>
+                        </div>
+
+                        <!-- daftar hasil -->
+                        <div x-show="destinations.length" class="max-h-44 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                            <template x-for="d in destinations" :key="d.id">
+                                <button type="button" @click="pilihDestinasi(d)"
+                                        class="w-full text-left px-3.5 py-2.5 hover:bg-sky-50 transition cursor-pointer">
+                                    <span class="block text-[11px] font-bold text-[#0F1A24]" x-text="d.label"></span>
+                                </button>
+                            </template>
+                        </div>
+                        <p x-show="destQuery.length >= 3 && !destBusy && !destinations.length" class="text-[10px] text-slate-400">
+                            Tujuan tidak ditemukan — coba kata kunci lain (mis. nama kecamatan).
+                        </p>
+                    </div>
+
+                    <!-- 2) Tujuan terpilih + berat + kurir -->
+                    <div x-show="destPicked" class="space-y-3">
+                        <div class="bg-sky-50 border border-sky-100 rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-3">
+                            <div class="min-w-0">
+                                <span class="block text-[9px] font-bold uppercase tracking-wider text-[#0369A1]">TUJUAN TERPILIH</span>
+                                <span class="block text-[11px] font-semibold text-slate-700 truncate" x-text="destPicked?.label"></span>
+                            </div>
+                            <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                        </div>
+
+                        <div class="flex items-end gap-3">
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-600 mb-1">2. Berat total (gram)</label>
+                                <input type="number" min="1" x-model.number="beratGram"
+                                       class="w-32 text-xs font-semibold border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-[11px] font-semibold text-slate-600 mb-1">3. Pilih kurir lalu tunggu tarif muncul</label>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <template x-for="k in ['jne','tiki','sicepat','jnt','pos','anteraja']" :key="k">
+                                        <button type="button" @click="hitungOngkir(k)" :disabled="ongkirBusy"
+                                                class="text-[10px] font-bold uppercase bg-slate-100 hover:bg-sky-100 text-slate-700 px-3 py-2 rounded-lg transition cursor-pointer disabled:opacity-60">
+                                            <span x-text="k"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- hasil layanan -->
+                        <div x-show="ongkirBusy" class="text-[11px] font-semibold text-slate-500 py-2">
+                            <i class="fa-solid fa-circle-notch fa-spin text-sky-500 mr-1"></i> Meminta tarif ke server ongkir…
+                        </div>
+                        <div x-show="ongkirMsg && !ongkirBusy" class="text-[11px] font-semibold rounded-xl px-3.5 py-2.5"
+                             :class="ongkirOk ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'">
+                            <i class="fa-solid mr-1" :class="ongkirOk ? 'fa-circle-check' : 'fa-triangle-exclamation'"></i>
+                            <span x-text="ongkirMsg"></span>
+                        </div>
+                        <div x-show="ongkirLayanan.length" class="space-y-2">
+                            <template x-for="(l, idx) in ongkirLayanan" :key="idx">
+                                <label class="flex items-center justify-between p-3 rounded-xl border-2 transition cursor-pointer"
+                                       :class="serviceTerpilih && serviceTerpilih.service === l.service && serviceTerpilih.kurir === l.kurir ? 'border-sky-500 bg-sky-50/40' : 'border-slate-200 hover:border-slate-300'">
+                                    <div class="flex items-center gap-3">
+                                        <input type="radio" name="layanan" class="text-sky-600 focus:ring-sky-500"
+                                               :checked="serviceTerpilih && serviceTerpilih.service === l.service && serviceTerpilih.kurir === l.kurir"
+                                               @click="pilihLayanan(l)">
+                                        <div>
+                                            <span class="block text-xs font-bold text-[#0F1A24]" x-text="(l.kurir + ' — ' + l.service).toUpperCase()"></span>
+                                            <span class="block text-[10px] text-slate-500" x-text="l.etd ? ('Estimasi ' + l.etd) : ''"></span>
+                                        </div>
+                                    </div>
+                                    <span class="text-xs font-bold text-[#0F1A24]" x-text="formatRupiah(l.cost)"></span>
+                                </label>
+                            </template>
+                        </div>
+                    </div>
+
+                    <p class="text-[10px] text-slate-400">
+                        <i class="fa-solid fa-circle-info text-sky-500 mr-1"></i>
+                        Bila server ongkir sedang bermasalah, tetap bisa checkout dengan memilih tarif manual di bawah.
+                    </p>
+                </div>
+
                 <!-- Box 2: Pilihan Layanan Ekspedisi -->
                 <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
                     <div class="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div class="flex items-center gap-2 text-xs font-bold text-[#0F1A24]">
                             <i class="fa-solid fa-truck-fast text-sky-600 text-sm"></i>
-                            <span>Pilihan Layanan Ekspedisi</span>
+                            <span>Tarif Manual (Fallback)</span>
                         </div>
                         <span class="text-[10px] bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md font-semibold">
                             <span x-text="itemCount"></span> item
                         </span>
                     </div>
 
-                    <p class="text-[11px] text-slate-400">Tarif estimasi manual — integrasi RajaOngkir menyusul di backend.</p>
+                    <p class="text-[11px] text-slate-400">Dipakai bila tarif RajaOngkir tidak tersedia. Pilihan otomatis dilepas saat tarif nyata dipilih.</p>
 
                     <div class="space-y-3">
                         <template x-for="c in couriers" :key="c.id">
                             <label @click="selectCourier(c)"
                                    class="flex items-center justify-between p-4 rounded-xl border-2 transition cursor-pointer"
-                                   :class="selectedCourier === c.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-200' : 'border-slate-200 hover:border-slate-300 bg-white'">
+                                   :class="selectedCourierId === c.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-200' : 'border-slate-200 hover:border-slate-300 bg-white'">
                                 <div class="flex items-start gap-3">
-                                    <input type="radio" name="courier" :value="c.id" :checked="selectedCourier === c.id" class="mt-0.5 text-sky-600 focus:ring-sky-500">
+                                    <input type="radio" name="courier" :value="c.id" :checked="selectedCourierId === c.id" class="mt-0.5 text-sky-600 focus:ring-sky-500">
                                     <div>
                                         <div class="flex items-center gap-2">
                                             <span class="text-xs font-bold text-[#0F1A24]" x-text="c.name"></span>
@@ -283,46 +470,8 @@
             <!-- RIGHT SIDE: Ringkasan Pesanan (4 Kolom Sticky) -->
             <div class="lg:col-span-4 lg:sticky lg:top-6 space-y-4">
                 <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
-                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <h2 class="text-sm font-bold text-[#0F1A24]">Ringkasan Pesanan <span class="text-xs text-slate-400 font-normal">(3 Item)</span></h2>
-                        <a href="/cart" class="text-xs font-bold text-sky-600 hover:underline">Ubah Item</a>
-                    </div>
-
-                    <!-- Items List -->
-                    <div class="space-y-3 max-h-[260px] overflow-y-auto pr-1">
-                        <!-- Item 1 -->
-                        <div class="flex items-center gap-3 text-xs">
-                            <img src="{{ asset('images/m1.png') }}" class="w-12 h-14 object-cover rounded-lg border border-slate-100 shrink-0" onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=200'">
-                            <div class="flex-1 min-w-0">
-                                <h4 class="font-bold text-[#0F1A24] truncate">Kemeja Pria Parang Seling</h4>
-                                <p class="text-[10px] text-slate-400">Size L • Indigobiro</p>
-                                <span class="font-bold text-[#0F1A24] text-xs block mt-0.5">Rp 1.350.000</span>
-                            </div>
-                        </div>
-
-                        <!-- Item 2 -->
-                        <div class="flex items-center gap-3 text-xs">
-                            <img src="{{ asset('images/m2.png') }}" class="w-12 h-14 object-cover rounded-lg border border-slate-100 shrink-0" onerror="this.src='https://images.unsplash.com/photo-1598033129183-c4f50c736f10?q=80&w=200'">
-                            <div class="flex-1 min-w-0">
-                                <h4 class="font-bold text-[#0F1A24] truncate">Tunik Batik Cheongsam</h4>
-                                <p class="text-[10px] text-slate-400">Size M • Shanghai</p>
-                                <span class="font-bold text-[#0F1A24] text-xs block mt-0.5">Rp 1.280.000</span>
-                            </div>
-                        </div>
-
-                        <!-- Item 3 -->
-                        <div class="flex items-center gap-3 text-xs">
-                            <img src="{{ asset('images/tulis.jpg') }}" class="w-12 h-14 object-cover rounded-lg border border-slate-100 shrink-0" onerror="this.src='https://images.unsplash.com/photo-1596755094514-f87e34085b2c?q=80&w=200'">
-                            <div class="flex-1 min-w-0">
-                                <h4 class="font-bold text-[#0F1A24] truncate">Dress Anak Bunga Sekar</h4>
-                                <p class="text-[10px] text-slate-400">Size 4–5 Thn</p>
-                                <span class="font-bold text-[#0F1A24] text-xs block mt-1">Rp 450.000</span>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Status loading -->
-                    <template x-if="loading && !errorMsg">
+                    <template x-if="loading && !errorMsg && !needLogin">
                         <div class="py-8 text-center"><i class="fa-solid fa-circle-notch fa-spin text-xl text-sky-500"></i><p class="text-xs text-slate-500 mt-3 font-semibold">Memuat data checkout…</p></div>
                     </template>
                     <template x-if="needLogin">
@@ -337,14 +486,14 @@
                         </div>
                     </template>
 
-                    <div x-show="!loading && !needLogin">
+                    <div x-show="!loading && !needLogin" class="space-y-4">
                     <div class="flex items-center justify-between border-b border-slate-100 pb-3">
                         <h2 class="text-sm font-bold text-[#0F1A24]">Ringkasan Pesanan <span class="text-xs text-slate-400 font-normal">(<span x-text="itemCount"></span> Item)</span></h2>
                         <a href="/cart" class="text-xs font-bold text-sky-600 hover:underline">Ubah Item</a>
                     </div>
 
                     <!-- Items List -->
-                    <div class="space-y-3 max-h-[260px] overflow-y-auto pr-1 mt-3">
+                    <div class="space-y-3 max-h-[260px] overflow-y-auto pr-1">
                         <template x-for="item in items" :key="item.id_cart_item">
                             <div class="flex items-center gap-3 text-xs">
                                 <img :src="imageOf(item)" class="w-12 h-14 object-cover rounded-lg border border-slate-100 shrink-0 bg-slate-100" :onerror="`this.src='${fallbackImage}'`">
@@ -397,7 +546,7 @@
                             <span class="font-semibold text-[#0F1A24]" x-text="formatRupiah(subtotal)"></span>
                         </div>
                         <div class="flex justify-between">
-                            <span>Ongkos Kirim (<span x-text="selectedCourierObj?.name ?? '-'"></span>)</span>
+                            <span>Ongkos Kirim (<span x-text="selectedCourier"></span>)</span>
                             <span class="font-semibold text-[#0F1A24]" x-text="formatRupiah(biayaPengiriman)"></span>
                         </div>
                         <div class="flex justify-between" x-show="voucher" :class="voucher ? 'text-rose-500' : 'text-slate-400'">

@@ -30,8 +30,9 @@
         </div>
     </div>
     <div class="p-4 pt-0">
-        <button class="w-full bg-[#0F1A24] text-white text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 hover:bg-slate-800 transition font-['Plus_Jakarta_Sans']">
+        {{-- Kartu statis dekoratif (tanpa data API): tombol diarahkan ke katalog --}}
+        <a href="/katalog" class="w-full bg-[#0F1A24] text-white text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center gap-1.5 hover:bg-slate-800 transition font-['Plus_Jakarta_Sans']">
             <i class="fa-solid fa-cart-plus text-xs"></i> + Keranjang
-        </button>
+        </a>
     </div>
 </div>

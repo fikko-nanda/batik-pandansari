@@ -33,5 +33,11 @@
             <span class="font-bold text-[#0F1A24] text-xs sm:text-base" x-text="priceOf(p)"></span>
             <span class="text-[8px] sm:text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium text-slate-600 self-start sm:self-auto truncate max-w-[10rem]" x-show="sizesOf(p)" x-text="sizesOf(p)"></span>
         </div>
+
+        <!-- + Keranjang (langsung dari kartu; varian aktif pertama dipilih otomatis) -->
+        <button @click="keKeranjang(p)" type="button"
+                class="mt-2 sm:mt-3 w-full bg-[#0F1A24] hover:bg-slate-800 text-white text-[10px] sm:text-xs font-bold py-2 sm:py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm font-['Plus_Jakarta_Sans']">
+            <i class="fa-solid fa-cart-plus text-xs"></i> + Keranjang
+        </button>
     </div>
 </div>

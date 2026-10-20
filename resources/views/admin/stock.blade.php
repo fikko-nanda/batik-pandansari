@@ -3,129 +3,133 @@
 @section('content')
 
 <div x-data="{
+    // === Gate admin ===
+    needLogin: false,
+    notAdmin: false,
+
+    // === Data API ===
+    products: [],
+    meta: null,
+    page: 1,
+    perPage: 10,
     searchQuery: '',
-    selectedCategory: 'ALL',
+    loading: true,
+    notice: '', noticeOk: true,
+    savingKey: '',           // key produk yang sedang disimpan
 
-    // Data Stok & Varian Cepat
-    items: [
-        {
-            id: 1,
-            sku: 'BP-PRG-01',
-            name: 'Kemeja Parang Kencana Silk',
-            sentra: 'Sentra Giriloyo • Pewarna Alami Sogan',
-            category: 'SUTRA ALAMI',
-            catStyle: 'bg-amber-100/70 text-amber-900 border border-amber-200/50',
-            sizes: { s: 8, m: 4, l: 1, xl: 0 },
-            total: 13,
-            unit: 'Lembar',
-            status: 'Aman',
-            statusNote: 'Varian XL Kosong',
-            statusStyle: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-            rowBg: 'hover:bg-slate-50/80',
-            active: true,
-            img: '{{ asset('images/m1.png') }}'
-        },
-        {
-            id: 2,
-            sku: 'BP-KWG-04',
-            name: 'Kawung Gold Prada Halus',
-            sentra: 'Sentra Imogiri • Canting 0.3mm',
-            category: 'BATIK TULIS HALUS',
-            catStyle: 'bg-[#0A192F] text-white',
-            sizes: { s: 1, m: 1, l: 0, xl: 0 },
-            total: 2,
-            unit: 'Lembar',
-            status: 'Stok Menipis',
-            statusNote: '⚠️ Sisa 2 Lembar (L & XL Habis)',
-            statusStyle: 'bg-sky-200 text-sky-900 border border-sky-300 font-bold',
-            rowBg: 'bg-sky-50/30 hover:bg-sky-50/60',
-            active: true,
-            img: '{{ asset('images/tulis.jpg') }}'
-        },
-        {
-            id: 3,
-            sku: 'BP-MGM-09',
-            name: 'Megamendung Indigo Blue',
-            sentra: 'Sentra Cirebon • Tembaga Cap Presisi',
-            category: 'CAP HALUS PRIMISSIMA',
-            catStyle: 'bg-amber-100/70 text-amber-900 border border-amber-200/50',
-            sizes: { s: 6, m: 7, l: 5, xl: 3 },
-            total: 21,
-            unit: 'Lembar',
-            status: 'Aman',
-            statusNote: 'Lengkap Semua Ukuran',
-            statusStyle: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-            rowBg: 'hover:bg-slate-50/80',
-            active: true,
-            img: '{{ asset('images/cap.jpg') }}'
-        },
-        {
-            id: 4,
-            sku: 'BP-SKJ-02',
-            name: 'Sarimbit Sekar Jagad Madura',
-            sentra: 'Sentra Tanjungbumi • Pasangan Harmoni',
-            category: 'SARIMBIT SET',
-            catStyle: 'bg-amber-100/70 text-amber-900 border border-amber-200/50',
-            sizes: { s: 3, m: 4, l: 2, xl: 2 },
-            total: 11,
-            unit: 'Pasang',
-            status: 'Aman',
-            statusNote: 'Rotasi Normal',
-            statusStyle: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-            rowBg: 'hover:bg-slate-50/80',
-            active: true,
-            img: '{{ asset('images/m2.png') }}'
-        },
-        {
-            id: 5,
-            sku: 'BP-TRN-05',
-            name: 'Truntum Garuda Sogan',
-            sentra: 'Sentra Kraton Surakarta • Kolektor Grade',
-            category: 'BATIK TULIS HALUS',
-            catStyle: 'bg-[#0A192F] text-white',
-            sizes: { s: 0, m: 1, l: 0, xl: 0 },
-            total: 1,
-            unit: 'Lembar',
-            status: 'Kritis (Restock!)',
-            statusNote: '🚨 Kritis: 1 Lembar Tersisa',
-            statusStyle: 'bg-rose-100 text-rose-800 border border-rose-200 font-bold',
-            rowBg: 'bg-rose-50/40 hover:bg-rose-50/70',
-            active: true,
-            img: '{{ asset('images/tulis.jpg') }}'
-        },
-        {
-            id: 6,
-            sku: 'BP-SDM-03',
-            name: 'Sidomukti Temanten',
-            sentra: 'Sentra Pekalongan • Kain Upacara Adat',
-            category: 'BATIK TULIS HALUS',
-            catStyle: 'bg-[#0A192F] text-white',
-            sizes: { s: 2, m: 2, l: 1, xl: 1 },
-            total: 6,
-            unit: 'Lembar',
-            status: 'Aman',
-            statusNote: 'Stok Terjaga',
-            statusStyle: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-            rowBg: 'hover:bg-slate-50/80',
-            active: false,
-            img: '{{ asset('images/m1.png') }}'
-        }
-    ],
+    // === Edit stok sementara per varian: { id_variant: angka } ===
+    draft: {},
 
-    // Total hitungan lembar fisik
-    calculateTotal(item) {
-        return parseInt(item.sizes.s || 0) + parseInt(item.sizes.m || 0) + parseInt(item.sizes.l || 0) + parseInt(item.sizes.xl || 0);
+    fmt(n) { return PandansariAPI.formatRp(n); },
+    num(n) { return Number(n ?? 0).toLocaleString('id-ID'); },
+    pesan(ok, msg) { this.noticeOk = ok; this.notice = msg; setTimeout(() => this.notice = '', 4500); },
+
+    activeVariants(p) {
+        return (p.variants ?? []).filter(v => v.status_varian !== 'nonaktif');
+    },
+    totalStok(p) {
+        return this.activeVariants(p).reduce((s, v) => s + Number(v.stok ?? 0), 0);
+    },
+    coverOf(p) {
+        return (p.images ?? []).find(i => i.url)?.url ?? '{{ asset('images/katalog1.webp') }}';
+    },
+    statusInfo(p) {
+        const t = this.totalStok(p);
+        if (p.status_produk !== 'aktif') return { label: 'Nonaktif', style: 'bg-slate-100 text-slate-600 border border-slate-200', row: '' };
+        if (t === 0) return { label: 'Habis', style: 'bg-rose-100 text-rose-800 border border-rose-200 font-bold', row: 'bg-rose-50/40 hover:bg-rose-50/70' };
+        if (t <= 3) return { label: 'Stok Menipis', style: 'bg-sky-200 text-sky-900 border border-sky-300 font-bold', row: 'bg-sky-50/30 hover:bg-sky-50/60' };
+        return { label: 'Aman', style: 'bg-emerald-50 text-emerald-800 border border-emerald-200', row: 'hover:bg-slate-50/80' };
+    },
+    /** nilai draft varian (jika ada) atau nilai API */
+    valOf(v) {
+        return this.draft[v.id_variant] ?? Number(v.stok ?? 0);
+    },
+    setDraft(v, e) {
+        const n = Math.max(0, parseInt(e.target.value || 0, 10));
+        this.draft[v.id_variant] = n;
+    },
+    resetDraft(v) {
+        delete this.draft[v.id_variant];
     },
 
-    get filteredItems() {
-        return this.items.filter(i => {
-            let matchesSearch = i.name.toLowerCase().includes(this.searchQuery.toLowerCase()) || 
-                                i.sku.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-                                i.sentra.toLowerCase().includes(this.searchQuery.toLowerCase());
-            return matchesSearch;
+    // === Simpan stok varian → PUT /variants/{id} ===
+    async simpanStok(v) {
+        const next = this.draft[v.id_variant];
+        if (next === undefined || next === Number(v.stok ?? 0)) { this.pesan(false, 'Tidak ada perubahan stok untuk varian ini.'); return; }
+        this.savingKey = v.id_variant;
+        const res = await PandansariAPI.admin.updateVariant(v.id_variant, { stok: next });
+        this.savingKey = '';
+        if (res.ok) {
+            v.stok = next;
+            delete this.draft[v.id_variant];
+            this.pesan(true, 'Stok ' + (v.sku ?? v.nama_varian) + ' → ' + next + ' tersimpan.');
+        } else {
+            const errs = Object.values(res.errors ?? {}).flat();
+            this.pesan(false, errs[0] ?? res.message);
+        }
+    },
+    async simpanSemuaProduk(p) {
+        const ubahan = this.activeVariants(p).filter(v => this.draft[v.id_variant] !== undefined && this.draft[v.id_variant] !== Number(v.stok ?? 0));
+        if (!ubahan.length) { this.pesan(false, 'Tidak ada perubahan stok pada produk ini.'); return; }
+        this.savingKey = p.id_product;
+        let okCount = 0;
+        for (const v of ubahan) {
+            const res = await PandansariAPI.admin.updateVariant(v.id_variant, { stok: this.draft[v.id_variant] });
+            if (res.ok) { v.stok = this.draft[v.id_variant]; delete this.draft[v.id_variant]; okCount++; }
+        }
+        this.savingKey = '';
+        this.pesan(okCount === ubahan.length, okCount + '/' + ubahan.length + ' varian stok tersimpan.');
+    },
+
+    // === Toggle status toko → PUT /products/{id} ===
+    async toggleToko(p) {
+        const next = p.status_produk === 'aktif' ? 'nonaktif' : 'aktif';
+        const res = await PandansariAPI.admin.updateProduct(p.id_product, { status_produk: next });
+        if (res.ok) {
+            p.status_produk = next;
+            this.pesan(true, p.nama_produk + ' sekarang ' + next + '.');
+        } else this.pesan(false, res.message);
+    },
+
+    // === Muat data ===
+    async loadProduk() {
+        this.loading = true;
+        const res = await PandansariAPI.admin.adminProducts({
+            page: this.page, per_page: this.perPage,
+            search: this.searchQuery.trim() || undefined,
         });
+        this.loading = false;
+        if (res.ok) {
+            this.products = res.data ?? [];
+            this.meta = res.meta;
+            this.page = res.meta?.current_page ?? this.page;
+            // siapkan draft kosong
+            this.draft = {};
+        } else this.pesan(false, res.message);
+    },
+    goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadProduk(); },
+
+    async init() {
+        if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
+        const me = await PandansariAPI.me();
+        if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
+        await this.loadProduk();
+        this.loading = false;
     }
 }" class="space-y-6 text-slate-800 font-sans">
+
+    <!-- Gate -->
+    <div x-show="needLogin" x-cloak class="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4">
+        <i class="fa-solid fa-lock text-3xl text-slate-300"></i>
+        <p class="text-sm font-bold text-[#0F1A24]">Silakan login (akun admin) untuk membuka pusat stok</p>
+        <a href="/login" class="inline-block bg-[#0A192F] text-white text-xs font-bold px-6 py-3 rounded-xl">LOGIN</a>
+    </div>
+    <div x-show="notAdmin" x-cloak class="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4">
+        <i class="fa-solid fa-user-slash text-3xl text-slate-300"></i>
+        <p class="text-sm font-bold text-[#0F1A24]">Akun ini bukan admin — akses ditolak.</p>
+    </div>
+
+    <div x-show="!needLogin && !notAdmin" x-cloak class="space-y-6">
 
     <!-- 1. HEADER BANNER TITLE & ACTION BUTTONS -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -134,38 +138,43 @@
                 Kurasi Stok & Varian Cepat
             </h1>
             <p class="text-xs text-slate-500 mt-1">
-                Pusat pembaruan inventaris seketika, penyesuaian saldo lembar kain, dan peringatan dini stok kritis untuk kurasi wastra adilihung.
+                Saldo stok per varian disimpan nyata via PUT /variants/{id}; status toko via PUT /products/{id}.
             </p>
         </div>
 
         <div class="flex items-center gap-3 shrink-0">
-            <button type="button" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
+            <button type="button" @click="PandansariAPI.admin.productsExport()"
+                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-download text-slate-500"></i>
-                <span>Unduh</span>
+                <span>Unduh CSV</span>
             </button>
-            <button type="button" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#96d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
+            <a href="/admin/products" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#96d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2">
                 <i class="fa-solid fa-bolt text-slate-800"></i>
-                <span>+ Perbarui Stok Cepat</span>
-            </button>
+                <span>Kelola Produk & Varian</span>
+            </a>
         </div>
     </div>
 
-    <!-- 2. SUMMARY CARDS WITH WAYANG BACKGROUND -->
+    <!-- Pesan -->
+    <div x-show="notice" x-cloak
+         class="text-xs font-bold rounded-xl px-4 py-3 border"
+         :class="noticeOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'"
+         x-text="notice"></div>
+
+    <!-- 2. SUMMARY CARDS (dari API) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-        
-        <!-- Card 1: Total Produk Aktif -->
+
         <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
-                <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">TOTAL PRODUK AKTIF</span>
-                <div class="text-3xl sm:text-4xl font-black text-slate-900">124 SKU</div>
+                <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">TOTAL PRODUK TERCATAT</span>
+                <div class="text-3xl sm:text-4xl font-black text-slate-900"><span x-text="meta ? num(meta.total) : '…'"></span> SKU</div>
             </div>
 
             <div class="relative z-10 mt-6 flex items-center gap-2 text-xs font-bold text-slate-700">
                 <i class="fa-regular fa-circle-check text-sky-700 text-sm"></i>
-                <span>100% Terverifikasi Kurator</span>
+                <span>Termasuk draft & nonaktif (panel admin)</span>
             </div>
 
-            <!-- Icon Badge & Wayang Watermark -->
             <div class="absolute right-4 top-4 w-9 h-9 bg-sky-200/80 rounded-xl flex items-center justify-center text-sky-800 text-sm">
                 <i class="fa-regular fa-circle-check"></i>
             </div>
@@ -174,19 +183,17 @@
             </div>
         </div>
 
-        <!-- Card 2: Total Lembar Batik -->
         <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
-                <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">TOTAL LEMBAR BATIK</span>
-                <div class="text-3xl sm:text-4xl font-black text-slate-900">842 <span class="text-xl font-bold text-slate-700">Lembar</span></div>
+                <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">TOTAL UNIT DI HALAMAN INI</span>
+                <div class="text-3xl sm:text-4xl font-black text-slate-900"><span x-text="num(products.reduce((s, p) => s + totalStok(p), 0))"></span> <span class="text-xl font-bold text-slate-700">unit</span></div>
             </div>
 
             <div class="relative z-10 mt-6 flex items-center gap-2 text-xs font-bold text-slate-700">
                 <i class="fa-solid fa-boxes-stacked text-sky-700 text-sm"></i>
-                <span>Tersebar di 4 Sentra Batik</span>
+                <span>Jumlah stok varian aktif pada halaman ini</span>
             </div>
 
-            <!-- Icon Badge & Wayang Watermark -->
             <div class="absolute right-4 top-4 w-9 h-9 bg-sky-200/80 rounded-xl flex items-center justify-center text-sky-800 text-sm">
                 <i class="fa-solid fa-layer-group"></i>
             </div>
@@ -197,28 +204,20 @@
 
     </div>
 
-    <!-- 3. SEARCH & FILTER BAR -->
+    <!-- 3. SEARCH BAR -->
     <div class="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div class="flex flex-1 items-center gap-3">
-            <div class="relative flex-1">
-                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                <input type="text" 
-                       x-model="searchQuery" 
-                       placeholder="Cari berdasarkan SKU, nama kain, atau sentra..." 
-                       class="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-sky-400">
-            </div>
-
-            <select class="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400">
-                <option value="ALL">Semua Kategori</option>
-                <option value="TULIS">Batik Tulis</option>
-                <option value="CAP">Batik Cap</option>
-                <option value="SARIMBIT">Sarimbit</option>
-            </select>
+        <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="text"
+                   x-model.debounce.600ms="searchQuery"
+                   @input.debounce.600ms="page = 1; loadProduk()"
+                   placeholder="Cari berdasarkan SKU, nama produk, atau deskripsi..."
+                   class="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-sky-400">
         </div>
 
         <div class="flex items-center gap-2 text-xs text-slate-500 font-bold self-end md:self-auto">
-            <i class="fa-solid fa-[#AEE2F0] text-sky-500"></i>
-            <span>Menampilkan <strong class="text-slate-900" x-text="filteredItems.length"></strong> 6 dari 124 SKU</span>
+            <i class="fa-solid fa-rotate text-sky-500"></i>
+            <span>Menampilkan <strong class="text-slate-900" x-text="products.length"></strong> produk (hal. <span x-text="meta?.current_page ?? 1"></span>/<span x-text="meta?.last_page ?? 1"></span>)</span>
         </div>
     </div>
 
@@ -228,92 +227,88 @@
             <table class="w-full text-left border-collapse">
                 <thead>
                     <tr class="bg-sky-50/80 text-slate-700 text-[10px] font-extrabold uppercase tracking-wider border-b border-slate-200">
-                        <th class="py-3.5 px-4 w-28">KODE SKU</th>
-                        <th class="py-3.5 px-4">KARYA & MOTIF WASTRA</th>
-                        <th class="py-3.5 px-4">KATEGORI</th>
-                        <th class="py-3.5 px-4 text-center">PENYESUAIAN VARIAN UKURAN</th>
+                        <th class="py-3.5 px-4 w-28">SLUG</th>
+                        <th class="py-3.5 px-4">KARYA & VARIAN STOK</th>
+                        <th class="py-3.5 px-4 text-center">PENYESUAIAN STOK VARIAN</th>
                         <th class="py-3.5 px-4">STATUS & REKOMENDASI</th>
                         <th class="py-3.5 px-4 text-center">STATUS TOKO</th>
                         <th class="py-3.5 px-4 text-center">AKSI CEPAT</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-xs">
-                    <template x-for="item in filteredItems" :key="item.id">
-                        <tr :class="item.rowBg" class="transition">
-                            
+                    <template x-if="loading">
+                        <tr><td colspan="6" class="py-10 text-center text-slate-400 font-semibold"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Memuat data stok…</td></tr>
+                    </template>
+                    <template x-if="!loading && !products.length">
+                        <tr><td colspan="6" class="py-10 text-center text-slate-400 font-semibold">Tidak ada produk.</td></tr>
+                    </template>
+
+                    <template x-for="item in products" :key="item.id_product + '-row'">
+                        <tr :class="statusInfo(item).row" class="transition">
+
                             <!-- Kode SKU -->
-                            <td class="py-4 px-4 font-mono font-black text-slate-900 text-xs" x-text="item.sku"></td>
+                            <td class="py-4 px-4 font-mono font-black text-slate-900 text-xs" x-text="item.slug"></td>
 
                             <!-- Karya & Motif Wastra -->
                             <td class="py-4 px-4">
                                 <div class="flex items-center gap-3">
-                                    <img :src="item.img" class="w-11 h-11 object-cover rounded-xl border border-slate-200 shrink-0" onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=100'">
+                                    <img :src="coverOf(item)" class="w-11 h-11 object-cover rounded-xl border border-slate-200 shrink-0 bg-slate-100" onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=100'">
                                     <div>
-                                        <strong class="text-slate-900 text-sm font-extrabold block" x-text="item.name"></strong>
-                                        <span class="text-[10px] text-slate-500 block font-medium" x-text="item.sentra"></span>
+                                        <strong class="text-slate-900 text-sm font-extrabold block" x-text="item.nama_produk"></strong>
+                                        <span class="text-[10px] text-slate-500 block font-medium" x-text="item.category?.nama_kategori ?? 'Tanpa kategori'"></span>
+                                        <span class="text-[10px] text-slate-400 block" x-text="activeVariants(item).length + ' varian aktif'"></span>
                                     </div>
                                 </div>
                             </td>
 
-                            <!-- Kategori -->
+                            <!-- Penyesuaian stok per varian -->
                             <td class="py-4 px-4">
-                                <span class="text-[9px] font-extrabold px-2.5 py-1 rounded-md uppercase tracking-wider inline-block text-center max-w-[110px]" :class="item.catStyle" x-text="item.category"></span>
-                            </td>
-
-                            <!-- Steppers Varian Ukuran (S, M, L, XL & Total) -->
-                            <td class="py-4 px-4">
-                                <div class="flex items-center justify-center gap-3">
-                                    <!-- S, M, L, XL Box Stepper Grid -->
-                                    <div class="bg-slate-100/80 p-1.5 rounded-xl border border-slate-200/60 flex items-center gap-2">
-                                        <!-- S -->
-                                        <div class="text-center">
-                                            <span class="text-[9px] font-bold text-slate-400 block mb-0.5">S</span>
-                                            <input type="number" min="0" x-model.number="item.sizes.s" class="w-7 h-7 text-center font-black text-xs bg-white rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400" :class="item.sizes.s === 0 ? 'text-rose-600' : 'text-slate-800'">
+                                <template x-if="!activeVariants(item).length">
+                                    <span class="text-[10px] text-slate-400 font-semibold">Belum ada varian aktif</span>
+                                </template>
+                                <div x-show="activeVariants(item).length" class="flex flex-wrap items-center gap-2">
+                                    <template x-for="v in activeVariants(item)" :key="v.id_variant">
+                                        <div class="bg-slate-100/80 px-1.5 py-1 rounded-xl border border-slate-200/60 flex items-center gap-1.5">
+                                            <div class="text-center min-w-[26px]">
+                                                <span class="text-[9px] font-bold text-slate-400 block leading-tight" x-text="(v.ukuran || v.sku || '?').toUpperCase()"></span>
+                                                <input type="number" min="0"
+                                                       :value="valOf(v)"
+                                                       @change="setDraft(v, $event)"
+                                                       class="w-9 h-7 text-center font-black text-xs bg-white rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                                                       :class="valOf(v) === 0 ? 'text-rose-600' : 'text-slate-800'">
+                                            </div>
                                         </div>
-                                        <!-- M -->
-                                        <div class="text-center">
-                                            <span class="text-[9px] font-bold text-slate-400 block mb-0.5">M</span>
-                                            <input type="number" min="0" x-model.number="item.sizes.m" class="w-7 h-7 text-center font-black text-xs bg-white rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400" :class="item.sizes.m === 0 ? 'text-rose-600' : 'text-slate-800'">
-                                        </div>
-                                        <!-- L -->
-                                        <div class="text-center">
-                                            <span class="text-[9px] font-bold text-slate-400 block mb-0.5">L</span>
-                                            <input type="number" min="0" x-model.number="item.sizes.l" class="w-7 h-7 text-center font-black text-xs bg-white rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400" :class="item.sizes.l === 0 ? 'text-rose-600' : 'text-slate-800'">
-                                        </div>
-                                        <!-- XL -->
-                                        <div class="text-center">
-                                            <span class="text-[9px] font-bold text-slate-400 block mb-0.5">XL</span>
-                                            <input type="number" min="0" x-model.number="item.sizes.xl" class="w-7 h-7 text-center font-black text-xs bg-white rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400" :class="item.sizes.xl === 0 ? 'text-rose-600' : 'text-slate-800'">
-                                        </div>
-                                    </div>
-
-                                    <!-- Total Badge -->
-                                    <span class="bg-amber-100/80 text-amber-900 border border-amber-200 text-[11px] font-extrabold px-3 py-1.5 rounded-xl shrink-0" x-text="calculateTotal(item) + ' ' + item.unit"></span>
+                                    </template>
+                                    <span class="bg-amber-100/80 text-amber-900 border border-amber-200 text-[11px] font-extrabold px-3 py-1.5 rounded-xl shrink-0"
+                                          x-text="activeVariants(item).reduce((s, v) => s + valOf(v), 0) + ' unit'"></span>
                                 </div>
                             </td>
 
                             <!-- Status & Rekomendasi -->
                             <td class="py-4 px-4">
                                 <div class="space-y-1">
-                                    <span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold inline-block" :class="item.statusStyle" x-text="item.status"></span>
-                                    <p class="text-[10px] font-semibold text-slate-600" x-text="item.statusNote"></p>
+                                    <span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold inline-block" :class="statusInfo(item).style" x-text="statusInfo(item).label"></span>
+                                    <p class="text-[10px] font-semibold text-slate-600"
+                                       x-text="totalStok(item) === 0 ? 'Restock segera — unit habis' : (totalStok(item) <= 3 ? 'Sisa ' + totalStok(item) + ' unit — pantau terus' : 'Stok terjaga')"></p>
                                 </div>
                             </td>
 
-                            <!-- Status Toko Toggle Switch -->
+                            <!-- Status Toko Toggle Switch → PUT /products/{id} -->
                             <td class="py-4 px-4 text-center">
-                                <button type="button" @click="item.active = !item.active" class="relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" :class="item.active ? 'bg-sky-600' : 'bg-slate-300'">
-                                    <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="item.active ? 'translate-x-5' : 'translate-x-0'"></span>
+                                <button type="button" @click="toggleToko(item)" class="relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none" :class="item.status_produk === 'aktif' ? 'bg-sky-600' : 'bg-slate-300'" :title="item.status_produk === 'aktif' ? 'Aktif — klik untuk nonaktifkan' : 'Nonaktif — klik untuk aktifkan'">
+                                    <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="item.status_produk === 'aktif' ? 'translate-x-5' : 'translate-x-0'"></span>
                                 </button>
+                                <span class="block text-[9px] font-bold mt-1" :class="item.status_produk === 'aktif' ? 'text-sky-700' : 'text-slate-400'" x-text="item.status_produk"></span>
                             </td>
 
-                            <!-- Aksi Cepat (Simpan & Reset) -->
+                            <!-- Aksi Cepat (Simpan varian & Reset draft) -->
                             <td class="py-4 px-4 text-center">
                                 <div class="flex items-center justify-center gap-1.5">
-                                    <button type="button" @click="alert('Perubahan stok ' + item.sku + ' berhasil disimpan!')" class="w-8 h-8 rounded-xl bg-sky-100 text-sky-800 hover:bg-sky-200 transition flex items-center justify-center cursor-pointer" title="Simpan Stok">
-                                        <i class="fa-solid fa-floppy-disk text-xs"></i>
+                                    <button type="button" @click="simpanSemuaProduk(item)" :disabled="savingKey === item.id_product"
+                                            class="w-8 h-8 rounded-xl bg-sky-100 text-sky-800 hover:bg-sky-200 transition flex items-center justify-center cursor-pointer disabled:opacity-50" title="Simpan semua perubahan stok produk ini">
+                                        <i class="fa-solid fa-floppy-disk text-xs" :class="savingKey === item.id_product ? 'fa-spin' : ''"></i>
                                     </button>
-                                    <button type="button" @click="item.sizes = {s:0, m:0, l:0, xl:0}" class="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 transition flex items-center justify-center cursor-pointer" title="Reset Varian">
+                                    <button type="button" @click="draft = {}" class="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 transition flex items-center justify-center cursor-pointer" title="Buang semua draft">
                                         <i class="fa-solid fa-rotate-left text-xs"></i>
                                     </button>
                                 </div>
@@ -328,21 +323,20 @@
         <!-- Footer Table Sync Info & Pagination -->
         <div class="p-4 bg-slate-50/80 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs font-medium text-slate-500">
             <div class="flex items-center gap-2">
-                <i class="fa-solid fa-rotate text-sky-500 animate-spin"></i>
-                <span>Terakhir disimpan: <strong>3 menit lalu</strong> oleh <strong>K.R.H. Danureja</strong> • 124 produk tersinkronisasi otomatis ke etalase online.</span>
+                <i class="fa-solid fa-rotate text-sky-500"></i>
+                <span>Perubahan stok tersimpan per varian ke database (bukan lokal lagi).</span>
             </div>
 
-            <!-- Pagination Buttons -->
             <div class="flex items-center gap-1 self-end sm:self-auto font-bold">
-                <button type="button" class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100">&lt;</button>
-                <button type="button" class="w-7 h-7 rounded-lg bg-[#AEE2F0] text-slate-900 flex items-center justify-center">1</button>
-                <button type="button" class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100">2</button>
-                <button type="button" class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100">3</button>
-                <span class="px-1 text-slate-400">...</span>
-                <button type="button" class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100">21</button>
-                <button type="button" class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100">&gt;</button>
+                <button type="button" @click="goto(page - 1)" :disabled="page <= 1"
+                        class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer disabled:opacity-40">&lt;</button>
+                <span class="px-2 text-slate-700" x-text="(meta?.current_page ?? 1) + ' / ' + (meta?.last_page ?? 1)"></span>
+                <button type="button" @click="goto(page + 1)" :disabled="meta && page >= meta.last_page"
+                        class="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer disabled:opacity-40">&gt;</button>
             </div>
         </div>
+    </div>
+
     </div>
 
 </div>
