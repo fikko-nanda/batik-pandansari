@@ -18,6 +18,10 @@ Route::get('/katalog', function () {
     return view('shop.katalog');
 })->name('katalog');
 
+// 2b. Halaman Info (Public) — Ketentuan Layanan & Kebijakan Privasi
+Route::view('/terms', 'terms')->name('terms');
+Route::view('/privacy', 'privacy')->name('privacy');
+
 Route::get('/detail/{id?}', function ($id = 1) {
     return view('shop.product-detail', compact('id'));
 })->name('product.detail');

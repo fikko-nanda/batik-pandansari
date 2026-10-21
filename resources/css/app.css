@@ -8,4 +8,9 @@
         background-color: #F8FAFC;
         color: #0F1A24;
     }
+
+    /* Sembunyikan elemen x-cloak sampai Alpine siap (mencegah badge berkedip) */
+    [x-cloak] {
+        display: none !important;
+    }
 }

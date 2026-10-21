@@ -92,13 +92,40 @@ window.PandansariAPI = {
     getUser() {
         try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; }
     },
-    /** Hapus token + profil user sekaligus. */
+    /** Hapus token + profil user sekaligus (lencana di-nol-kan). */
     clearSession() {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
+        this.setLencana(0, 0);
     },
     /** Alias aman agar pemanggilan PandansariAPI.clearToken() tidak error. */
     clearToken() { this.clearSession(); },
+
+    /* ---------- Lencana global: badge Keranjang & Wishlist di navbar ---------- */
+    _jadwalLencana: null,
+    /** Tulis jumlah ke Alpine store global (dibaca navbar via $store.lencana). */
+    setLencana(cart, wishlist) {
+        const st = (window.Alpine && typeof Alpine.store === 'function') ? Alpine.store('lencana') : null;
+        if (st) { st.cart = cart; st.wishlist = wishlist; }
+    },
+    /** Muat jumlah nyata dari API: GET /cart + GET /wishlist (dipanggil saat halaman dibuka bila login). */
+    async muatLencana() {
+        if (!this.getToken()) { this.setLencana(0, 0); return; }
+        const [c, w] = await Promise.all([this.cart(), this.wishlist()]);
+        const cItem = Array.isArray(c.data) ? c.data : (c.data && Array.isArray(c.data.items) ? c.data.items : []);
+        const wItem = Array.isArray(w.data) ? w.data : (w.data && Array.isArray(w.data.items) ? w.data.items : []);
+        const jumlahKeranjang = cItem.reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
+        this.setLencana(c.ok ? jumlahKeranjang : 0, w.ok ? wItem.length : 0);
+    },
+    /**
+     * Refresh lencana segera-menant (isel diskala). Dipanggil otomatis oleh semua
+     * helper yang mengubah keranjang/wishlist — badge navbar tetap sinkron tanpa
+     * harus menyentuh tiap halaman.
+     */
+    jadwalLencana(tunda = 300) {
+        clearTimeout(this._jadwalLencana);
+        this._jadwalLencana = setTimeout(() => this.muatLencana(), tunda);
+    },
 
     /**
      * Fetch dasar: JSON in/out + Bearer token + header bypass ngrok.
@@ -182,21 +209,39 @@ window.PandansariAPI = {
 
     /* ---------- Keranjang ---------- */
     cart() { return this.fetch('/cart'); },
-    addCartItem(id_variant, jumlah = 1) {
-        return this.fetch('/cart/items', { method: 'POST', body: { id_variant, jumlah } });
+    async addCartItem(id_variant, jumlah = 1) {
+        const r = await this.fetch('/cart/items', { method: 'POST', body: { id_variant, jumlah } });
+        this.jadwalLencana();
+        return r;
     },
-    updateCartItem(id, jumlah) {
-        return this.fetch(`/cart/items/${id}`, { method: 'PUT', body: { jumlah } });
+    async updateCartItem(id, jumlah) {
+        const r = await this.fetch(`/cart/items/${id}`, { method: 'PUT', body: { jumlah } });
+        this.jadwalLencana();
+        return r;
     },
-    removeCartItem(id) { return this.fetch(`/cart/items/${id}`, { method: 'DELETE' }); },
-    clearCart() { return this.fetch('/cart', { method: 'DELETE' }); },
+    async removeCartItem(id) {
+        const r = await this.fetch(`/cart/items/${id}`, { method: 'DELETE' });
+        this.jadwalLencana();
+        return r;
+    },
+    async clearCart() {
+        const r = await this.fetch('/cart', { method: 'DELETE' });
+        this.jadwalLencana();
+        return r;
+    },
 
     /* ---------- Wishlist ---------- */
     wishlist() { return this.fetch('/wishlist'); },
-    addWishlist(id_product) {
-        return this.fetch('/wishlist', { method: 'POST', body: { id_product } });
+    async addWishlist(id_product) {
+        const r = await this.fetch('/wishlist', { method: 'POST', body: { id_product } });
+        this.jadwalLencana();
+        return r;
     },
-    removeWishlist(id) { return this.fetch(`/wishlist/${id}`, { method: 'DELETE' }); },
+    async removeWishlist(id) {
+        const r = await this.fetch(`/wishlist/${id}`, { method: 'DELETE' });
+        this.jadwalLencana();
+        return r;
+    },
 
     /* ---------- Alamat ---------- */
     addresses() { return this.fetch('/addresses'); },
@@ -223,9 +268,11 @@ window.PandansariAPI = {
     },
     /**
      * POST /shipping/cost — { destination (int id hasil search), weight (gram), courier }.
-     * CATATAN (20-Oct-2026): backend mengembalikan 422 RAJAONGKIR_DESTINATION_NOT_FOUND
-     * untuk SEMUA destinasi (termasuk simulasi admin) — menunggu perbaikan tim backend.
-     * Respons sukses berbentuk: { origin_id, destination, weight, hasil: [ { kurir, berhasil, error, layanan: [ { service, cost, etd } ] } ] }
+     * STATUS (20-Oct-2026, probe CI): resolusi tujuan sudah BERFUNGSI ketika `destination`
+     * = id subdistrict dari /shipping/destinations. Kurir ✅ jne, sicepat, lion;
+     * ❌ tiki/pos/jnt/anteraja/ninja → 422 RAJAONGKIR_DESTINATION_NOT_FOUND,
+     * jxpress → RAJAONGKIR_INVALID_REQUEST. Kadang 502 RAJAONGKIR_INVALID_RESPONSE
+     * (upstream Komerce flaky) — checkout punya fallback tarif manual.
      */
     shippingCost(destination, weight, courier) {
         return this.fetch('/shipping/cost', {
@@ -457,3 +504,10 @@ window.PandansariAPI = {
 };
 
 window.PandansariAPI._init();
+
+// Store global untuk badge navbar (Keranjang & Wishlist) — dibaca via $store.lencana.
+document.addEventListener('alpine:init', () => {
+    if (window.Alpine && typeof window.Alpine.store === 'function') {
+        window.Alpine.store('lencana', { cart: 0, wishlist: 0 });
+    }
+});

@@ -21,6 +21,7 @@
             cartBusy: false,
             notice: '',       // pesan sukses/eror aksi (keranjang/wishlist)
             noticeOk: false,
+            rekomendasi: [],  // produk serupa dari kategori sama (GET /products?category=...)
 
             get selectedVariant() {
                 return this.variants.find(v => v.id_variant === this.selectedVariantId) ?? null;
@@ -47,6 +48,20 @@
             },
 
             changeImage(img) { this.activeImage = img.src; },
+
+            // Produk serupa: kategori sama, kecuali produk ini sendiri (max 4)
+            async loadRekomendasi() {
+                const idKategori = this.product?.category?.id_category;
+                const res = await PandansariAPI.products({ category: idKategori, per_page: 20 });
+                const list = (res.ok ? (res.data ?? []) : []).filter(p => String(p.id_product) !== String(this.productId));
+                this.rekomendasi = list.slice(0, 4);
+            },
+            coverRek(p) { return PandansariAPI.coverUrl(p.images) || this.fallbackImage; },
+            hargaRek(p) {
+                const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);
+                return v.length ? PandansariAPI.formatRp(Math.min(...v.map(x => Number(x.harga)))) : '-';
+            },
+            kategoriRek(p) { return p.category?.nama_kategori ?? this.categoryName; },
 
             get pageTitle()  { return this.product?.nama_produk ?? 'Memuat…'; },
             get categoryName() { return this.product?.category?.nama_kategori ?? ''; },
@@ -85,7 +100,10 @@
                 setTimeout(() => { this.notice = ''; }, 4000);
             },
 
-            async init() { await this.load(); }
+            async init() {
+                await this.load();
+                this.loadRekomendasi();
+            }
          }">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
 
@@ -119,18 +137,18 @@
                              onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=800&auto=format&fit=crop'">
                     </div>
 
-                    <!-- 2. THUMBNAIL 4 BIJI BERBARIS KE SAMPING (BISA DI-KLIK) -->
-                    <div class="flex flex-row gap-2.5 sm:gap-3 w-full">
+                    <!-- 2. THUMBNAIL (ASPECT-SQUARE, TANPA OVERLAY TEKS — KLIK UNTUK GANTI GAMBAR UTAMA) -->
+                    <div class="flex flex-row flex-wrap gap-2.5 sm:gap-3 w-full">
                         <template x-for="(img, idx) in images" :key="idx">
                             <button @click="changeImage(img)" 
                                     type="button" 
-                                    class="flex-1 h-20 sm:h-24 bg-white rounded-xl overflow-hidden border-2 transition shadow-sm cursor-pointer relative shrink-0 group"
-                                    :class="activeImage === img.src ? 'border-sky-500 ring-2 ring-sky-200' : 'border-slate-200 hover:border-slate-400'">
+                                    class="w-16 h-16 sm:w-20 sm:h-20 bg-white rounded-xl overflow-hidden border-2 transition shadow-sm cursor-pointer shrink-0 group"
+                                    :class="activeImage === img.src ? 'border-sky-500 ring-2 ring-sky-200' : 'border-slate-200 hover:border-slate-400'"
+                                    :aria-label="img.label">
                                 <img :src="img.src" 
                                      :alt="img.label" 
                                      class="w-full h-full object-cover block group-hover:scale-105 transition-transform duration-300"
                                      :onerror="`this.src='${img.fallback}'; if(activeImage === img.src) activeImage='${img.fallback}';`">
-                                <span class="absolute bottom-0 inset-x-0 bg-slate-900/80 text-white text-[8px] sm:text-[9px] text-center py-0.5 font-medium truncate block" x-text="img.label"></span>
                             </button>
                         </template>
                     </div>
@@ -184,12 +202,14 @@
 
                         <div class="flex flex-wrap gap-2">
                             <template x-for="v in variants" :key="v.id_variant">
-                                <button @click="selectedVariantId = v.id_variant; qty = 1"
+                                <button @click="if (v.stok > 0) { selectedVariantId = v.id_variant; qty = 1; }"
                                         type="button"
-                                        class="px-3 h-10 sm:w-auto sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center"
+                                        :disabled="v.stok <= 0"
+                                        class="px-3 h-10 sm:w-auto sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed"
                                         :class="selectedVariantId === v.id_variant ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
                                     <span x-text="v.ukuran ? v.ukuran : (v.nama_varian ?? 'Varian')"></span>
-                                    <span class="block text-[9px] font-medium" :class="selectedVariantId === v.id_variant ? 'text-slate-300' : 'text-slate-400'" x-text="PandansariAPI.formatRp(v.harga)"></span>
+                                    <span class="block text-[9px] font-medium" :class="selectedVariantId === v.id_variant ? 'text-slate-300' : 'text-slate-400'"
+                                          x-text="v.stok > 0 ? PandansariAPI.formatRp(v.harga) : 'HABIS'"></span>
                                 </button>
                             </template>
                             <p class="text-xs text-slate-400 italic w-full" x-show="!loading && !variants.length">Varian tidak tersedia.</p>
@@ -290,57 +310,23 @@
                 </div>
 
                 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                    <!-- Item 1 -->
-                    <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition p-3 flex flex-col justify-between">
-                        <div class="h-48 bg-slate-100 rounded-xl overflow-hidden mb-3">
-                            <img src="{{ asset('images/cat-kids.jpg') }}" alt="Tunik Pesisiran" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1598033129183-c4f50c736f10?q=80&w=800&auto=format&fit=crop'">
-                        </div>
-                        <div>
-                            <span class="text-[8px] font-bold text-[#0369A1] uppercase block mb-0.5">PAKAIAN WANITA • SARIMBIT</span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs truncate">Tunik Pesisiran Navy Sekar</h3>
-                            <span class="font-bold text-[#0F1A24] text-xs block mt-1">Rp 1.280.000</span>
-                        </div>
-                        <a href="/detail" class="mt-3 block text-center bg-slate-100 hover:bg-slate-200 text-[#0F1A24] text-[10px] font-bold py-2 rounded-lg transition">Lihat Detail</a>
-                    </div>
-
-                    <!-- Item 2 -->
-                    <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition p-3 flex flex-col justify-between">
-                        <div class="h-48 bg-slate-100 rounded-xl overflow-hidden mb-3">
-                            <img src="{{ asset('images/m2.png') }}" alt="Kemeja Sutra" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=800&auto=format&fit=crop'">
-                        </div>
-                        <div>
-                            <span class="text-[8px] font-bold text-[#0369A1] uppercase block mb-0.5">PAKAIAN PRIA • SUTRA KATUN</span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs truncate">Kemeja Sutra Megamendung...</h3>
-                            <span class="font-bold text-[#0F1A24] text-xs block mt-1">Rp 2.450.000</span>
-                        </div>
-                        <a href="/detail" class="mt-3 block text-center bg-slate-100 hover:bg-slate-200 text-[#0F1A24] text-[10px] font-bold py-2 rounded-lg transition">Lihat Detail</a>
-                    </div>
-
-                    <!-- Item 3 -->
-                    <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition p-3 flex flex-col justify-between">
-                        <div class="h-48 bg-slate-100 rounded-xl overflow-hidden mb-3">
-                            <img src="{{ asset('images/tulis.jpg') }}" alt="Kemeja Cap" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1596755094514-f87e34085b2c?q=80&w=800&auto=format&fit=crop'">
-                        </div>
-                        <div>
-                            <span class="text-[8px] font-bold text-[#0369A1] uppercase block mb-0.5">PAKAIAN PRIA • BATIK CAP HANDMADE</span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs truncate">Kemeja Cap Sawunggaling...</h3>
-                            <span class="font-bold text-[#0F1A24] text-xs block mt-1">Rp 890.000</span>
-                        </div>
-                        <a href="/detail" class="mt-3 block text-center bg-slate-100 hover:bg-slate-200 text-[#0F1A24] text-[10px] font-bold py-2 rounded-lg transition">Lihat Detail</a>
-                    </div>
-
-                    <!-- Item 4 -->
-                    <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition p-3 flex flex-col justify-between">
-                        <div class="h-48 bg-slate-100 rounded-xl overflow-hidden mb-3">
-                            <img src="{{ asset('images/m1.png') }}" alt="Kemeja Tulis" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?q=80&w=800&auto=format&fit=crop'">
-                        </div>
-                        <div>
-                            <span class="text-[8px] font-bold text-[#0369A1] uppercase block mb-0.5">PAKAIAN PRIA • PRIMISSIMA</span>
-                            <h3 class="font-bold text-[#0F1A24] text-xs truncate">Kemeja Tulis Gurdo Bimo...</h3>
-                            <span class="font-bold text-[#0F1A24] text-xs block mt-1">Rp 1.420.000</span>
-                        </div>
-                        <a href="/detail" class="mt-3 block text-center bg-slate-100 hover:bg-slate-200 text-[#0F1A24] text-[10px] font-bold py-2 rounded-lg transition">Lihat Detail</a>
-                    </div>
+                    <template x-for="p in rekomendasi" :key="p.id_product">
+                        <a :href="'/detail/' + p.id_product"
+                           class="group bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition p-3 pb-4 flex flex-col justify-between cursor-pointer">
+                            <div class="h-48 bg-slate-100 rounded-xl overflow-hidden mb-3">
+                                <img :src="coverRek(p)" :alt="p.nama_produk ?? 'Produk'"
+                                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                            </div>
+                            <div class="min-h-[52px]">
+                                <span class="text-[8px] font-bold text-[#0369A1] uppercase block mb-0.5" x-text="kategoriRek(p)"></span>
+                                <h3 class="font-bold text-[#0F1A24] text-xs leading-snug line-clamp-2" x-text="p.nama_produk ?? 'Produk'"></h3>
+                            </div>
+                            <span class="font-bold text-[#0F1A24] text-xs block mt-1" x-text="hargaRek(p)"></span>
+                            <span class="mt-3 block text-center bg-slate-100 group-hover:bg-slate-200 text-[#0F1A24] text-[10px] font-bold py-2 rounded-lg transition">Lihat Detail</span>
+                        </a>
+                    </template>
+                    <p class="col-span-2 lg:col-span-4 text-center text-xs text-slate-400 italic py-6"
+                       x-show="!loading && !rekomendasi.length">Belum ada rekomendasi untuk produk ini.</p>
                 </div>
             </div>
 

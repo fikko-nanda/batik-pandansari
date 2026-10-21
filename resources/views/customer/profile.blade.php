@@ -62,7 +62,27 @@
             PandansariAPI.clearSession();
             window.location.href = '/';
         },
-        init() { this.load(); }
+        // === Riwayat pemakaian voucher (GET /voucher-usages/me) ===
+        vkList: [], vkMsg: '',
+        async muatRiwayatVoucher() {
+            const r = await PandansariAPI.voucherUsagesMe();
+            this.vkList = r.ok ? (r.data ?? []) : [];
+            if (!r.ok) this.vkMsg = r.message;
+        },
+        vkTanggal(s) {
+            try { return s ? new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'; }
+            catch { return '—'; }
+        },
+        vkWarna(st) {
+            const s = String(st ?? '').toLowerCase();
+            if (['berhasil', 'digunakan', 'dibayar'].includes(s)) return 'bg-emerald-100 text-emerald-700';
+            if (['dibatalkan', 'gagal', 'expired', 'kedaluwarsa'].includes(s)) return 'bg-rose-100 text-rose-700';
+            return 'bg-amber-100 text-amber-700';
+        },
+        vkLabel(st) {
+            return String(st ?? '').toLowerCase().toUpperCase() || 'MENUNGGU';
+        },
+        init() { this.load(); this.muatRiwayatVoucher(); }
      }">
 
     <!-- Gate: belum login -->
@@ -216,11 +236,7 @@
 
                     </div>
 
-                    <p class="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
-                        <i class="fa-solid fa-circle-info text-sky-500 mr-1"></i>
-                        Saat ini backend menyimpan <span class="font-semibold">nama, email, dan nomor telepon</span> saja.
-                        Tanggal lahir & jenis kelamin akan menyusul bila kolomnya tersedia di API.
-                    </p>
+                   
 
                     <!-- Pesan hasil simpan -->
                     <div x-show="msg" x-cloak
@@ -252,6 +268,46 @@
 
                 </form>
 
+            </div>
+
+            <!-- Riwayat pemakaian voucher (GET /voucher-usages/me) -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 mt-8">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                    <h2 class="text-sm font-bold text-[#0F1A24] flex items-center gap-2">
+                        <i class="fa-solid fa-ticket text-sky-600"></i> Riwayat Pemakaian Voucher
+                    </h2>
+                    <span class="text-[10px] text-slate-400">
+                        <span x-text="vkList.length"></span> penggunaan
+                    </span>
+                </div>
+
+                <p x-show="vkMsg" x-cloak class="text-xs text-rose-600 font-semibold" x-text="vkMsg"></p>
+
+                <div x-show="!vkList.length && !vkMsg" class="text-center py-8">
+                    <i class="fa-solid fa-ticket text-3xl text-slate-200 block mb-2"></i>
+                    <p class="text-xs font-bold text-[#0F1A24]">Belum ada voucher terpakai</p>
+                    <p class="text-[11px] text-slate-400 mt-1">Voucher yang dipakai saat checkout akan tampil di sini.</p>
+                </div>
+
+                <div class="space-y-2.5">
+                    <template x-for="vk in vkList" :key="vk.id_voucher_usage ?? vk.id_order">
+                        <div class="flex items-center justify-between gap-3 border border-slate-100 rounded-xl px-4 py-3">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-mono font-bold text-sky-800 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5" x-text="vk.voucher?.kode_voucher ?? 'VOUCHER'"></span>
+                                    <span class="text-xs font-bold text-slate-700 truncate" x-text="vk.voucher?.nama_voucher ?? ''"></span>
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-0.5">
+                                    Tanggal: <span x-text="vkTanggal(vk.digunakan_pada ?? vk.dibuat_pada)"></span>
+                                </p>
+                            </div>
+                            <div class="text-right shrink-0 space-y-1">
+                                <div class="text-xs font-bold text-[#0F1A24]" x-text="'- ' + PandansariAPI.formatRp(vk.jumlah_diskon)"></div>
+                                <span class="text-[9px] font-bold rounded-full px-2 py-0.5 inline-block" :class="vkWarna(vk.status_penggunaan)" x-text="vkLabel(vk.status_penggunaan)"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
             </div>
 
         </div>

@@ -1,5 +1,12 @@
-<!-- Main Header Wrapper -->
-<header class="sticky top-0 z-40 w-full bg-white border-b border-slate-100 shadow-sm" x-data="{ mobileMenuOpen: false }">
+<!-- Main Header Wrapper (badge Keranjang & Wishlist = $store.lencana, sinkron dari API) -->
+<header class="sticky top-0 z-40 w-full bg-white border-b border-slate-100 shadow-sm"
+        x-data="{
+            mobileMenuOpen: false,
+            init() {
+                // Saat halaman dibuka & user login → tarik jumlah sekah dari API sekali
+                if (window.PandansariAPI && PandansariAPI.getToken()) PandansariAPI.muatLencana();
+            },
+        }">
     
 
     <!-- Main Navbar Container -->
@@ -39,8 +46,9 @@
                 class="relative p-1.5 transition {{ request()->is('wishlist') || request()->is('favorit') ? 'text-black font-bold' : 'text-slate-600 hover:text-black' }}">
                     <!-- Jika di halaman wishlist, gunakan icon heart solid (terisi), jika tidak gunakan regular (garis) -->
                     <i class="{{ request()->is('wishlist') || request()->is('favorit') ? 'fa-solid fa-heart' : 'fa-regular fa-heart' }} text-lg"></i>
-                    <span class="absolute -top-1 -right-1 w-4 h-4 bg-black text-white text-[9px] font-bold rounded-full flex items-center justify-center font-['Plus_Jakarta_Sans']">
-                        6
+                    <span x-show="$store.lencana && $store.lencana.wishlist > 0" x-cloak
+                          class="absolute -top-1 -right-1 w-4 h-4 bg-black text-white text-[9px] font-bold rounded-full flex items-center justify-center font-['Plus_Jakarta_Sans']"
+                          x-text="$store.lencana ? $store.lencana.wishlist : 0">
                     </span>
                 </a>
 
@@ -58,8 +66,9 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.25 10.5a.75.75 0 100-1.5.75.75 0 000 1.5zm7.5 0a.75.75 0 100-1.5.75.75 0 000 1.5z" />
                             </svg>
 
-                            <span class="absolute -top-1 -right-1 w-4 h-4 {{ request()->is('cart') || request()->is('keranjang') ? 'bg-black' : 'bg-[#0369A1]' }} text-white text-[9px] font-bold rounded-full flex items-center justify-center font-['Plus_Jakarta_Sans']">
-                                3
+                            <span x-show="$store.lencana && $store.lencana.cart > 0" x-cloak
+                                  class="absolute -top-1 -right-1 w-4 h-4 {{ request()->is('cart') || request()->is('keranjang') ? 'bg-black' : 'bg-[#0369A1]' }} text-white text-[9px] font-bold rounded-full flex items-center justify-center font-['Plus_Jakarta_Sans']"
+                                  x-text="$store.lencana ? $store.lencana.cart : 0">
                             </span>
                         </a>
                 <!-- WhatsApp CS Button -->
