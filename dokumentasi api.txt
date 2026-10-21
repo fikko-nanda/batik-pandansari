@@ -110,20 +110,31 @@ Hanya produk berstatus 'aktif' yang ditampilkan. Respons menyertakan
 "meta": current_page, per_page, total, last_page.
 
 GET /api/products/{id} (publik) - {id} adalah id_product (UUID). Menampilkan
-produk 'aktif' beserta category, variants, dan images. Jika tidak ada atau
-tidak aktif -> 404.
+produk 'aktif' beserta category, variants, images, dan size_chart. Galeri
+"images" hanya berisi foto produk (type='produk'); size chart tersedia pada
+field terpisah "size_chart". Jika tidak ada atau tidak aktif -> 404.
 
 POST /api/products (admin) - body:
   id_category    (wajib, harus ada di tabel categories)
   nama_produk    (wajib, string, maks 150)
+  sku            (opsional, unik, maks 100)
   slug           (opsional, unik, maks 180; bila kosong dibuat otomatis
                   dari nama_produk)
   deskripsi      (opsional, string)
+  berat_produk   (opsional, integer gram, 1..1000000)
+  bahan_kain     (opsional, maks 100)
   status_produk  (opsional, salah satu draft/aktif/nonaktif, default draft)
 Respons 201 berisi data produk.
+Catatan: status_produk 'aktif' TIDAK bisa langsung dipakai saat membuat
+produk karena produk minimal harus memiliki 1 gambar (lihat 4.3). Buat
+produk sebagai draft, unggah gambarnya, lalu aktifkan lewat PUT.
 
 PUT /api/products/{id} (admin) - bersifat parsial (semua field opsional).
-Slug tetap diperiksa unik dengan mengecualikan produk itu sendiri.
+Slug dan SKU tetap diperiksa unik dengan mengecualikan produk itu sendiri.
+Field yang tidak dikirim mempertahankan nilai sebelumnya; field yang sengaja
+dikirim null akan ditulis null (kecuali slug yang tidak boleh null).
+Perpindahan status ke 'aktif' mensyaratkan produk sudah punya minimal 1 foto
+produk.
 
 DELETE /api/products/{id} (admin) - menonaktifkan produk (soft delete:
 status_produk diubah menjadi 'nonaktif'). Penghapusan permanen tidak
@@ -175,6 +186,74 @@ DELETE /api/images/{id} (admin) - {id} = id_image; hapus baris + file fisik.
 
 Catatan: agar file dapat diakses lewat URL publik, jalankan
 `php artisan storage:link` (symlink public/storage -> storage/app/public).
+
+4.3 Katalog Produk: Bulk Varian, Size Chart, dan Gambar (SUDAH DIBUAT)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Migration: 2026_10_21_000300_add_catalog_columns_to_products_and_product_images
+Menambah KOLOM pada tabel yang sudah ada (tidak ada tabel baru):
+  products.sku          varchar(100) NULL + UNIQUE (uq_products_sku)
+  products.berat_produk int unsigned NULL (gram)
+  products.bahan_kain   varchar(100) NULL
+  product_images.type        varchar(30) NOT NULL default 'produk'
+  product_images.id_variant  char(36) NULL + FK fk_images_variant ->
+                             product_variants(id_variant) ON DELETE SET NULL
+  index idx_images_product_type (id_product, type)
+Tabel domain (products, product_variants, product_images) tidak memiliki
+migration di repo sehingga migration ini dijaga Schema::hasTable().
+
+ATURAN BISNIS:
+  - Produk yang memiliki varian minimal satu varian AKTIF dengan ukuran
+    (ukuran tidak null dan tidak kosong). Produk tanpa varian sama sekali
+    tetap boleh (produk yang memang tidak menggunakan ukuran). Varian
+    dengan ukuran kosong ditolak pada POST varian, POST bulk, dan DELETE
+    varian (nonaktif) - permintaan ditolak 422 dan transaksi dibatalkan.
+  - Produk minimal memiliki 1 foto (type='produk') sebelum berstatus 'aktif'.
+    Maksimal 5 foto produk per produk; size chart tidak dihitung ke kuota
+    dan maksimal 1 size chart per produk.
+
+VARIAN BULK:
+POST /api/admin/products/{id}/variants/bulk (admin) - {id} = id_product.
+  body:
+    items (wajib, array 1..500):
+      items.*.id_variant   (opsional; bila ada harus milik produk ini)
+      items.*.sku          (wajib, maks 100, unik)
+      items.*.nama_varian  (opsional, maks 100)
+      items.*.warna        (opsional, maks 50)
+      items.*.ukuran       (opsional, maks 30)
+      items.*.harga        (wajib, numerik >= 0)
+      items.*.stok         (opsional, integer >= 0, default 0)
+      items.*.berat_gram   (opsional, integer 1..1000000, default 500)
+      items.*.status_varian(opsional, aktif/nonaktif, default aktif)
+    hapus_yang_tidak_disediakan (opsional, boolean, default false)
+  Item tanpa id_variant dibuat sebagai varian baru; item dengan id_variant
+  diperbarui secara parsial (hanya field yang dikirim). SKU harus unik:
+  duplikat di dalam payload maupun bentrok dengan varian lain ditolak 422,
+  sedangkan varian yang diperbarui boleh tetap memakai SKU-nya sendiri.
+  hapus_yang_tidak_disediakan=true menonaktifkan (soft delete) varian aktif
+  yang tidak ada di payload.
+  Respons 200: data berisi dibuat, diperbarui, dinonaktifkan, dan items.
+
+GAMBAR (jalur /api/admin/... , endpoint lama tetap dipertahankan):
+GET    /api/admin/products/{id}/images (admin) - {id} = id_product; produk
+       berstatus apa pun. Query opsional ?type=produk|size_chart.
+POST   /api/admin/products/{id}/images (admin) - multipart/form-data:
+       gambar     (wajib, file jpg/jpeg/png/webp, maks 2MB)
+       type       (opsional, produk/size_chart, default produk)
+       id_variant (opsional; harus milik produk ini; WAJIB kosong untuk
+                   size_chart)
+       alt_text   (opsional, maks 150)
+       is_primary (opsional, boolean; size chart selalu false)
+       urutan     (opsional, integer >= 0, default max+1 per type)
+DELETE /api/admin/products/{id}/images/{imageId} (admin) - {id} = id_product,
+       {imageId} = id_image. Gambar harus benar-benar milik produk tersebut,
+       jika tidak -> 404. Baris dan file fisik dihapus; bila gambar utama
+       terhapus, gambar berikutnya otomatis dipromosikan menjadi utama.
+DELETE /api/images/{id} (admin) - endpoint lama tanpa scoping produk, tetap
+       dipertahankan demi kompatibilitas.
+GET    /api/products/{id}/images (publik) - query opsional ?type=produk|size_chart.
+
+Kolom "url" tidak ada di tabel; nilainya dihitung dari path_gambar memakai
+Storage::disk('public')->url() dan selalu ikut pada respons gambar.
 
 5. WISHLIST DAN KERANJANG
 -------------------------
@@ -277,9 +356,13 @@ GET | /api/products/{id}/variants | Publik | Melihat varian produk.
 POST | /api/products/{id}/variants | Admin | Menambahkan varian produk.
 PUT | /api/variants/{id} | Admin | Memperbarui varian dan atribut yang diizinkan.
 DELETE | /api/variants/{id} | Admin | Menghapus/menonaktifkan varian.
-GET | /api/products/{id}/images | Publik | Melihat gambar produk.
+GET | /api/products/{id}/images | Publik | Melihat gambar produk (filter opsional ?type=produk|size_chart).
 POST | /api/products/{id}/images | Admin | Menambahkan gambar produk.
 DELETE | /api/images/{id} | Admin | Menghapus gambar produk.
+POST | /api/admin/products/{id}/variants/bulk | Admin | Menyimpan banyak varian produk sekaligus (SKU unik, minimal 1 varian bersize bila produk memakai ukuran).
+GET | /api/admin/products/{id}/images | Admin | Daftar gambar produk pada admin (produk draft/nonaktif ikut terlihat).
+POST | /api/admin/products/{id}/images | Admin | Menambahkan gambar produk (maks 5 foto produk + 1 size chart).
+DELETE | /api/admin/products/{id}/images/{imageId} | Admin | Menghapus gambar yang scoping-nya ke produk tersebut.
 
 
 [TABEL 5]

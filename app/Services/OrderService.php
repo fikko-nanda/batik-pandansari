@@ -5,8 +5,11 @@ namespace App\Services;
 use App\Models\InventoryMovement;
 use App\Models\Order;
 use App\Models\OrderStatusHistory;
+use App\Models\Payment;
 use App\Models\ProductVariant;
 use App\Models\VoucherUsage;
+use Carbon\CarbonImmutable;
+use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -20,6 +23,76 @@ class OrderService
         'selesai',
         'dibatalkan',
     ];
+
+    /**
+     * Batas waktu pembayaran (menit) sejak pesanan dibuat. Berlaku untuk
+     * seluruh metode pembayaran Midtrans.
+     */
+    public const PAYMENT_WINDOW_MINUTES = 10;
+
+    public function __construct(
+        private readonly StockReservationService $reservations,
+        private readonly OrderMailService $orderMail
+    ) {}
+
+    /**
+     * Waktu kedaluwarsa pembayaran untuk sebuah pesanan.
+     */
+    public function expiryFrom(?DateTimeInterface $base = null): CarbonImmutable
+    {
+        $base = $base ?? now();
+
+        return CarbonImmutable::instance($base)->addMinutes(self::PAYMENT_WINDOW_MINUTES);
+    }
+
+    /**
+     * Apakah pesanan menunggu pembayaran sudah melewati batas waktu.
+     */
+    public function isExpired(Order $order): bool
+    {
+        return $order->status_pesanan === 'menunggu_pembayaran'
+            && $order->kedaluwarsa_pada !== null
+            && $order->kedaluwarsa_pada->isPast();
+    }
+
+    /**
+     * Batalkan pesanan yang menunggu pembayaran bila batas waktu sudah lewat,
+     * dengan memverifikasi ulang status DI DALAM lock.
+     *
+     * Mencegah race: pesanan yang sudah dibayar (mis. notifikasi Midtrans
+     * settlement masuk tepat di antara query dan penguncian) TIDAK boleh
+     * dibatalkan oleh penjadwal. Baris pembayaran yang masih menunggu ikut
+     * ditandai kedaluwarsa agar endpoint detail tidak menampilkan status basi.
+     *
+     * @return bool true bila pesanan benar-benar dibatalkan
+     */
+    public function expireIfUnpaid(Order $order): bool
+    {
+        return DB::transaction(function () use ($order) {
+            $locked = Order::whereKey($order->id_order)->lockForUpdate()->first();
+
+            if (! $locked || $locked->status_pesanan !== 'menunggu_pembayaran') {
+                return false;
+            }
+
+            if ($locked->kedaluwarsa_pada === null || ! $locked->kedaluwarsa_pada->isPast()) {
+                return false;
+            }
+
+            Payment::where('id_order', $locked->id_order)
+                ->where('status_pembayaran', 'menunggu')
+                ->update(['status_pembayaran' => 'kedaluwarsa']);
+
+            $this->changeStatus(
+                $locked,
+                'dibatalkan',
+                null,
+                'Pembayaran melewati batas waktu '.self::PAYMENT_WINDOW_MINUTES.' menit.'
+            );
+
+            return true;
+        });
+    }
 
     public function generateNomorPesanan(int $offset = 0): string
     {
@@ -44,7 +117,9 @@ class OrderService
         ?string $changedBy = null,
         ?string $catatan = null
     ): Order {
-        return DB::transaction(function () use ($order, $newStatus, $changedBy, $catatan) {
+        $transisi = false;
+
+        $fresh = DB::transaction(function () use ($order, $newStatus, $changedBy, $catatan, &$transisi) {
             $order = Order::whereKey($order->id_order)->lockForUpdate()->firstOrFail();
 
             $statusSebelumnya = $order->status_pesanan;
@@ -53,8 +128,18 @@ class OrderService
                 return $order;
             }
 
-            if ($newStatus === 'dibatalkan' && in_array($statusSebelumnya, ['menunggu_pembayaran', 'dibayar'], true)) {
-                $this->restoreStock($order);
+            // Tandai bahwa ini transisi nyata (bukan pemanggilan berulang dengan
+            // status yang sama) agar email tidak terkirim duplikat.
+            $transisi = true;
+
+            if ($newStatus === 'dibatalkan') {
+                // Reservasi masih aktif (belum dibayar) → cukup dilepas.
+                // Sudah dibayar (stok fisik sudah berkurang) → kembalikan stok.
+                if ($statusSebelumnya === 'menunggu_pembayaran') {
+                    $this->reservations->release($order);
+                } elseif ($statusSebelumnya === 'dibayar') {
+                    $this->restoreStock($order);
+                }
 
                 VoucherUsage::where('id_order', $order->id_order)
                     ->whereIn('status_penggunaan', ['menunggu', 'digunakan'])
@@ -62,6 +147,28 @@ class OrderService
             }
 
             if ($newStatus === 'dibayar') {
+                // Konversi reservasi menjadi pengurangan stok permanen bila
+                // reservasi memang masih menunggu. Bila reservasi sudah
+                // dilepas (mis. pesanan sempat dibatalkan), jangan kurangi
+                // stok tanpa validasi — dicatat sebagai kekurangan untuk admin.
+                if ($statusSebelumnya === 'menunggu_pembayaran') {
+                    $this->reservations->commit($order, $changedBy);
+                } elseif ($statusSebelumnya === 'dibatalkan') {
+                    $kekurangan = $this->reservations->commitAfterRelease($order, $changedBy);
+
+                    if ($kekurangan !== []) {
+                        OrderStatusHistory::create([
+                            'id_order_status_history' => (string) Str::uuid(),
+                            'id_order' => $order->id_order,
+                            'status_sebelumnya' => $statusSebelumnya,
+                            'status_baru' => $newStatus,
+                            'catatan' => 'PERINGATAN: pembayaran diterima setelah pembatalan namun stok tidak mencukupi; perlu tindak lanjut admin: '.json_encode($kekurangan),
+                            'diubah_oleh' => $changedBy,
+                            'waktu_perubahan' => now(),
+                        ]);
+                    }
+                }
+
                 VoucherUsage::where('id_order', $order->id_order)
                     ->where('status_penggunaan', 'menunggu')
                     ->update([
@@ -84,6 +191,20 @@ class OrderService
 
             return $order->fresh();
         });
+
+        // Kirim email hanya saat transisi nyata, dan hanya SETELAH transaksi
+        // commit agar data yang dibaca mailable sudah konsisten. Kegagalan
+        // email ditelan di dalam OrderMailService dan tidak membatalkan
+        // perubahan status.
+        if ($transisi) {
+            if ($newStatus === 'dibayar') {
+                $this->orderMail->sendPaid($fresh);
+            } elseif ($newStatus === 'dibatalkan') {
+                $this->orderMail->sendCancelled($fresh);
+            }
+        }
+
+        return $fresh;
     }
 
     private function restoreStock(Order $order): void

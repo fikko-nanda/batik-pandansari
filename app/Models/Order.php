@@ -23,6 +23,7 @@ class Order extends Model
         'id_user',
         'nomor_pesanan',
         'status_pesanan',
+        'kedaluwarsa_pada',
         'subtotal',
         'biaya_pengiriman',
         'diskon',
@@ -37,6 +38,7 @@ class Order extends Model
     protected function casts(): array
     {
         return [
+            'kedaluwarsa_pada' => 'datetime',
             'subtotal' => 'decimal:2',
             'biaya_pengiriman' => 'decimal:2',
             'diskon' => 'decimal:2',
@@ -84,6 +86,24 @@ class Order extends Model
     {
         return $this->hasMany(
             OrderStatusHistory::class,
+            'id_order',
+            'id_order'
+        );
+    }
+
+    public function shipments()
+    {
+        return $this->hasMany(
+            Shipment::class,
+            'id_order',
+            'id_order'
+        );
+    }
+
+    public function fulfillments()
+    {
+        return $this->hasMany(
+            OrderFulfillment::class,
             'id_order',
             'id_order'
         );

@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Endpoints;
 
+use Illuminate\Support\Str;
+
 /**
  * Endpoint wishlist & keranjang: /api/wishlist, /api/cart
  */
@@ -30,7 +32,7 @@ class WishlistCartEndpointTest extends EndpointTestCase
             'expected' => 401,
         ]);
 
-        $this->hit('DELETE', '/api/wishlist/'.(string) \Illuminate\Support\Str::uuid(), [
+        $this->hit('DELETE', '/api/wishlist/'.(string) Str::uuid(), [
             'endpoint' => 'DELETE /api/wishlist/{id}',
             'label' => 'Hapus wishlist tanpa token',
             'expected' => 401,

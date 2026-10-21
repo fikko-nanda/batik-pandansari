@@ -50,7 +50,12 @@ class AuthEndpointTest extends EndpointTestCase
         $this->assertSame('budi.santoso@example.com', $entry['response']['data']['email'] ?? null);
         $this->assertSame('pelanggan', $entry['response']['data']['peran'] ?? null);
         $this->assertArrayNotHasKey('kata_sandi', $entry['response']['data'] ?? []);
-        $this->assertSame(['users' => '0 -> 1 (+1)'], $entry['db_effect']);
+        $this->assertSame(
+            ['users' => '0 -> 1 (+1)', 'registration_otps' => '0 -> 1 (+1)'],
+            $entry['db_effect']
+        );
+        $this->assertTrue($entry['response']['otp_sent'] ?? false);
+        $this->note('Registrasi otomatis membuat & mengirim OTP verifikasi email (otp_sent=true).');
 
         $stored = DB::table('users')->where('email', 'budi.santoso@example.com')->value('kata_sandi');
         $this->assertStringStartsWith('$2y$', (string) $stored);

@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Services\InvoiceService;
 use App\Services\OrderService;
+use App\Services\SyncPaymentStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 
 class OrderController extends Controller
 {
@@ -38,7 +41,7 @@ class OrderController extends Controller
         ]);
     }
 
-    public function show(Request $request, string $id): JsonResponse
+    public function show(Request $request, string $id, SyncPaymentStatusService $sync): JsonResponse
     {
         $order = Order::with([
             'items.variant.product',
@@ -52,6 +55,17 @@ class OrderController extends Controller
 
         if (! $order) {
             return $this->notFound();
+        }
+
+        // Fallback: bila webhook belum sampai, sinkronkan status terkini
+        // dari Midtrans untuk pesanan yang masih menunggu pembayaran.
+        if ($sync->syncOrder($order)) {
+            $order->refresh()->load([
+                'items.variant.product',
+                'payments',
+                'voucherUsages.voucher',
+                'statusHistories',
+            ]);
         }
 
         return response()->json([
@@ -151,8 +165,81 @@ class OrderController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Status pesanan berhasil diperbarui.',
-            'data' => $order->load(['items', 'voucherUsages', 'statusHistories']),
+            'message' => 'Detail pesanan berhasil diambil.',
+            'data' => $order,
+        ]);
+    }
+
+    /**
+     * Unduh invoice PDF pesanan milik pelanggan yang sedang login.
+     */
+    public function invoice(Request $request, string $id, InvoiceService $invoices): Response
+    {
+        $order = Order::with(['items', 'user', 'payments', 'voucherUsages.voucher'])
+            ->where('id_order', $id)
+            ->where('id_user', $request->user()->id_user)
+            ->first();
+
+        if (! $order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pesanan tidak ditemukan.',
+            ], 404);
+        }
+
+        $binary = $invoices->build($order);
+        $filename = $invoices->filename($order);
+
+        return response($binary, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Content-Length' => (string) strlen($binary),
+        ]);
+    }
+
+    /**
+     * Ringkasan pesanan untuk admin (dapat difilter rentang tanggal/status).
+     */
+    public function adminSummary(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['nullable', 'string', Rule::in(OrderService::STATUSES)],
+            'dari' => ['nullable', 'date'],
+            'sampai' => ['nullable', 'date'],
+        ]);
+
+        $query = Order::query()
+            ->when(
+                ! empty($validated['status']),
+                fn ($query) => $query->where('status_pesanan', $validated['status'])
+            )
+            ->when(
+                ! empty($validated['dari']),
+                fn ($query) => $query->whereDate('dibuat_pada', '>=', $validated['dari'])
+            )
+            ->when(
+                ! empty($validated['sampai']),
+                fn ($query) => $query->whereDate('dibuat_pada', '<=', $validated['sampai'])
+            );
+
+        $totalPesanan = (clone $query)->count();
+        $totalNilai = (float) (clone $query)->sum('total_pembayaran');
+
+        $perStatus = [];
+
+        foreach (OrderService::STATUSES as $status) {
+            $perStatus[$status] = (clone $query)->where('status_pesanan', $status)->count();
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ringkasan pesanan berhasil diambil.',
+            'data' => [
+                'total_pesanan' => $totalPesanan,
+                'total_nilai' => $totalNilai,
+                'rata_rata_nilai' => $totalPesanan > 0 ? round($totalNilai / $totalPesanan, 2) : 0,
+                'per_status' => $perStatus,
+            ],
         ]);
     }
 

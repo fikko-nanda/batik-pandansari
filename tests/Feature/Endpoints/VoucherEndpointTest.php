@@ -2,6 +2,10 @@
 
 namespace Tests\Feature\Endpoints;
 
+use App\Models\Voucher;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+
 /**
  * Endpoint voucher: pelanggan (/vouchers/available, /vouchers/validate,
  * /voucher-usages/me) dan admin (/vouchers CRUD, /voucher-usages).
@@ -520,6 +524,79 @@ class VoucherEndpointTest extends EndpointTestCase
         $this->assertCount(1, $data);
         $this->assertSame('RIWAYAT', $data[0]['voucher']['kode_voucher'] ?? null);
         $this->assertSame($user->email, $data[0]['user']['email'] ?? null);
+
+        $this->assertRecorded();
+    }
+
+    public function test_admin_voucher_gambar(): void
+    {
+        Storage::fake('public');
+        $this->actingAsRole('admin');
+
+        $this->hit('POST', '/api/vouchers', [
+            'endpoint' => 'POST /api/vouchers',
+            'label' => 'Buat voucher dengan gambar promo',
+            'json' => [
+                'kode_voucher' => 'GAMBAR01',
+                'nama_voucher' => 'Promo Bergambar',
+                'deskripsi' => 'Voucher banner beranda',
+                'tipe_diskon' => 'persentase',
+                'nilai_diskon' => 20,
+                'tanggal_mulai' => now()->toDateString(),
+                'tanggal_selesai' => now()->addDays(7)->toDateString(),
+            ],
+            'files' => ['gambar' => UploadedFile::fake()->image('promo.png', 300, 150)],
+            'expected' => 201,
+        ]);
+
+        $id = $this->recorded[0]['response']['data']['id_voucher'] ?? null;
+        $path = $this->recorded[0]['response']['data']['gambar'] ?? null;
+        $this->assertNotEmpty($id);
+        $this->assertNotEmpty($this->recorded[0]['response']['data']['url_gambar'] ?? null);
+        Storage::disk('public')->assertExists($path);
+
+        $this->hit('PUT', '/api/vouchers/'.$id, [
+            'endpoint' => 'PUT /api/vouchers/{id}',
+            'label' => 'Ganti gambar voucher',
+            'json' => [],
+            'files' => ['gambar' => UploadedFile::fake()->image('promo2.png', 300, 150)],
+            'expected' => 200,
+        ]);
+        $newPath = $this->recorded[1]['response']['data']['gambar'] ?? null;
+        $this->assertNotSame($path, $newPath);
+        Storage::disk('public')->assertMissing($path);
+        Storage::disk('public')->assertExists($newPath);
+
+        $this->hit('DELETE', '/api/vouchers/'.$id.'/gambar', [
+            'endpoint' => 'DELETE /api/vouchers/{id}/gambar',
+            'label' => 'Hapus gambar voucher (voucher tetap ada)',
+            'expected' => 200,
+        ]);
+        $this->assertArrayHasKey('gambar', $this->recorded[2]['response']['data']);
+        $this->assertNull($this->recorded[2]['response']['data']['gambar']);
+        Storage::disk('public')->assertMissing($newPath);
+        $this->assertNotNull(Voucher::find($id), 'Voucher ikut terhapus.');
+
+        $this->hit('DELETE', '/api/vouchers/tidak-ada/gambar', [
+            'endpoint' => 'DELETE /api/vouchers/{id}/gambar',
+            'label' => 'Hapus gambar voucher tidak ditemukan',
+            'expected' => 404,
+        ]);
+
+        $this->hit('POST', '/api/vouchers', [
+            'endpoint' => 'POST /api/vouchers',
+            'label' => 'Buat voucher dengan berkas bukan gambar',
+            'json' => [
+                'kode_voucher' => 'BUKANGAMBAR',
+                'nama_voucher' => 'Salah Berkas',
+                'tipe_diskon' => 'nominal',
+                'nilai_diskon' => 10000,
+                'tanggal_mulai' => now()->toDateString(),
+                'tanggal_selesai' => now()->addDays(7)->toDateString(),
+            ],
+            'files' => ['gambar' => UploadedFile::fake()->create('catatan.txt', 10, 'text/plain')],
+            'expected' => 422,
+        ]);
 
         $this->assertRecorded();
     }

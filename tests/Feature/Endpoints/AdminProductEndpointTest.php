@@ -4,10 +4,14 @@ namespace Tests\Feature\Endpoints;
 
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Endpoint tulis katalog (admin): /api/admin/products, /api/products (POST/PUT/DELETE),
  * /api/products/{id}/variants, /api/variants/{id}, /api/products/{id}/images, /api/images/{id}
+ *
+ * Endpoint bulk varian dan gambar scoped ada di file terpisah:
+ * AdminProductVariantBulkEndpointTest dan AdminProductImageEndpointTest.
  */
 class AdminProductEndpointTest extends EndpointTestCase
 {
@@ -107,16 +111,44 @@ class AdminProductEndpointTest extends EndpointTestCase
                 'id_category' => 'cat-1',
                 'nama_produk' => 'Batik Sogan Pekalongan',
                 'deskripsi' => 'Batik sogan khas Pekalongan',
-                'status_produk' => 'aktif',
+                'sku' => 'BAT-SOGAN-PKL',
+                'berat_produk' => 600,
+                'bahan_kain' => 'Katun',
+                'status_produk' => 'draft',
             ],
             'expected' => 201,
         ]);
 
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertSame('batik-sogan-pekalongan', $data['slug'] ?? null);
-        $this->assertSame('aktif', $data['status_produk'] ?? null);
+        $this->assertSame('draft', $data['status_produk'] ?? null);
+        $this->assertSame('BAT-SOGAN-PKL', $data['sku'] ?? null);
+        $this->assertSame(600, $data['berat_produk'] ?? null);
+        $this->assertSame('Katun', $data['bahan_kain'] ?? null);
         $this->assertNotEmpty($data['category'] ?? null);
         $this->assertSame(['products' => '0 -> 1 (+1)'], $this->recorded[0]['db_effect']);
+
+        $this->assertRecorded();
+    }
+
+    public function test_admin_membuat_produk_aktif_tanpa_gambar_ditolak(): void
+    {
+        $this->seedCategory();
+        $this->actingAsRole('admin');
+
+        $this->hit('POST', '/api/products', [
+            'endpoint' => 'POST /api/products',
+            'label' => 'Buat produk langsung aktif tanpa gambar (ditolak)',
+            'json' => [
+                'id_category' => 'cat-1',
+                'nama_produk' => 'Batik Tanpa Gambar',
+                'status_produk' => 'aktif',
+            ],
+            'expected' => 422,
+        ]);
+
+        $this->assertNotEmpty($this->recorded[0]['response']['errors']['gambar'] ?? []);
+        $this->assertSame([], $this->recorded[0]['db_effect'], 'Produk gagal dibuat sehingga tidak ada baris baru.');
 
         $this->assertRecorded();
     }
@@ -233,6 +265,7 @@ class AdminProductEndpointTest extends EndpointTestCase
     {
         $this->seedCategory();
         $product = $this->makeProduct('Produk Lama', 'draft');
+        $this->makeImage($product);
         $this->actingAsRole('admin');
 
         $this->hit('PUT', '/api/products/'.$product->id_product, [
@@ -250,6 +283,70 @@ class AdminProductEndpointTest extends EndpointTestCase
         $this->assertSame('Batik Jlamprang Baru', $data['nama_produk'] ?? null);
         $this->assertSame('batik-jlamprang-baru', $data['slug'] ?? null, 'Slug dinormalisasi dengan Str::slug.');
         $this->assertSame('aktif', $data['status_produk'] ?? null);
+
+        $this->assertRecorded();
+    }
+
+    public function test_admin_memperbarui_produk_aktif_tanpa_gambar_ditolak(): void
+    {
+        $this->seedCategory();
+        $product = $this->makeProduct('Produk Tanpa Gambar', 'draft');
+        $this->actingAsRole('admin');
+
+        $this->hit('PUT', '/api/products/'.$product->id_product, [
+            'endpoint' => 'PUT /api/products/{id}',
+            'label' => 'Aktifkan produk tanpa gambar (ditolak)',
+            'json' => ['status_produk' => 'aktif'],
+            'expected' => 422,
+        ]);
+
+        $this->assertNotEmpty($this->recorded[0]['response']['errors']['gambar'] ?? []);
+        $this->assertSame('draft', $product->fresh()->status_produk, 'Status produk tidak berubah karena aktivasi ditolak.');
+
+        $this->assertRecorded();
+    }
+
+    public function test_admin_memperbarui_produk_partial_update(): void
+    {
+        $this->seedCategory();
+        $product = $this->makeProduct('Produk Partial', 'draft', 'cat-1');
+        $product->update([
+            'deskripsi' => 'Deskripsi lama',
+            'sku' => 'SKU-LAMA',
+            'berat_produk' => 500,
+            'bahan_kain' => 'Sutra',
+        ]);
+        $this->actingAsRole('admin');
+
+        // Field yang tidak dikirim harus mempertahankan nilai sebelumnya.
+        $this->hit('PUT', '/api/products/'.$product->id_product, [
+            'endpoint' => 'PUT /api/products/{id}',
+            'label' => 'Partial update: hanya nama_produk yang dikirim',
+            'json' => ['nama_produk' => 'Produk Partial Diperbarui'],
+            'expected' => 200,
+        ]);
+
+        $data = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame('Produk Partial Diperbarui', $data['nama_produk'] ?? null);
+        $this->assertSame('Deskripsi lama', $data['deskripsi'] ?? null, 'Field yang tidak dikirim tetap sama.');
+        $this->assertSame('SKU-LAMA', $data['sku'] ?? null, 'Field yang tidak dikirim tetap sama.');
+        $this->assertSame(500, $data['berat_produk'] ?? null, 'Field yang tidak dikirim tetap sama.');
+        $this->assertSame('Sutra', $data['bahan_kain'] ?? null, 'Field yang tidak dikirim tetap sama.');
+
+        // Field yang sengaja dikirim null harus ditulis null.
+        $this->hit('PUT', '/api/products/'.$product->id_product, [
+            'endpoint' => 'PUT /api/products/{id}',
+            'label' => 'Partial update: deskripsi & bahan_kain dikirim null',
+            'json' => ['deskripsi' => null, 'bahan_kain' => null],
+            'expected' => 200,
+        ]);
+
+        $data = $this->recorded[1]['response']['data'] ?? [];
+        $this->assertArrayHasKey('deskripsi', $data, 'Field yang dikirim null tetap ada di response.');
+        $this->assertNull($data['deskripsi'], 'Field yang dikirim null menjadi null.');
+        $this->assertArrayHasKey('bahan_kain', $data, 'Field yang dikirim null tetap ada di response.');
+        $this->assertNull($data['bahan_kain'], 'Field yang dikirim null menjadi null.');
+        $this->assertSame('SKU-LAMA', $data['sku'] ?? null, 'Field lain tetap sama.');
 
         $this->assertRecorded();
     }
@@ -587,7 +684,7 @@ class AdminProductEndpointTest extends EndpointTestCase
         ]);
 
         $this->actingAsRole('pelanggan');
-        $this->hit('DELETE', '/api/images/'.(string) \Illuminate\Support\Str::uuid(), [
+        $this->hit('DELETE', '/api/images/'.(string) Str::uuid(), [
             'endpoint' => 'DELETE /api/images/{id}',
             'label' => 'Hapus gambar oleh pelanggan',
             'expected' => 403,

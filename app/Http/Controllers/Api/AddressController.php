@@ -37,6 +37,7 @@ class AddressController extends Controller
             'kode_pos' => ['required', 'string', 'max:10'],
             'alamat_lengkap' => ['required', 'string'],
             'alamat_utama' => ['nullable', 'boolean'],
+            'id_tujuan_rajaongkir' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $user = $request->user();
@@ -63,6 +64,9 @@ class AddressController extends Controller
                 'kode_pos' => $validated['kode_pos'],
                 'alamat_lengkap' => $validated['alamat_lengkap'],
                 'alamat_utama' => $isPrimary,
+                'id_tujuan_rajaongkir' => isset($validated['id_tujuan_rajaongkir'])
+                    ? (string) $validated['id_tujuan_rajaongkir']
+                    : null,
             ]);
         });
 
@@ -106,6 +110,7 @@ class AddressController extends Controller
             'kode_pos' => ['sometimes', 'required', 'string', 'max:10'],
             'alamat_lengkap' => ['sometimes', 'required', 'string'],
             'alamat_utama' => ['sometimes', 'boolean'],
+            'id_tujuan_rajaongkir' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ]);
 
         DB::transaction(function () use ($validated, $address, $request) {
@@ -113,6 +118,12 @@ class AddressController extends Controller
                 UserAddress::where('id_user', $request->user()->id_user)
                     ->where('id_user_address', '!=', $address->id_user_address)
                     ->update(['alamat_utama' => false]);
+            }
+
+            if (array_key_exists('id_tujuan_rajaongkir', $validated)) {
+                $validated['id_tujuan_rajaongkir'] = $validated['id_tujuan_rajaongkir'] === null
+                    ? null
+                    : (string) $validated['id_tujuan_rajaongkir'];
             }
 
             $address->update($validated);

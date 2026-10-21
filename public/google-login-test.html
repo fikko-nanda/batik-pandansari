@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uji Login Google - Batik Pandansari</title>
+<style>
+    body { font-family: system-ui, Arial, sans-serif; background: #FFFCF5; color: #142B4A; margin: 0; padding: 40px 16px; }
+    .card { max-width: 760px; margin: 0 auto; background: #fff; border: 1px solid #e7dfcd; border-radius: 10px; padding: 28px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #6b7280; font-size: 13px; margin-bottom: 20px; }
+    #g_id_signin { margin: 16px 0; min-height: 44px; }
+    pre { background: #142B4A; color: #FFFCF5; padding: 14px; border-radius: 8px; overflow: auto; font-size: 12px; max-height: 320px; white-space: pre-wrap; word-break: break-word; }
+    .ok { color: #15803d; font-weight: bold; }
+    .err { color: #b91c1c; font-weight: bold; }
+    button { background: #142B4A; color: #FFFCF5; border: 0; border-radius: 6px; padding: 10px 16px; font-size: 14px; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    .label { text-transform: uppercase; font-size: 11px; letter-spacing: .5px; color: #C7A96B; font-weight: bold; margin-top: 18px; }
+    .test { background:#F3F4F6; border-radius:8px; padding:12px; font-size:12px; margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="card">
+    <h1>Uji Login Google</h1>
+    <div class="sub">Halaman bantu untuk menguji <code>POST /api/auth/google</code> dan <code>POST /api/logout</code>. Backend menerima <code>id_token</code> (GIS) maupun <code>access_token</code> (OAuth popup/redirect).</div>
+
+    <div class="test" id="diag">Memuat diagnostik…</div>
+
+    <div id="g_id_signin"></div>
+
+    <div class="label">Hasil ID Token</div>
+    <pre id="idtoken">(belum login)</pre>
+
+    <div class="label">Hasil Login (POST /api/auth/google)</div>
+    <pre id="loginResult">(belum login)</pre>
+
+    <div class="label">Akses Token Sanctum</div>
+    <pre id="tokenResult">(belum ada)</pre>
+
+    <div style="display:flex; gap:10px; margin-top:16px;">
+        <button id="logoutBtn" disabled>Logout (POST /api/logout)</button>
+    </div>
+
+    <div class="label">Hasil Logout</div>
+    <pre id="logoutResult">(belum logout)</pre>
+
+    <div class="label">Uji manual access_token (OAuth popup/redirect)</div>
+    <input id="manualAccessToken" type="text" placeholder="Tempel access_token di sini" style="width:100%; padding:9px; border:1px solid #d1d5db; border-radius:6px; box-sizing:border-box; font-size:13px;">
+    <div style="display:flex; gap:10px; margin-top:10px;">
+        <button id="manualLoginBtn">Login (POST /api/auth/google)</button>
+    </div>
+    <pre id="manualResult">(belum diuji)</pre>
+</div>
+
+<script>
+const API_BASE = '';
+let CLIENT_ID = '';
+let accessToken = null;
+
+function setText(id, text) {
+    document.getElementById(id).textContent = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
+}
+
+async function getJson(path) {
+    const res = await fetch(API_BASE + path, { headers: { 'Accept': 'application/json' } });
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = text; }
+    return { status: res.status, json };
+}
+
+async function postJson(path, body, token) {
+    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch(API_BASE + path, { method: 'POST', headers, body: JSON.stringify(body || {}) });
+    const text = await res.text();
+    let json;
+    try { json = JSON.parse(text); } catch { json = text; }
+    return { status: res.status, json };
+}
+
+function diag(html) {
+    document.getElementById('diag').innerHTML = html;
+}
+
+function handleCredentialResponse(response) {
+    if (!response || !response.credential) {
+        setText('loginResult', 'Callback dipanggil tanpa credential. Cek konfigurasi origin di Google Cloud Console.');
+        return;
+    }
+    setText('idtoken', response.credential);
+    postJson('/api/auth/google', { id_token: response.credential })
+        .then(({ status, json }) => {
+            setText('loginResult', 'HTTP ' + status + '\n' + JSON.stringify(json, null, 2));
+            if (status === 200 && json && json.data && json.data.token) {
+                accessToken = json.data.token;
+                setText('tokenResult', accessToken);
+                document.getElementById('logoutBtn').disabled = false;
+            }
+        })
+        .catch(err => setText('loginResult', 'Error: ' + err));
+}
+
+async function boot() {
+    const origin = window.location.origin;
+    let clientInfo = 'Client ID: (belum diambil)';
+    try {
+        const { status, json } = await getJson('/api/auth/google/config');
+        if (status === 200 && json && json.data) {
+            CLIENT_ID = json.data.client_id || '';
+            clientInfo = 'Client ID (server): ' + (CLIENT_ID || '(kosong)') + ' — configured=' + json.data.configured;
+        } else {
+            clientInfo = 'Gagal ambil /api/auth/google/config → HTTP ' + status;
+        }
+    } catch (err) {
+        clientInfo = 'Gagal ambil /api/auth/google/config → ' + err;
+    }
+
+    diag('Origin browser: <b>' + origin + '</b><br>' + clientInfo +
+        '<br><br>Pastikan origin di atas terdaftar di <b>Authorized JavaScript origins</b> pada Client ID yang sama di Google Cloud Console. Client ID di halaman ini diambil otomatis dari server.');
+
+    if (!window.google) {
+        setText('idtoken', 'Script Google GSI gagal dimuat. Periksa koneksi internet ke accounts.google.com.');
+        return;
+    }
+    if (!CLIENT_ID) {
+        setText('idtoken', 'Client ID kosong. Set GOOGLE_CLIENT_ID di .env lalu jalankan php artisan config:clear.');
+        return;
+    }
+
+    google.accounts.id.initialize({ client_id: CLIENT_ID, callback: handleCredentialResponse });
+    google.accounts.id.renderButton(
+        document.getElementById('g_id_signin'),
+        { theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular' }
+    );
+}
+
+window.addEventListener('load', boot);
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+    if (!accessToken) return;
+    try {
+        const { status, json } = await postJson('/api/logout', {}, accessToken);
+        setText('logoutResult', 'HTTP ' + status + '\n' + JSON.stringify(json, null, 2));
+        accessToken = null;
+        document.getElementById('logoutBtn').disabled = true;
+    } catch (err) {
+        setText('logoutResult', 'Error: ' + err);
+    }
+});
+
+document.getElementById('manualLoginBtn').addEventListener('click', async () => {
+    const token = document.getElementById('manualAccessToken').value.trim();
+    if (!token) {
+        setText('manualResult', 'Isi access_token terlebih dahulu.');
+        return;
+    }
+    try {
+        const { status, json } = await postJson('/api/auth/google', { access_token: token });
+        setText('manualResult', 'HTTP ' + status + '\n' + JSON.stringify(json, null, 2));
+        if (status === 200 && json && json.data && json.data.token) {
+            accessToken = json.data.token;
+            setText('tokenResult', accessToken);
+            document.getElementById('logoutBtn').disabled = false;
+        }
+    } catch (err) {
+        setText('manualResult', 'Error: ' + err);
+    }
+});
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>

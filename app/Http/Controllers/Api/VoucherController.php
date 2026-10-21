@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Voucher;
 use App\Models\VoucherUsage;
+use App\Services\ImageUploadService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,8 @@ use Illuminate\Validation\Rule;
 
 class VoucherController extends Controller
 {
+    public function __construct(private readonly ImageUploadService $images) {}
+
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -37,10 +40,14 @@ class VoucherController extends Controller
             ->orderByDesc('dibuat_pada')
             ->paginate($perPage);
 
+        $items = collect($vouchers->items())
+            ->map(fn (Voucher $voucher) => $this->withUrl($voucher))
+            ->all();
+
         return response()->json([
             'success' => true,
             'message' => 'Daftar voucher berhasil diambil.',
-            'data' => $vouchers->items(),
+            'data' => $items,
             'meta' => [
                 'current_page' => $vouchers->currentPage(),
                 'per_page' => $vouchers->perPage(),
@@ -56,6 +63,7 @@ class VoucherController extends Controller
             'kode_voucher' => ['required', 'string', 'max:50', 'unique:vouchers,kode_voucher'],
             'nama_voucher' => ['required', 'string', 'max:100'],
             'deskripsi' => ['nullable', 'string'],
+            'gambar' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'tipe_diskon' => ['required', 'string', 'in:persentase,nominal'],
             'nilai_diskon' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'minimal_pembelian' => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
@@ -67,11 +75,16 @@ class VoucherController extends Controller
             'status_voucher' => ['nullable', 'string', 'in:aktif,nonaktif'],
         ]);
 
+        $gambar = $request->hasFile('gambar')
+            ? $this->images->store($request->file('gambar'), 'vouchers')
+            : null;
+
         $voucher = Voucher::create([
             'id_voucher' => (string) Str::uuid(),
             'kode_voucher' => $validated['kode_voucher'],
             'nama_voucher' => $validated['nama_voucher'],
             'deskripsi' => $validated['deskripsi'] ?? null,
+            'gambar' => $gambar,
             'tipe_diskon' => $validated['tipe_diskon'],
             'nilai_diskon' => $validated['nilai_diskon'],
             'minimal_pembelian' => $validated['minimal_pembelian'] ?? 0,
@@ -86,7 +99,7 @@ class VoucherController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Voucher berhasil dibuat.',
-            'data' => $voucher,
+            'data' => $this->withUrl($voucher),
         ], 201);
     }
 
@@ -110,6 +123,7 @@ class VoucherController extends Controller
             ->orderBy('minimal_pembelian')
             ->get()
             ->filter(fn (Voucher $voucher) => $this->passesQuota($voucher, $user->id_user))
+            ->map(fn (Voucher $voucher) => $this->withUrl($voucher))
             ->values();
 
         return response()->json([
@@ -186,7 +200,7 @@ class VoucherController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Detail voucher berhasil diambil.',
-            'data' => $voucher,
+            'data' => $this->withUrl($voucher),
         ]);
     }
 
@@ -208,6 +222,7 @@ class VoucherController extends Controller
             ],
             'nama_voucher' => ['sometimes', 'required', 'string', 'max:100'],
             'deskripsi' => ['sometimes', 'nullable', 'string'],
+            'gambar' => ['sometimes', 'required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'tipe_diskon' => ['sometimes', 'required', 'string', 'in:persentase,nominal'],
             'nilai_diskon' => ['sometimes', 'required', 'numeric', 'min:0', 'max:9999999999.99'],
             'minimal_pembelian' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
@@ -219,12 +234,41 @@ class VoucherController extends Controller
             'status_voucher' => ['sometimes', 'required', 'string', 'in:aktif,nonaktif'],
         ]);
 
+        if ($request->hasFile('gambar')) {
+            $validated['gambar'] = $this->images->replace(
+                $request->file('gambar'),
+                'vouchers',
+                $voucher->gambar
+            );
+        }
+
         $voucher->update($validated);
 
         return response()->json([
             'success' => true,
             'message' => 'Voucher berhasil diperbarui.',
-            'data' => $voucher,
+            'data' => $this->withUrl($voucher),
+        ]);
+    }
+
+    /**
+     * Hapus gambar voucher (tanpa menghapus vouchernya).
+     */
+    public function destroyImage(string $id): JsonResponse
+    {
+        $voucher = Voucher::find($id);
+
+        if (! $voucher) {
+            return $this->notFound();
+        }
+
+        $this->images->delete($voucher->gambar);
+        $voucher->update(['gambar' => null]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Gambar voucher berhasil dihapus.',
+            'data' => $this->withUrl($voucher->fresh()),
         ]);
     }
 
@@ -241,8 +285,98 @@ class VoucherController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Voucher berhasil dinonaktifkan.',
-            'data' => $voucher,
+            'data' => $this->withUrl($voucher),
         ]);
+    }
+
+    /**
+     * Publikasikan voucher (status_voucher: nonaktif -> aktif).
+     */
+    public function publish(string $id): JsonResponse
+    {
+        $voucher = Voucher::find($id);
+
+        if (! $voucher) {
+            return $this->notFound();
+        }
+
+        if (Carbon::parse($voucher->tanggal_selesai)->lt(Carbon::now())) {
+            return $this->invalidVoucher('Voucher sudah kedaluwarsa dan tidak dapat dipublikasikan.');
+        }
+
+        if ($voucher->status_voucher !== 'aktif') {
+            $voucher->update(['status_voucher' => 'aktif']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Voucher berhasil dipublikasikan.',
+            'data' => $this->withUrl($voucher),
+        ]);
+    }
+
+    /**
+     * Tarik voucher dari publikasi (status_voucher: aktif -> nonaktif).
+     */
+    public function unpublish(string $id): JsonResponse
+    {
+        $voucher = Voucher::find($id);
+
+        if (! $voucher) {
+            return $this->notFound();
+        }
+
+        if ($voucher->status_voucher !== 'nonaktif') {
+            $voucher->update(['status_voucher' => 'nonaktif']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Voucher berhasil ditarik dari publikasi.',
+            'data' => $this->withUrl($voucher),
+        ]);
+    }
+
+    /**
+     * Ringkasan voucher untuk admin.
+     */
+    public function summary(): JsonResponse
+    {
+        $now = Carbon::now();
+
+        $statusesUsed = ['digunakan'];
+        $total = Voucher::count();
+        $aktif = Voucher::where('status_voucher', 'aktif')->count();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ringkasan voucher berhasil diambil.',
+            'data' => [
+                'total_voucher' => $total,
+                'aktif' => $aktif,
+                'nonaktif' => Voucher::where('status_voucher', 'nonaktif')->count(),
+                'berjalan' => Voucher::where('status_voucher', 'aktif')
+                    ->where('tanggal_mulai', '<=', $now)
+                    ->where('tanggal_selesai', '>=', $now)
+                    ->count(),
+                'terjadwal' => Voucher::where('status_voucher', 'aktif')
+                    ->where('tanggal_mulai', '>', $now)
+                    ->count(),
+                'kadaluarsa' => Voucher::where('status_voucher', 'aktif')
+                    ->where('tanggal_selesai', '<', $now)
+                    ->count(),
+                'total_penggunaan' => VoucherUsage::whereIn('status_penggunaan', $statusesUsed)->count(),
+                'total_diskon_diberikan' => (float) VoucherUsage::whereIn('status_penggunaan', $statusesUsed)
+                    ->sum('jumlah_diskon'),
+            ],
+        ]);
+    }
+
+    private function withUrl(Voucher $voucher): Voucher
+    {
+        $voucher->setAttribute('url_gambar', $this->images->url($voucher->gambar));
+
+        return $voucher;
     }
 
     private function passesQuota(Voucher $voucher, string $idUser): bool

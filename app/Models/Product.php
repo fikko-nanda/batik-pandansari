@@ -22,10 +22,20 @@ class Product extends Model
         'id_product',
         'id_category',
         'nama_produk',
+        'sku',
         'slug',
         'deskripsi',
+        'berat_produk',
+        'bahan_kain',
         'status_produk',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'berat_produk' => 'integer',
+        ];
+    }
 
     public function category()
     {
@@ -52,5 +62,18 @@ class Product extends Model
             'id_product',
             'id_product'
         );
+    }
+
+    /**
+     * Size chart (tabel ukuran) produk. Disimpan pada tabel product_images
+     * dengan type = 'size_chart' dan id_variant NULL.
+     */
+    public function sizeChart()
+    {
+        return $this->hasOne(
+            ProductImage::class,
+            'id_product',
+            'id_product'
+        )->where('type', ProductImage::TYPE_SIZE_CHART);
     }
 }

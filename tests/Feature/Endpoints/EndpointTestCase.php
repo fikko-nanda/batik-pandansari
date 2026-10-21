@@ -191,6 +191,7 @@ abstract class EndpointTestCase extends TestCase
             'kode_pos' => '51133',
             'alamat_lengkap' => 'Jl. Batik No. 12',
             'alamat_utama' => $utama,
+            'id_tujuan_rajaongkir' => '61622',
         ]);
     }
 
@@ -468,7 +469,7 @@ abstract class EndpointTestCase extends TestCase
         $this->assertSame(
             [],
             $messages,
-            "Permintaan tidak sesuai harapan (".count($messages)." kasus):\n".implode("\n", $messages)
+            'Permintaan tidak sesuai harapan ('.count($messages)." kasus):\n".implode("\n", $messages)
         );
 
         $this->assertNotEmpty($this->recorded, 'Tidak ada request yang direkam pada test ini.');
