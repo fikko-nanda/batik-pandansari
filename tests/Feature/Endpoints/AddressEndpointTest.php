@@ -221,7 +221,7 @@ class AddressEndpointTest extends EndpointTestCase
         $this->assertSame('Kantor', $data['label_alamat'] ?? null, 'Field yang tidak dikirim ikut berubah.');
         $this->assertTrue((bool) ($data['alamat_utama'] ?? false));
 
-        $utamaCount = \App\Models\UserAddress::where('id_user', $user->id_user)->where('alamat_utama', true)->count();
+        $utamaCount = UserAddress::where('id_user', $user->id_user)->where('alamat_utama', true)->count();
         $this->assertSame(1, $utamaCount, 'Alamat utama lama tidak diturunkan.');
         $this->assertFalse((bool) $address->fresh()->alamat_utama);
 

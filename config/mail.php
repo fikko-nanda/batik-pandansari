@@ -15,7 +15,6 @@ return [
     */
 
     'default' => env('MAIL_MAILER', 'log'),
-
     /*
     |--------------------------------------------------------------------------
     | Mailer Configurations
@@ -45,7 +44,10 @@ return [
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            // Batasi waktu tunggu SMTP agar request tidak menggantung lama
+            // saat server mail lambat/tak terjangkau. Dapat dioverride via
+            // MAIL_TIMEOUT bila perlu.
+            'timeout' => env('MAIL_TIMEOUT', 10),
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
@@ -113,6 +115,35 @@ return [
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Batas Laju Email Keluar
+    |--------------------------------------------------------------------------
+    |
+    | Jeda minimum (detik) antar pengiriman email oleh worker queue. Berguna
+    | untuk penyedia SMTP yang membatasi email per detik. Mailtrap plan testing
+    | sangat ketat (sering menolak walau hanya 1 email/detik), jadi default 10
+    | detik agar tiap email besar peluang berhasil pada percobaan pertama.
+    |
+    */
+
+    'outbound_rate_seconds' => env('MAIL_OUTBOUND_RATE_SECONDS', 10),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Branding Email Transaksional
+    |--------------------------------------------------------------------------
+    |
+    | Identitas yang dipakai pada template email pesanan (konfirmasi pembayaran
+    | dan pembatalan). Dapat dioverride lewat env bila diperlukan.
+    |
+    */
+
+    'brand' => [
+        'nama' => env('MAIL_BRAND_NAME', 'Batik Pandansari'),
+        'tagline' => env('MAIL_BRAND_TAGLINE', 'Warisan Batik, Keindahan Abadi'),
     ],
 
 ];

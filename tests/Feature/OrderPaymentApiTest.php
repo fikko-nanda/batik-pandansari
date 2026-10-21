@@ -21,10 +21,13 @@ use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Midtrans\Notification;
 use Mockery;
+use Tests\Feature\Endpoints\Concerns\FakesRajaOngkir;
 use Tests\TestCase;
 
 class OrderPaymentApiTest extends TestCase
 {
+    use FakesRajaOngkir;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -76,6 +79,8 @@ class OrderPaymentApiTest extends TestCase
             $table->string('ukuran')->nullable();
             $table->decimal('harga', 12, 2)->default(0);
             $table->integer('stok')->default(0);
+            $table->unsignedInteger('stok_dipesan')->default(0);
+            $table->unsignedInteger('berat_gram')->default(500);
             $table->string('status_varian')->default('aktif');
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
@@ -93,6 +98,7 @@ class OrderPaymentApiTest extends TestCase
             $table->string('kode_pos');
             $table->text('alamat_lengkap');
             $table->boolean('alamat_utama')->default(false);
+            $table->string('id_tujuan_rajaongkir')->nullable();
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });
@@ -120,6 +126,7 @@ class OrderPaymentApiTest extends TestCase
             $table->string('kode_voucher')->unique();
             $table->string('nama_voucher');
             $table->text('deskripsi')->nullable();
+            $table->string('gambar', 500)->nullable();
             $table->string('tipe_diskon');
             $table->decimal('nilai_diskon', 12, 2);
             $table->decimal('minimal_pembelian', 12, 2)->default(0);
@@ -138,6 +145,7 @@ class OrderPaymentApiTest extends TestCase
             $table->string('id_user');
             $table->string('nomor_pesanan')->unique();
             $table->string('status_pesanan')->default('menunggu_pembayaran');
+            $table->timestamp('kedaluwarsa_pada')->nullable();
             $table->decimal('subtotal', 12, 2)->default(0);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);
             $table->decimal('diskon', 12, 2)->default(0);
@@ -295,6 +303,7 @@ class OrderPaymentApiTest extends TestCase
             'kode_pos' => '57134',
             'alamat_lengkap' => 'Jl. Contoh No. 10',
             'alamat_utama' => true,
+            'id_tujuan_rajaongkir' => '61622',
         ]);
     }
 
@@ -395,6 +404,13 @@ class OrderPaymentApiTest extends TestCase
         });
     }
 
+    private function mockTransactionStatus(array $status): void
+    {
+        $this->mock(MidtransService::class, function ($mock) use ($status) {
+            $mock->shouldReceive('transactionStatus')->andReturn($status);
+        });
+    }
+
     // ---------------- Checkout ----------------
 
     public function test_checkout_requires_authentication(): void
@@ -402,16 +418,19 @@ class OrderPaymentApiTest extends TestCase
         $this->postJson('/api/checkout', [])->assertStatus(401);
     }
 
-    public function test_checkout_creates_order_and_reduces_stock(): void
+    public function test_checkout_creates_order_and_reserves_stock(): void
     {
         $user = $this->makeUser();
         $variant = $this->makeCategoryProductVariant(10, 100000);
         $address = $this->makeAddress($user);
         $this->makeCart($user, $variant, 2);
         Sanctum::actingAs($user);
+        $this->fakeRajaOngkirCost(18000);
 
         $response = $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
+            'kurir' => 'jne',
+            'layanan' => 'CTC',
             'biaya_pengiriman' => 18000,
         ]);
 
@@ -419,7 +438,9 @@ class OrderPaymentApiTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.status_pesanan', 'menunggu_pembayaran');
 
-        $this->assertSame(8, (int) $variant->fresh()->stok);
+        $fresh = $variant->fresh();
+        $this->assertSame(10, (int) $fresh->stok, 'Stok fisik tidak berkurang saat checkout.');
+        $this->assertSame(2, (int) $fresh->stok_dipesan, 'Stok direservasi sebesar jumlah pesanan.');
 
         $this->assertDatabaseHas('orders', [
             'id_user' => $user->id_user,
@@ -442,6 +463,8 @@ class OrderPaymentApiTest extends TestCase
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
+            'kurir' => 'jne',
+            'layanan' => 'CTC',
         ])->assertStatus(404);
     }
 
@@ -453,6 +476,8 @@ class OrderPaymentApiTest extends TestCase
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
+            'kurir' => 'jne',
+            'layanan' => 'CTC',
         ])->assertStatus(422);
     }
 
@@ -463,9 +488,12 @@ class OrderPaymentApiTest extends TestCase
         $address = $this->makeAddress($user);
         $this->makeCart($user, $variant, 5);
         Sanctum::actingAs($user);
+        $this->fakeRajaOngkirCost(10000);
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
+            'kurir' => 'jne',
+            'layanan' => 'CTC',
         ])->assertStatus(422);
     }
 
@@ -477,9 +505,12 @@ class OrderPaymentApiTest extends TestCase
         $this->makeCart($user, $variant, 2);
         $this->makeVoucher(['tipe_diskon' => 'persentase', 'nilai_diskon' => 10, 'maksimal_diskon' => 50000]);
         Sanctum::actingAs($user);
+        $this->fakeRajaOngkirCost(0);
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
+            'kurir' => 'jne',
+            'layanan' => 'CTC',
             'kode_voucher' => 'BATIKHEMAT',
         ])->assertStatus(201)
             ->assertJsonPath('data.diskon', '20000.00')
@@ -498,9 +529,18 @@ class OrderPaymentApiTest extends TestCase
         $address = $this->makeAddress($user);
         $this->makeCart($user, $variant, 1);
         Sanctum::actingAs($user);
+        $this->fakeRajaOngkirCost(5000);
 
-        $this->postJson('/api/checkout', ['id_user_address' => $address->id_user_address])->assertStatus(201);
-        $this->postJson('/api/checkout', ['id_user_address' => $address->id_user_address])->assertStatus(422);
+        $this->postJson('/api/checkout', [
+            'id_user_address' => $address->id_user_address,
+            'kurir' => 'jne',
+            'layanan' => 'CTC',
+        ])->assertStatus(201);
+        $this->postJson('/api/checkout', [
+            'id_user_address' => $address->id_user_address,
+            'kurir' => 'jne',
+            'layanan' => 'CTC',
+        ])->assertStatus(422);
         $this->assertDatabaseCount('orders', 1);
     }
 
@@ -699,7 +739,7 @@ class OrderPaymentApiTest extends TestCase
         $this->assertSame(1, Payment::where('id_order', $order->id_order)->count());
     }
 
-    public function test_webhook_expire_cancels_order_and_restores_stock(): void
+    public function test_webhook_expire_cancels_order_and_releases_reservation(): void
     {
         $user = $this->makeUser();
         $variant = $this->makeCategoryProductVariant(3);
@@ -711,6 +751,9 @@ class OrderPaymentApiTest extends TestCase
             'jumlah_pembayaran' => 200000,
             'status_pembayaran' => 'menunggu',
         ]);
+
+        // Simulasikan reservasi stok aktif untuk pesanan menunggu pembayaran.
+        $variant->update(['stok_dipesan' => 2]);
 
         $this->mockNotification([
             'order_id' => $order->nomor_pesanan,
@@ -731,12 +774,12 @@ class OrderPaymentApiTest extends TestCase
         ])->assertStatus(200);
 
         $this->assertSame('dibatalkan', $order->fresh()->status_pesanan);
-        $this->assertSame(5, (int) $variant->fresh()->stok);
+
+        $fresh = $variant->fresh();
+        $this->assertSame(3, (int) $fresh->stok, 'Stok fisik tidak berubah untuk pesanan yang belum dibayar.');
+        $this->assertSame(0, (int) $fresh->stok_dipesan, 'Reservasi stok dilepas saat kedaluwarsa.');
         $this->assertDatabaseHas('payments', ['id_order' => $order->id_order, 'status_pembayaran' => 'kedaluwarsa']);
-        $this->assertDatabaseHas('inventory_movements', [
-            'id_variant' => $variant->id_variant,
-            'jenis_pergerakan' => 'masuk',
-        ]);
+        $this->assertDatabaseCount('inventory_movements', 0);
     }
 
     public function test_webhook_rejects_invalid_signature(): void
@@ -754,7 +797,7 @@ class OrderPaymentApiTest extends TestCase
             'signature_key' => 'invalid',
         ])->assertStatus(403);
 
-        $this->assertDatabaseHas('webhook_logs', ['status' => 'gagal', 'http_status' => 403]);
+        $this->assertDatabaseCount('webhook_logs', 0);
     }
 
     public function test_webhook_ignores_amount_mismatch(): void
@@ -803,6 +846,226 @@ class OrderPaymentApiTest extends TestCase
 
         Sanctum::actingAs($admin);
         $this->getJson('/api/admin/payments')->assertStatus(200)->assertJsonCount(1, 'data');
+    }
+
+    public function test_webhook_alias_route_midtrans_notification(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant();
+        $order = $this->makeOrder($user, $variant, 1, 100000);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 100000,
+            'status_pembayaran' => 'menunggu',
+        ]);
+
+        $this->mockNotification([
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'fraud_status' => 'accept',
+            'payment_type' => 'qris',
+            'transaction_id' => 'trx-alias',
+            'gross_amount' => '100000.00',
+            'status_code' => '200',
+        ]);
+
+        $this->postJson('/api/midtrans/notification', [
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'gross_amount' => '100000.00',
+            'status_code' => '200',
+            'signature_key' => 'whatever',
+        ])->assertStatus(200)->assertJsonPath('success', true);
+
+        $this->assertSame('dibayar', $order->fresh()->status_pesanan);
+        $this->assertDatabaseHas('payments', ['id_order' => $order->id_order, 'status_pembayaran' => 'dibayar']);
+    }
+
+    public function test_order_show_syncs_status_from_midtrans_when_pending(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant();
+        $order = $this->makeOrder($user, $variant, 1, 100000);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 100000,
+            'status_pembayaran' => 'menunggu',
+        ]);
+
+        $this->mockTransactionStatus([
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'fraud_status' => 'accept',
+            'payment_type' => 'qris',
+            'transaction_id' => 'trx-sync',
+            'gross_amount' => 100000.0,
+            'status_code' => '200',
+        ]);
+
+        Sanctum::actingAs($user);
+        $this->getJson('/api/orders/'.$order->id_order)
+            ->assertStatus(200)
+            ->assertJsonPath('data.status_pesanan', 'dibayar');
+
+        $this->assertDatabaseHas('payments', ['id_order' => $order->id_order, 'status_pembayaran' => 'dibayar']);
+        $this->assertDatabaseCount('webhook_logs', 0);
+    }
+
+    public function test_order_payment_show_syncs_status_from_midtrans_when_pending(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant();
+        $order = $this->makeOrder($user, $variant, 1, 100000);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 100000,
+            'status_pembayaran' => 'menunggu',
+        ]);
+
+        $this->mockTransactionStatus([
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'fraud_status' => 'accept',
+            'payment_type' => 'bank_transfer',
+            'transaction_id' => 'trx-sync-2',
+            'gross_amount' => 100000.0,
+            'status_code' => '200',
+        ]);
+
+        Sanctum::actingAs($user);
+        $this->getJson('/api/orders/'.$order->id_order.'/payment')
+            ->assertStatus(200)
+            ->assertJsonPath('data.status_pembayaran', 'dibayar');
+
+        $this->assertSame('dibayar', $order->fresh()->status_pesanan);
+    }
+
+    public function test_order_show_sync_is_idempotent_on_repeat(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant();
+        $order = $this->makeOrder($user, $variant, 1, 100000);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 100000,
+            'status_pembayaran' => 'menunggu',
+        ]);
+
+        $this->mockTransactionStatus([
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'fraud_status' => 'accept',
+            'payment_type' => 'qris',
+            'transaction_id' => 'trx-sync-3',
+            'gross_amount' => 100000.0,
+            'status_code' => '200',
+        ]);
+
+        Sanctum::actingAs($user);
+        $this->getJson('/api/orders/'.$order->id_order.'/payment')->assertStatus(200);
+        $this->getJson('/api/orders/'.$order->id_order.'/payment')->assertStatus(200);
+
+        $this->assertDatabaseCount('order_status_histories', 1);
+    }
+
+    public function test_order_show_sync_ignores_pending_midtrans_status(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant();
+        $order = $this->makeOrder($user, $variant, 1, 100000);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 100000,
+            'status_pembayaran' => 'menunggu',
+        ]);
+
+        $this->mockTransactionStatus([
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'pending',
+            'fraud_status' => '',
+            'payment_type' => null,
+            'transaction_id' => null,
+            'gross_amount' => 100000.0,
+            'status_code' => '201',
+        ]);
+
+        Sanctum::actingAs($user);
+        $this->getJson('/api/orders/'.$order->id_order)
+            ->assertStatus(200)
+            ->assertJsonPath('data.status_pesanan', 'menunggu_pembayaran');
+    }
+
+    public function test_expire_command_cancels_unpaid_order_and_marks_payment(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant(3);
+        $order = $this->makeOrder($user, $variant, 2, 200000);
+        $order->update(['kedaluwarsa_pada' => now()->subMinute()]);
+        $variant->update(['stok_dipesan' => 2]);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 200000,
+            'status_pembayaran' => 'menunggu',
+        ]);
+
+        $this->artisan('orders:expire')->assertSuccessful();
+
+        $this->assertSame('dibatalkan', $order->fresh()->status_pesanan);
+        $this->assertDatabaseHas('payments', ['id_order' => $order->id_order, 'status_pembayaran' => 'kedaluwarsa']);
+        $this->assertSame(0, (int) $variant->fresh()->stok_dipesan, 'Reservasi stok dilepas.');
+    }
+
+    public function test_expire_command_does_not_cancel_paid_order(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant(3);
+        $order = $this->makeOrder($user, $variant, 2, 200000, 'dibayar');
+        // Kedaluwarsa lewat, tetapi pesanan sudah dibayar: tidak boleh dibatalkan.
+        $order->update(['kedaluwarsa_pada' => now()->subMinute()]);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 200000,
+            'status_pembayaran' => 'dibayar',
+        ]);
+
+        $this->artisan('orders:expire')->assertSuccessful();
+
+        $this->assertSame('dibayar', $order->fresh()->status_pesanan, 'Pesanan yang sudah dibayar tidak boleh di-expire.');
+        $this->assertDatabaseHas('payments', ['id_order' => $order->id_order, 'status_pembayaran' => 'dibayar']);
+    }
+
+    public function test_expire_does_not_touch_present_order(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant(3);
+        $order = $this->makeOrder($user, $variant, 2, 200000);
+        $order->update(['kedaluwarsa_pada' => now()->addMinute()]);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 200000,
+            'status_pembayaran' => 'menunggu',
+        ]);
+
+        $this->artisan('orders:expire')->assertSuccessful();
+
+        $this->assertSame('menunggu_pembayaran', $order->fresh()->status_pesanan);
+        $this->assertDatabaseHas('payments', ['id_order' => $order->id_order, 'status_pembayaran' => 'menunggu']);
     }
 
     protected function tearDown(): void

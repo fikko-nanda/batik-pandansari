@@ -23,6 +23,7 @@ class Voucher extends Model
         'kode_voucher',
         'nama_voucher',
         'deskripsi',
+        'gambar',
         'tipe_diskon',
         'nilai_diskon',
         'minimal_pembelian',

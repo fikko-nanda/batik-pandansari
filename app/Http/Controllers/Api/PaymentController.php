@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Services\MidtransService;
+use App\Services\OrderService;
+use App\Services\SyncPaymentStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -13,14 +15,29 @@ use Throwable;
 
 class PaymentController extends Controller
 {
-    public function store(Request $request, string $id, MidtransService $midtrans): JsonResponse
-    {
+    public function store(
+        Request $request,
+        string $id,
+        MidtransService $midtrans,
+        OrderService $orderService
+    ): JsonResponse {
         $order = Order::where('id_order', $id)
             ->where('id_user', $request->user()->id_user)
             ->first();
 
         if (! $order) {
             return $this->orderNotFound();
+        }
+
+        // Validasi kedaluwarsa: bila batas waktu pembayaran sudah lewat,
+        // batalkan pesanan + lepas reservasi stok sebelum menolak.
+        if ($orderService->isExpired($order)) {
+            $orderService->expireIfUnpaid($order);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Pesanan telah kedaluwarsa karena melewati batas waktu pembayaran.',
+            ], 422);
         }
 
         if ($order->status_pesanan !== 'menunggu_pembayaran') {
@@ -79,7 +96,8 @@ class PaymentController extends Controller
             $payment->update([
                 'payment_reference' => $result['token'],
                 'payment_url' => $result['redirect_url'],
-                'expires_at' => now()->addDay(),
+                // Batas waktu pembayaran mengikuti kedaluwarsa pesanan (10 menit).
+                'expires_at' => $order->kedaluwarsa_pada ?? now()->addMinutes(OrderService::PAYMENT_WINDOW_MINUTES),
             ]);
         }
 
@@ -101,7 +119,7 @@ class PaymentController extends Controller
         ], $reused ? 200 : 201);
     }
 
-    public function show(Request $request, string $id): JsonResponse
+    public function show(Request $request, string $id, SyncPaymentStatusService $sync): JsonResponse
     {
         $order = Order::where('id_order', $id)
             ->where('id_user', $request->user()->id_user)
@@ -110,6 +128,11 @@ class PaymentController extends Controller
         if (! $order) {
             return $this->orderNotFound();
         }
+
+        // Fallback: bila webhook belum sampai, tanyakan status terkini ke
+        // Midtrans untuk pesanan yang masih menunggu pembayaran.
+        $sync->syncOrder($order);
+        $order->refresh();
 
         $payment = Payment::with('order')
             ->where('id_order', $order->id_order)
@@ -162,6 +185,66 @@ class PaymentController extends Controller
                 'per_page' => $payments->perPage(),
                 'total' => $payments->total(),
                 'last_page' => $payments->lastPage(),
+            ],
+        ]);
+    }
+
+    /**
+     * Ringkasan pembayaran untuk admin (dapat difilter rentang tanggal/status/provider).
+     */
+    public function adminSummary(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['nullable', 'string', 'in:'.implode(',', Payment::STATUSES)],
+            'provider' => ['nullable', 'string', 'max:50'],
+            'dari' => ['nullable', 'date'],
+            'sampai' => ['nullable', 'date'],
+        ]);
+
+        $query = Payment::query()
+            ->when(
+                ! empty($validated['status']),
+                fn ($query) => $query->where('status_pembayaran', $validated['status'])
+            )
+            ->when(
+                ! empty($validated['provider']),
+                fn ($query) => $query->where('provider', $validated['provider'])
+            )
+            ->when(
+                ! empty($validated['dari']),
+                fn ($query) => $query->whereDate('dibuat_pada', '>=', $validated['dari'])
+            )
+            ->when(
+                ! empty($validated['sampai']),
+                fn ($query) => $query->whereDate('dibuat_pada', '<=', $validated['sampai'])
+            );
+
+        $totalPembayaran = (clone $query)->count();
+        $totalNilai = (float) (clone $query)->sum('jumlah_pembayaran');
+        $nilaiDibayar = (float) (clone $query)->where('status_pembayaran', 'dibayar')->sum('jumlah_pembayaran');
+
+        $perStatus = [];
+
+        foreach (Payment::STATUSES as $status) {
+            $perStatus[$status] = (clone $query)->where('status_pembayaran', $status)->count();
+        }
+
+        $perProvider = (clone $query)
+            ->selectRaw('provider, COUNT(*) as jumlah')
+            ->groupBy('provider')
+            ->pluck('jumlah', 'provider')
+            ->map(fn ($jumlah) => (int) $jumlah)
+            ->all();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ringkasan pembayaran berhasil diambil.',
+            'data' => [
+                'total_pembayaran' => $totalPembayaran,
+                'total_nilai' => $totalNilai,
+                'nilai_dibayar' => $nilaiDibayar,
+                'per_status' => $perStatus,
+                'per_provider' => $perProvider,
             ],
         ]);
     }

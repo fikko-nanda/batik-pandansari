@@ -6,6 +6,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class Payment extends Model
 {
+    /**
+     * Status pembayaran yang dihasilkan pemetaan notifikasi Midtrans
+     * (MidtransNotificationController::mapStatus).
+     */
+    public const STATUSES = [
+        'menunggu',
+        'dibayar',
+        'ditolak',
+        'kedaluwarsa',
+        'dibatalkan',
+    ];
+
     protected $table = 'payments';
 
     protected $primaryKey = 'id_payment';

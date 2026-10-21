@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\RajaOngkirException;
 use App\Http\Controllers\Controller;
 use App\Models\Cart;
-use App\Models\InventoryMovement;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderStatusHistory;
@@ -12,12 +12,16 @@ use App\Models\ProductVariant;
 use App\Models\UserAddress;
 use App\Models\VoucherUsage;
 use App\Services\OrderService;
+use App\Services\RajaOngkirService;
+use App\Services\ShippingConfigService;
+use App\Services\StockReservationService;
 use App\Services\VoucherService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -26,14 +30,46 @@ class CheckoutController extends Controller
     public function store(
         Request $request,
         VoucherService $voucherService,
-        OrderService $orderService
+        OrderService $orderService,
+        RajaOngkirService $rajaongkir,
+        ShippingConfigService $shippingConfig,
+        StockReservationService $reservations
     ): JsonResponse {
-        $validated = $request->validate([
+        // Terima `id_user_address` (kontrak resmi) atau `address_id` (alias
+        // yang dipakai sebagian frontend) agar kompatibel.
+        if (! $request->filled('id_user_address') && $request->filled('address_id')) {
+            $request->merge(['id_user_address' => $request->input('address_id')]);
+        }
+
+        // Mode tarif manual: dipakai saat frontend memilih opsi "Tarif Manual /
+        // Fallback Ongkir" (mis. kuota RajaOngkir habis). Bisa ditandai eksplisit
+        // lewat `is_manual_shipping`, atau tersirat saat klien mengirim
+        // `shipping_cost` tanpa memilih kurir/layanan tertentu.
+        $isManualShipping = $request->boolean('is_manual_shipping')
+            || ($request->filled('shipping_cost') && ! $request->filled('kurir'));
+
+        $rules = [
             'id_user_address' => ['required', 'string'],
             'kode_voucher' => ['nullable', 'string', 'max:50'],
             'biaya_pengiriman' => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'is_manual_shipping' => ['nullable', 'boolean'],
+            'shipping_cost' => ['nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'shipping_courier' => ['nullable', 'string', 'max:100'],
             'catatan' => ['nullable', 'string'],
-        ]);
+        ];
+
+        // Kurir & layanan hanya wajib pada mode otomatis (RajaOngkir). Pada mode
+        // tarif manual keduanya opsional; ongkir diambil dari `shipping_cost`.
+        if (! $isManualShipping) {
+            $rules['kurir'] = ['required', 'string', Rule::in($shippingConfig->activeCouriers())];
+            $rules['layanan'] = ['required', 'string', 'max:50'];
+        } else {
+            $rules['kurir'] = ['nullable', 'string', 'max:50'];
+            $rules['layanan'] = ['nullable', 'string', 'max:50'];
+            $rules['shipping_cost'] = ['required', 'numeric', 'min:0', 'max:9999999999.99'];
+        }
+
+        $validated = $request->validate($rules);
 
         $user = $request->user();
 
@@ -60,8 +96,131 @@ class CheckoutController extends Controller
             ], 422);
         }
 
-        $biayaPengiriman = round((float) ($validated['biaya_pengiriman'] ?? 0), 2);
+        // Nilai ongkir manual dari klien yang dipakai sebagai fallback ketika
+        // RajaOngkir tidak bisa dihubungi (mis. kuota habis).
+        $manualCost = $request->filled('shipping_cost')
+            ? round((float) $validated['shipping_cost'], 2)
+            : null;
 
+        if ($isManualShipping) {
+            // Lewati RajaOngkir sepenuhnya; tidak butuh destination_id
+            // (subdistrict) RajaOngkir di alamat.
+            $biayaPengiriman = round((float) $validated['shipping_cost'], 2);
+        } else {
+            // Ongkir dihitung ulang di backend lewat RajaOngkir — nilai
+            // biaya_pengiriman dari klien TIDAK dipercaya (hanya kompatibilitas input).
+            $destinationId = $address->id_tujuan_rajaongkir;
+
+            if ($destinationId === null || $destinationId === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'ALAMAT_TANPA_TUJUAN_RAJAONGKIR',
+                ], 422);
+            }
+
+            $variantWeights = ProductVariant::whereIn('id_variant', $cart->items->pluck('id_variant'))
+                ->pluck('berat_gram', 'id_variant');
+
+            $weightGram = 0;
+
+            foreach ($cart->items as $cartItem) {
+                $weightGram += ((int) ($variantWeights[$cartItem->id_variant] ?? 500)) * (int) $cartItem->jumlah;
+            }
+
+            try {
+                // Gunakan mode multi-kurir (endpoint yang sama, `courier` tunggal
+                // di dalamnya) karena lebih andal daripada pemanggilan per-kurir
+                // yang terkadang mengembalikan 404 palsu di endpoint Komerce.
+                $services = $rajaongkir->costMany(
+                    (string) $destinationId,
+                    max(1, $weightGram),
+                    [(string) $validated['kurir']],
+                );
+            } catch (RajaOngkirException $e) {
+                // Fallback otomatis: bila klien sudah mengirim tarif manual
+                // (mis. saat kuota habis), pakai nilai itu alih-alih menggagalkan
+                // transaksi. Kode error lain tetap dikembalikan apa adanya.
+                if ($e->getMessage() === 'RAJAONGKIR_QUOTA_EXCEEDED' && $manualCost !== null) {
+                    $biayaPengiriman = $manualCost;
+
+                    return $this->finalizeOrder(
+                        $validated,
+                        $biayaPengiriman,
+                        $address,
+                        $cart,
+                        $user,
+                        $voucherService,
+                        $orderService,
+                        $reservations
+                    );
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'pesan' => $e->userMessage(),
+                ], $e->statusCode());
+            }
+
+            // Hanya pertimbangkan layanan dari kurir yang dipilih.
+            $courier = strtolower((string) $validated['kurir']);
+            $services = array_values(array_filter(
+                $services,
+                fn ($service) => strtolower((string) ($service['code'] ?? '')) === $courier
+            ));
+
+            $layanan = strtoupper((string) $validated['layanan']);
+            $matchedService = null;
+
+            foreach ($services as $service) {
+                $serviceCode = strtoupper((string) ($service['service'] ?? ''));
+                $serviceName = strtoupper((string) ($service['name'] ?? ''));
+
+                if ($serviceCode === $layanan || $serviceName === $layanan) {
+                    $matchedService = $service;
+                    break;
+                }
+            }
+
+            if ($matchedService === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'LAYANAN_TIDAK_TERSEDIA',
+                    'pesan' => 'Layanan pengiriman yang dipilih tidak tersedia untuk kurir dan rute ini. Silakan pilih ulang ongkir.',
+                ], 422);
+            }
+
+            $biayaPengiriman = round((float) ($matchedService['cost'] ?? 0), 2);
+        }
+
+        return $this->finalizeOrder(
+            $validated,
+            $biayaPengiriman,
+            $address,
+            $cart,
+            $user,
+            $voucherService,
+            $orderService,
+            $reservations
+        );
+    }
+
+    /**
+     * Buat pesanan di dalam satu transaksi (dipakai mode RajaOngkir maupun
+     * tarif manual) dan kembalikan respons 201.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function finalizeOrder(
+        array $validated,
+        float $biayaPengiriman,
+        UserAddress $address,
+        Cart $cart,
+        $user,
+        VoucherService $voucherService,
+        OrderService $orderService,
+        StockReservationService $reservations
+    ): JsonResponse {
         try {
             $order = DB::transaction(function () use (
                 $cart,
@@ -70,7 +229,8 @@ class CheckoutController extends Controller
                 $validated,
                 $biayaPengiriman,
                 $voucherService,
-                $orderService
+                $orderService,
+                $reservations
             ) {
                 $subtotal = 0.0;
                 $lines = [];
@@ -90,10 +250,11 @@ class CheckoutController extends Controller
                     }
 
                     $jumlah = (int) $cartItem->jumlah;
+                    $tersedia = (int) $variant->stok - (int) $variant->stok_dipesan;
 
-                    if ($jumlah > (int) $variant->stok) {
+                    if ($jumlah > $tersedia) {
                         throw ValidationException::withMessages([
-                            'cart' => ["Stok tidak mencukupi untuk {$variant->sku}. Stok tersedia: {$variant->stok}."],
+                            'cart' => ["Stok tidak mencukupi untuk {$variant->sku}. Stok tersedia: {$tersedia}."],
                         ]);
                     }
 
@@ -109,6 +270,17 @@ class CheckoutController extends Controller
                         'subtotal' => $lineSubtotal,
                     ];
                 }
+
+                // Reservasi stok: tambah stok_dipesan (stok fisik belum dikurangi).
+                // Stok yang direservasi tidak bisa dibeli pesanan lain sampai
+                // pembayaran berhasil (dikurangi permanen) atau kedaluwarsa/dibatal.
+                $reservations->reserve(array_map(
+                    fn ($line) => [
+                        'id_variant' => $line['variant']->id_variant,
+                        'jumlah' => $line['jumlah'],
+                    ],
+                    $lines
+                ));
 
                 $subtotal = round($subtotal, 2);
 
@@ -126,11 +298,14 @@ class CheckoutController extends Controller
                     $diskon = $resolved['diskon'];
                 }
 
+                // total = subtotal - diskon + ongkir (baik hasil RajaOngkir
+                // maupun tarif manual yang dipilih frontend).
                 $total = round(max(0, $subtotal + $biayaPengiriman - $diskon), 2);
 
                 $order = $this->createOrder($orderService, [
                     'id_user' => $user->id_user,
                     'status_pesanan' => 'menunggu_pembayaran',
+                    'kedaluwarsa_pada' => $orderService->expiryFrom(),
                     'subtotal' => $subtotal,
                     'biaya_pengiriman' => $biayaPengiriman,
                     'diskon' => $diskon,
@@ -139,7 +314,7 @@ class CheckoutController extends Controller
                     'nomor_telepon_penerima' => $address->nomor_telepon,
                     'alamat_pengiriman' => $this->formatAlamat($address),
                     'kode_tujuan_pengiriman' => Str::limit((string) $address->nama_kota, 100, ''),
-                    'catatan' => $validated['catatan'] ?? null,
+                    'catatan' => $this->buildCatatan($validated),
                 ]);
 
                 foreach ($lines as $line) {
@@ -157,24 +332,6 @@ class CheckoutController extends Controller
                         'harga_satuan' => $line['harga'],
                         'jumlah' => $line['jumlah'],
                         'subtotal' => $line['subtotal'],
-                    ]);
-
-                    $stokSebelum = (int) $variant->stok;
-                    $stokSesudah = $stokSebelum - $line['jumlah'];
-
-                    $variant->update(['stok' => $stokSesudah]);
-
-                    InventoryMovement::create([
-                        'id_inventory_movement' => (string) Str::uuid(),
-                        'id_variant' => $variant->id_variant,
-                        'id_user' => $user->id_user,
-                        'jenis_pergerakan' => 'keluar',
-                        'jumlah' => $line['jumlah'],
-                        'stok_sebelum' => $stokSebelum,
-                        'stok_sesudah' => $stokSesudah,
-                        'referensi' => $order->nomor_pesanan,
-                        'catatan' => 'Pengurangan stok checkout pesanan',
-                        'waktu_pergerakan' => now(),
                     ]);
                 }
 
@@ -254,5 +411,26 @@ class CheckoutController extends Controller
         ], fn ($value) => $value !== null && $value !== '');
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * Susun catatan pesanan. Saat memakai tarif manual, label kurir manual
+     * (mis. "JNE Reguler (Manual)") disisipkan agar jejak pengiriman tetap
+     * terekam meski nilai ongkir tidak berasal dari RajaOngkir.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function buildCatatan(array $validated): ?string
+    {
+        $catatan = $validated['catatan'] ?? null;
+        $manualCourier = $validated['shipping_courier'] ?? null;
+
+        if ($manualCourier === null || $manualCourier === '') {
+            return $catatan;
+        }
+
+        $penanda = '[Ongkir Manual: '.$manualCourier.']';
+
+        return $catatan ? $catatan.' '.$penanda : $penanda;
     }
 }

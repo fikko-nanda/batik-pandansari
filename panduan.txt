@@ -63,13 +63,18 @@ Fungsi: menyimpan informasi umum setiap produk yang dijual.
 | `id_product`    | UUID                | ID produk        |
 | `id_category`   | UUID kategori       | Kategori produk  |
 | `nama_produk`   | Batik Parang Klasik | Nama produk      |
+| `sku`           | BPK-KLASIK          | SKU induk (unik, boleh NULL) |
 | `slug`          | batik-parang-klasik | Identitas URL    |
 | `deskripsi`     | Batik motif parang  | Deskripsi produk |
+| `berat_produk`  | 600                 | Berat produk (gram), boleh NULL |
+| `bahan_kain`    | Katun               | Material kain, boleh NULL |
 | `status_produk` | aktif               | Status penjualan |
 
 Alurnya: admin menambahkan produk → produk dihubungkan ke kategori → produk ditampilkan pada katalog website.
 
 Tabel ini menyimpan informasi utama produk, sedangkan harga, ukuran, warna, dan stok per varian disimpan di `product_variants`.
+
+Catatan aturan: produk yang berstatus `aktif` wajib memiliki minimal 1 foto produk (`product_images` dengan `type = 'produk'`) dan maksimal 5 foto. Produk dibuat terlebih dahulu sebagai `draft`, gambarnya diunggah, lalu produk diaktifkan.
 
 ## 5. `product_variants` — Varian produk
 
@@ -95,14 +100,18 @@ Fungsi: menyimpan informasi lokasi gambar produk yang ditampilkan pada website.
 | ------------- | -------------------- | ------------------ |
 | `id_image`    | UUID                 | ID gambar          |
 | `id_product`  | UUID produk          | Produk terkait     |
+| `id_variant`  | UUID varian / NULL   | Varian terkait (NULL untuk foto umum & size chart) |
 | `path_gambar` | products/batik1.jpg  | Lokasi file gambar |
 | `alt_text`    | Batik parang cokelat | Deskripsi gambar   |
+| `type`        | produk               | `produk` = foto produk, `size_chart` = tabel ukuran |
 | `is_primary`  | 1                    | Gambar utama       |
 | `urutan`      | 1                    | Urutan tampilan    |
 
 Alurnya: admin mengunggah gambar → file disimpan di storage → lokasi file dicatat di database → frontend menampilkan gambar produk.
 
 Biasanya satu produk memiliki beberapa gambar, misalnya tampak depan, belakang, dan detail motif.
+
+Size chart (tabel ukuran) memakai tabel yang sama dengan `type = 'size_chart'` dan `id_variant` NULL. Maksimal 1 size chart per produk, sedangkan foto produk maksimal 5 buah.
 
 # B. Modul wishlist dan keranjang
 

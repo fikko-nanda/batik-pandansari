@@ -53,8 +53,11 @@ class ShoppingApiTest extends TestCase
             $table->string('id_product')->primary();
             $table->string('id_category');
             $table->string('nama_produk');
+            $table->string('sku')->nullable()->unique();
             $table->string('slug');
             $table->text('deskripsi')->nullable();
+            $table->unsignedInteger('berat_produk')->nullable();
+            $table->string('bahan_kain')->nullable();
             $table->string('status_produk')->default('draft');
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
@@ -69,6 +72,7 @@ class ShoppingApiTest extends TestCase
             $table->string('ukuran')->nullable();
             $table->decimal('harga', 12, 2)->default(0);
             $table->integer('stok')->default(0);
+            $table->unsignedInteger('berat_gram')->default(500);
             $table->string('status_varian')->default('aktif');
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
@@ -77,8 +81,10 @@ class ShoppingApiTest extends TestCase
         Schema::create('product_images', function (Blueprint $table) {
             $table->string('id_image')->primary();
             $table->string('id_product');
+            $table->string('id_variant')->nullable();
             $table->string('path_gambar');
             $table->string('alt_text')->nullable();
+            $table->string('type')->default('produk');
             $table->boolean('is_primary')->default(false);
             $table->integer('urutan')->default(0);
             $table->timestamp('dibuat_pada')->nullable();
@@ -114,6 +120,7 @@ class ShoppingApiTest extends TestCase
             $table->string('kode_voucher')->unique();
             $table->string('nama_voucher');
             $table->text('deskripsi')->nullable();
+            $table->string('gambar', 500)->nullable();
             $table->string('tipe_diskon');
             $table->decimal('nilai_diskon', 12, 2);
             $table->decimal('minimal_pembelian', 12, 2)->default(0);

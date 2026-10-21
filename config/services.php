@@ -40,6 +40,35 @@ return [
         'client_key' => env('MIDTRANS_CLIENT_KEY'),
         'server_key' => env('MIDTRANS_SERVER_KEY'),
         'is_production' => env('MIDTRANS_IS_PRODUCTION', false),
+        'webhook_throttle' => env('MIDTRANS_WEBHOOK_THROTTLE', 60),
+
+        // URL pengalihan (callbacks) yang dikirim ke Snap saat membuat
+        // transaksi. Bila kosong, Midtrans memakai finish_redirect_url bawaan
+        // akun yang seringkali masih example.com. Isi dengan halaman hasil
+        // pembayaran milik sendiri. Nilai bawaan mengarah ke halaman web
+        // backend yang memang tersedia (routes/web.php).
+        'finish_redirect_url' => env('MIDTRANS_FINISH_REDIRECT_URL')
+            ?: rtrim((string) env('APP_URL', 'http://localhost:8000'), '/').'/pembayaran/selesai',
+        'unfinish_redirect_url' => env('MIDTRANS_UNFINISH_REDIRECT_URL')
+            ?: rtrim((string) env('APP_URL', 'http://localhost:8000'), '/').'/pembayaran/tertunda',
+        'error_redirect_url' => env('MIDTRANS_ERROR_REDIRECT_URL')
+            ?: rtrim((string) env('APP_URL', 'http://localhost:8000'), '/').'/pembayaran/gagal',
+    ],
+
+    'rajaongkir' => [
+        'api_key' => env('RAJAONGKIR_API_KEY'),
+        'base_url' => env('RAJAONGKIR_BASE_URL', 'https://rajaongkir.komerce.id/api/v1'),
+        'origin_id' => env('RAJAONGKIR_ORIGIN_ID'),
+        'verify' => env('RAJAONGKIR_VERIFY'),
+    ],
+
+    // Client ID/Secret OAuth 2.0 dari Google Cloud Console → Credentials.
+    // Dipakai memverifikasi ID Token (aud) dan access token (userinfo) pada
+    // login/tautan Google.
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI'),
     ],
 
 ];
