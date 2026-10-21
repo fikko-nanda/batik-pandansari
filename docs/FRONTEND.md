@@ -123,6 +123,12 @@ Karena frontend sudah dikanoniskan, backend nantinya cukup mengganti data dummy 
 ### ✅ Terpusat di `resources/js/app.js` — Layer `PandansariAPI`
 Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success, message, data, errors, meta}`). Spesifikasi lengkap backend: [`docs/BACKEND-API.md`](docs/BACKEND-API.md).
 
+### ✅ Badge Keranjang & Wishlist di Navbar (sinkron API)
+- Alpine store global `$store.lencana` (`{ cart, wishlist }`) diregistrasi saat `alpine:init` di `app.js`.
+- `PandansariAPI.muatLencana()` menarik `GET /cart` + `GET /wishlist` paralel — dipanggil navbar saat halaman dibuka bila user login.
+- Semua helper mutasi (`addCartItem`, `updateCartItem`, `removeCartItem`, `clearCart`, `addWishlist`, `removeWishlist`) otomatis menjadwalkan refresh badge (debounce 300 ms) via `jadwalLencana()` — badge selalu sinkron tanpa perlu memodifikasi tiap halaman.
+- Badge disembunyikan saat jumlah 0. Logout / token usang → badge di-nol-kan (`clearSession()`).
+
 ### ✅ Terhubung
 | Modul | Endpoint | File |
 |---|---|---|
@@ -130,18 +136,18 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 | Login via Google | `POST /auth/google` *(GIS wajib client ID sama seperti backend)* | belum — tersedia helper |
 | Register | `POST /register` | `auth/register.blade.php` |
 | Profil/Keluar | `GET /me`, `POST /logout` | `components/navbar.blade.php` |
-| Katalog | `GET /categories`, `GET /products?search&category&page&per_page` | `shop/katalog.blade.php` + `components/shop/product-item.blade.php` |
+| Katalog | `GET /categories`, `GET /products?search&category&page&per_page` — menu navbar kirim `?category=<slug>` (tulis/cap/handprint/wanita/pria/anak/sarimbit) → dipetakan ke `id_category` di `shop/katalog.blade.php` | `shop/katalog.blade.php` + `components/shop/product-item.blade.php` |
 | Detail produk | `GET /products/{id}`, `GET /products/{id}/variants` | `shop/product-detail.blade.php` |
 | Tambah keranjang | `POST /cart/items { id_variant, jumlah }` | `shop/product-detail.blade.php` |
 | Wishlist | `POST /wishlist { id_product }` | katalog + detail |
 | Keranjang | `GET /cart`, `PUT/DELETE /cart/items/{id}`, `DELETE /cart`, voucher validate | `shop/cart.blade.php` |
-| Checkout | `GET /addresses`, `GET /shipping/destinations`, `POST /shipping/cost`, `POST /vouchers/validate`, `POST /checkout` → `POST /orders/{id}/payment` → redirect Midtrans Snap | `shop/checkout.blade.php` |
-| Riwayat pesanan | `GET /orders?page&per_page`, bayar ulang via `POST /orders/{id}/payment`, beli-lagi via `POST /cart/items` | `customer/orders.blade.php` |
+| Checkout | `GET /addresses`, `GET /shipping/destinations`, `POST /shipping/cost`, **`GET /vouchers/available` (chips voucher yang bisa dipakai)**, `POST /vouchers/validate`, `POST /checkout` → `POST /orders/{id}/payment` → redirect Midtrans Snap | `shop/checkout.blade.php` |
+| Riwayat pesanan | `GET /orders?page&per_page`, **cek transaksi tertunda `GET /orders/{id}/payment`**, bayar ulang via `POST /orders/{id}/payment`, beli-lagi via `POST /cart/items` | `customer/orders.blade.php` |
 | Buku alamat | CRUD `/addresses` (tambah/ubah/hapus via modal) | `customer/address.blade.php` |
 | Wishlist user | `GET /wishlist` (relasi `product.category/variants/images`), `DELETE /wishlist/{id}` | `customer/wishlist.blade.php` |
 | Profil | `GET /me` (sinkron), `PUT /me { nama_pengguna, email, nomor_telepon }` | `customer/profile.blade.php` |
 | Keamanan | `PUT /me/password { kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation }` | `customer/security.blade.php` |
-| Voucher saya | `GET /voucher-usages/me` | `customer/orders.blade.php` (tab voucher) |
+| Voucher saya | `GET /voucher-usages/me` | `customer/orders.blade.php` dan kartu **Riwayat Pemakaian Voucher** di `customer/profile.blade.php` |
 | Sidebar akun | `GET /me` + logout di 3 halaman customer | orders/address/wishlist |
 
 ### ✅ Terhubung — Modul Admin (semua gate: cek token + `peran === 'admin'`)

@@ -16,7 +16,7 @@
         selectedCourierId: 'jne',   // kurir manual statis terpilih (null bila pakai layanan RajaOngkir nyata)
         biayaPengiriman: 22000,
         catatan: '',
-        submitting: false,
+        isLoading: false,
         submitMsg: '',
         submitOk: false,
         fallbackImage: '{{ asset('images/katalog1.webp') }}',
@@ -115,6 +115,19 @@
             this.ongkirMsg = '';
             this.biayaPengiriman = 22000;   // kembali ke tarif manual default
         },
+        // Pakai tujuan yang tersimpan di alamat terpilih (id_tujuan_rajaongkir) —
+        // id yang sama dipakai backend saat validasi alamat di checkout.
+        useSavedTujuan() {
+            const a = this.alamatAktif;
+            if (a?.id_tujuan_rajaongkir) {
+                this.destPicked = { id: Number(a.id_tujuan_rajaongkir), label: 'Tujuan tersimpan dari alamat ' + (a.label_alamat ?? '') };
+                this.destQuery = '';
+                this.destinations = [];
+                this.ongkirLayanan = [];
+                this.serviceTerpilih = null;
+                this.ongkirMsg = '';
+            }
+        },
 
         // === RajaOngkir: hitung ongkir nyata (pilih kurir aktif) ===
         async hitungOngkir(kurir) {
@@ -122,28 +135,37 @@
             this.ongkirBusy = true; this.ongkirMsg = '';
             const res = await PandansariAPI.shippingCost(this.destPicked.id, this.beratGram, kurir);
             this.ongkirBusy = false;
-            if (res.ok) {
-                const hasil = (res.data?.hasil ?? []).find(h => h.berhasil) ?? null;
-                if (hasil?.layanan?.length) {
-                    this.ongkirLayanan = hasil.layanan.map(l => ({
-                        kurir, service: l.service ?? l.name ?? kurir.toUpperCase(),
-                        cost: Number(l.cost ?? l.price ?? l.shipping_cost ?? 0),
-                        etd: l.etd ?? l.description ?? '',
-                    }));
-                    this.ongkirOk = true;
-                    this.ongkirMsg = 'Layanan ditemukan — pilih salah satu.';
-                } else {
-                    this.ongkirOk = false;
-                    const err = hasil?.error;
-                    this.ongkirMsg = err === 'RAJAONGKIR_DESTINATION_NOT_FOUND'
-                        ? 'Tarif ' + kurir.toUpperCase() + ' tidak tersedia dari server ongkir. Silakan pakai tarif manual di bawah.'
-                        : (err ?? 'Tarif tidak tersedia untuk kurir ini.');
-                }
+            // Format respons backend kini: data = ARRAY langsung daftar layanan.
+            // Format lama { hasil: [{ berhasil, layanan }] } tetap disangga bila muncul.
+            let di = [], errKurir = '';
+            if (Array.isArray(res.data)) {
+                di = res.data;
+            } else if (res.data && Array.isArray(res.data.hasil)) {
+                const h = res.data.hasil.find(x => x.berhasil) ?? {};
+                di = h.layanan ?? [];
+                errKurir = h.error ?? '';
+            }
+            if (res.ok && di.length) {
+                this.ongkirLayanan = di.map(l => ({
+                    kurir,
+                    nama: l.name ?? l.nama ?? kurir.toUpperCase(),
+                    service: l.service ?? l.service_name ?? kurir.toUpperCase(),
+                    deskripsi: l.description ?? l.deskripsi ?? '',
+                    cost: Number(l.cost ?? l.price ?? l.shipping_cost ?? 0),
+                    etd: l.etd ?? '',
+                }));
+                this.ongkirOk = true;
+                this.ongkirMsg = 'Layanan ditemukan — pilih salah satu.';
+            } else if (res.ok && !di.length) {
+                // Sukses tapi array layanan kosong → BARULAH bilang tidak tersedia
+                this.ongkirOk = false;
+                this.ongkirMsg = 'Tarif ' + kurir.toUpperCase() + ' tidak tersedia untuk tujuan ini. Silakan pakai tarif manual di bawah.';
             } else {
                 this.ongkirOk = false;
-                this.ongkirMsg = res.message === 'RAJAONGKIR_DESTINATION_NOT_FOUND'
+                const err = errKurir || res.message;
+                this.ongkirMsg = err === 'RAJAONGKIR_DESTINATION_NOT_FOUND'
                     ? 'Layanan ongkir sedang tidak dapat dihubungi (kendala di backend). Pakai tarif manual di bawah.'
-                    : res.message;
+                    : (err === 'RAJAONGKIR_INVALID_RESPONSE' ? 'Server ongkir sedang bermasalah (upstream). Pakai tarif manual di bawah.' : res.message);
             }
         },
         pilihLayanan(l) {
@@ -172,7 +194,7 @@
             if (res.ok) {
                 this.addresses = res.data ?? [];
                 const utama = this.addresses.find(a => a.alamat_utama) ?? this.addresses[0];
-                if (utama) this.selectedAddressId = utama.id_user_address;
+                if (utama) { this.selectedAddressId = utama.id_user_address; this.useSavedTujuan(); }
             }
             return res;
         },
@@ -193,35 +215,86 @@
         },
         hapusVoucher() { this.voucher = null; this.voucherMsg = ''; this.voucherOk = false; this.voucherCode = ''; },
 
-        // === Submit checkout → Midtrans Snap ===
-        async submit() {
+        // Daftar voucher yang sedang tersedia utk subtotal ini (GET /vouchers/available)
+        voucherList: [], voucherListPesan: '',
+        async muatVoucher() {
+            const r = await PandansariAPI.availableVouchers(this.subtotal);
+            if (r.ok) {
+                this.voucherList = (r.data ?? []).filter(v => {
+                    const st = String(v.status_voucher ?? v.status ?? '').toLowerCase();
+                    return !st || ['aktif', 'dipublikasikan', 'published', 'active'].includes(st);
+                });
+                this.voucherListPesan = this.voucherList.length ? '' : 'Belum ada voucher tersedia.';
+            } else {
+                this.voucherList = [];
+                this.voucherListPesan = r.message;
+            }
+        },
+        pakaiVoucher(v) {
+            this.voucherCode = String(v.kode_voucher ?? v.kode ?? '');
+            this.applyVoucher();
+            window.scrollTo({ top: window.scrollY, behavior: 'smooth' });
+        },
+
+        // === Checkout → Midtrans Snap (handleCheckout) ===
+        async handleCheckout() {
             if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
             this.submitMsg = ''; this.submitOk = false;
 
-            if (!this.selectedAddressId) { this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.'; return; }
-            if (!this.items.length) { this.submitMsg = 'Keranjang Anda kosong.'; return; }
-
-            this.submitting = true;
-            // kurir + layanan dari pilihan user (wajib — divalidasi backend)
-            const kurirDipilih = this.serviceTerpilih?.kurir ?? this.selectedCourierId ?? 'jne';
+            // Kurir + layanan: dari layanan ongkir nyata, atau tarif manual terpilih.
+            // Tarif manual aktif = tidak ada layanan RajaOngkir nyata yang dipilih (serviceTerpilih kosong)
+            const manual = !this.serviceTerpilih;
+            const kurirManual = this.couriers.find(c => c.id === this.selectedCourierId);
+            const kurirDipilih = this.serviceTerpilih?.kurir ?? kurirManual?.id ?? 'jne';
             const layananDipilih = this.serviceTerpilih?.service ?? String(kurirDipilih).toUpperCase();
-            const res = await PandansariAPI.checkout({
+            const payload = {
                 id_user_address: this.selectedAddressId,
                 kode_voucher: this.voucherCode.trim() || undefined,
                 biaya_pengiriman: Number(this.biayaPengiriman || 0) || undefined,
                 catatan: this.catatan.trim() || undefined,
                 kurir: kurirDipilih,
                 layanan: layananDipilih,
-            });
+            };
+            if (manual) {
+                // Keterangan pengganti ongkir RajaOngkir saat Tarif Manual dipakai.
+                // (biaya_pengiriman tetap dikirim dengan tarif manual pilihan user)
+                payload.is_manual_shipping = true;
+                payload.shipping_cost = Number(this.biayaPengiriman || 0);
+                payload.courier_name = kurirManual?.name ?? 'JNE Reguler';
+            }
+            console.log('Checkout Triggered', payload);
+
+            if (!this.selectedAddressId) { this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.'; return; }
+            if (!this.items.length) { this.submitMsg = 'Keranjang Anda kosong.'; return; }
+
+            // Validasi: alamat harus terhubung tujuan RajaOngkir — DILEWATI bila Tarif Manual aktif,
+            // karena ongkir nyata dari RajaOngkir tidak diperlukan untuk tarif manual.
+            const alamatPilih = this.alamatAktif;
+            if (alamatPilih && !alamatPilih.id_tujuan_rajaongkir && !manual) {
+                this.submitMsg = 'Alamat ' + (alamatPilih.label_alamat ?? 'yang dipilih') + ' belum memiliki tujuan ongkir (RajaOngkir). Perbarui alamat di Buku Alamat: edit alamat tersebut, pilih di kolom Cari Tujuan Ongkir, lalu simpan.';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+
+            this.isLoading = true;
+            const res = await PandansariAPI.checkout(payload);
             if (!res.ok) {
-                this.submitting = false;
-                this.submitMsg = res.message;
+                this.isLoading = false;
+                // Terjemahkan error teknis backend supaya mudah dipahami user
+                if (res.message === 'ALAMAT_TANPA_TUJUAN_RAJAONGKIR') {
+                    this.submitMsg = 'Alamat pengiriman belum terhubung dengan lokasi RajaOngkir. Silakan perbarui alamat Anda di Buku Alamat.'
+                        + (manual ? ' (Tarif manual dipakai, tetapi backend masih mengharuskan alamat punya tujuan ongkir.)' : '');
+                } else {
+                    this.submitMsg = res.message === 'RAJAONGKIR_DESTINATION_NOT_FOUND' || res.message === 'RAJAONGKIR_INVALID_RESPONSE'
+                        ? 'Perhitungan ongkir sedang bermasalah di server. Coba lagi sebentar, atau pakai tarif manual lalu ulangi.'
+                        : res.message;
+                }
                 return;
             }
 
             const order = res.data ?? {};
             const pay = await PandansariAPI.payOrder(order.id_order ?? order.id);
-            this.submitting = false;
+            this.isLoading = false;
 
             if (pay.ok && pay.data?.redirect_url) {
                 // Redirect ke halaman bayar Midtrans Snap (sandbox)
@@ -234,6 +307,7 @@
 
         async init() {
             await Promise.all([this.loadCart(), this.loadAddresses()]);
+            this.muatVoucher();
             this.loading = false;
         }
      }">
@@ -298,7 +372,7 @@
                         <template x-for="a in addresses" :key="a.id_user_address">
                             <label class="flex items-start gap-3 p-3.5 rounded-xl border-2 transition cursor-pointer"
                                    :class="selectedAddressId === a.id_user_address ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-200' : 'border-slate-200 hover:border-slate-300 bg-white'">
-                                <input type="radio" name="alamat" :value="a.id_user_address" :checked="selectedAddressId === a.id_user_address" @change="selectedAddressId = a.id_user_address" class="mt-0.5 text-sky-600 focus:ring-sky-500">
+                                <input type="radio" name="alamat" :value="a.id_user_address" :checked="selectedAddressId === a.id_user_address" @change="selectedAddressId = a.id_user_address; useSavedTujuan()" class="mt-0.5 text-sky-600 focus:ring-sky-500">
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
                                         <span class="text-xs font-bold text-[#0F1A24]" x-text="a.label_alamat"></span>
@@ -415,9 +489,10 @@
                                         <input type="radio" name="layanan" class="text-sky-600 focus:ring-sky-500"
                                                :checked="serviceTerpilih && serviceTerpilih.service === l.service && serviceTerpilih.kurir === l.kurir"
                                                @click="pilihLayanan(l)">
-                                        <div>
-                                            <span class="block text-xs font-bold text-[#0F1A24]" x-text="(l.kurir + ' — ' + l.service).toUpperCase()"></span>
-                                            <span class="block text-[10px] text-slate-500" x-text="l.etd ? ('Estimasi ' + l.etd) : ''"></span>
+                                        <div class="min-w-0">
+                                            <span class="block text-xs font-bold text-[#0F1A24]" x-text="((l.nama ?? l.kurir) + ' — ' + l.service).toUpperCase().trim()"></span>
+                                            <span class="block text-[10px] leading-snug text-slate-500" x-text="l.deskripsi ? l.deskripsi : 'Layanan ' + (l.kurir ?? '').toUpperCase()"></span>
+                                            <span class="block text-[10px] text-sky-600" x-text="l.etd ? ('Estimasi ' + l.etd) : ''"></span>
                                         </div>
                                     </div>
                                     <span class="text-xs font-bold text-[#0F1A24]" x-text="formatRupiah(l.cost)"></span>
@@ -530,7 +605,6 @@
                             <span x-text="voucherMsg"></span>
                         </p>
                         <button type="button" x-show="voucher" @click="hapusVoucher()"
-                                class="w-full bg-sky-50/80 border border-sky-100 p-2 rounded-xl flex items-center justify-between text-xs text-sky-800 font-medium cursor-pointer"></think>Perbaikan kecil — tag penutup `</button>` diakhiri:<tool_call>edit<arg_key>newString</arg_key><arg_value>                        <button type="button" x-show="voucher" @click="hapusVoucher()"
                                 class="w-full bg-sky-50/80 border border-sky-100 p-2 rounded-xl flex items-center justify-between text-xs text-sky-800 font-medium cursor-pointer">
                             <span class="flex items-center gap-1.5 font-bold text-[11px]">
                                 <i class="fa-solid fa-ticket text-sky-600"></i>
@@ -541,13 +615,27 @@
                                 <i class="fa-solid fa-xmark text-slate-400"></i>
                             </span>
                         </button>
+
+                        <!-- Voucher tersedia (klik langsung pakai) -->
+                        <div x-show="voucherList.length && !voucher" x-cloak class="flex flex-wrap gap-1.5">
+                            <template x-for="v in voucherList" :key="v.id_voucher ?? v.kode_voucher">
+                                <button type="button" @click="pakaiVoucher(v)"
+                                        class="group bg-amber-50 hover:bg-amber-100 border border-amber-200 hover:border-amber-300 text-amber-800 text-[10px] font-bold px-2.5 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer">
+                                    <i class="fa-solid fa-ticket text-amber-500"></i>
+                                    <span x-text="v.kode_voucher ?? v.kode ?? 'KOSONG'"></span>
+                                    <span class="font-normal opacity-80" x-text="(v.tipe_diskon === 'persentase' ? (Number(v.nilai_diskon) + '%') : formatRupiah(v.nilai_diskon)) + (Number(v.min_pembelian ?? 0) > 0 ? (' • min. ' + formatRupiah(v.min_pembelian)) : '')"></span>
+                                </button>
+                            </template>
+                        </div>
+                        <p x-show="!voucherList.length && voucherListPesan" x-cloak class="text-[10px] text-slate-400 italic" x-text="voucherListPesan"></p>
                     </div>
 
                     <!-- Breakdown Table -->
-                    <div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-3 mt-3">
-                        <div class="flex justify-between">
-                            <span>Subtotal (<span x-text="itemCount"></span> item)</span>
-                            <span class="font-semibold text-[#0F1A24]" x-text="formatRupiah(subtotal)"></span>
+<div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-3 mt-3">
+<div class="flex justify-between">
+<span>Subtotal (<span x-text="itemCount"></span> item)</span>
+<span class="font-semibold text-[#0F1A24]" x-text="formatRupiah(subtotal)"></span>
+[Output truncated. Continue reading with offset: 600]
                         </div>
                         <div class="flex justify-between">
                             <span>Ongkos Kirim (<span x-text="selectedCourier"></span>)</span>
@@ -574,11 +662,22 @@
                             <i class="fa-solid fa-triangle-exclamation mr-1"></i><span x-text="submitMsg"></span>
                         </p>
 
-                        <!-- CTA Button: POST /checkout → POST /orders/{id}/payment → redirect Midtrans Snap -->
-                        <button type="button" :disabled="submitting" @click="submit()"
-                                class="w-full bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] font-bold text-xs py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60">
-                            <span x-show="!submitting">LANJUT KE PEMBAYARAN MIDTRANS →</span>
-                            <span x-show="submitting"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> MEMBUAT PESANAN…</span>
+                        <!-- Peringatan proaktif: alamat terpilih belum punya tujuan RajaOngkir.
+                             Disembunyikan saat Tarif Manual aktif (tidak butuh ongkir nyata RajaOngkir) -->
+                        <p x-show="alamatAktif && !alamatAktif.id_tujuan_rajaongkir && serviceTerpilih" class="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
+                            <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                            Alamat <span class="font-bold" x-text="alamatAktif?.label_alamat ?? 'terpilih'"></span>
+                            belum terhubung dengan RajaOngkir — perbarui di
+                            <a href="/address" class="underline font-bold">Buku Alamat</a>
+                            (edit alamat → pilih di kolom <span class="underline">Cari Tujuan Ongkir</span> → simpan)
+                            atau gunakan Tarif Manual di bawah.
+                        </p>
+
+                        <!-- CTA Button: handleCheckout() → POST /checkout → POST /orders/{id}/payment → redirect Midtrans Snap -->
+                        <button type="button" :disabled="isLoading" @click="handleCheckout()"
+                                class="w-full bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] font-bold text-xs py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                            <span x-show="!isLoading">LANJUT KE PEMBAYARAN MIDTRANS →</span>
+                            <span x-show="isLoading"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> MEMPROSES CHECKOUT…</span>
                         </button>
                     </div>
                     </div>

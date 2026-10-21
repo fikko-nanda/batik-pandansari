@@ -37,7 +37,13 @@
              this.loading = false;
 
              if (res.ok) {
-                 // Sukses register → langsung aktif (role pelanggan), silakan login
+                 // Respons register TIDAK memuat token → auto-login pakai data yang baru saja diisi
+                 const lg = await PandansariAPI.login(this.email.trim(), this.kata_sandi);
+                 if (lg.ok) {
+                     window.location.href = '/';
+                     return;
+                 }
+                 // Kalau auto-login gagal (mis. email perlu verifikasi), suruh login manual
                  this.successMessage = 'Registrasi berhasil! Akun Anda sudah aktif — silakan masuk menggunakan email dan kata sandi Anda.';
                  window.scrollTo({ top: 0, behavior: 'smooth' });
              } else {
@@ -154,7 +160,7 @@
             <div class="pt-1">
                 <label class="flex items-start gap-2.5 cursor-pointer text-xs text-slate-600 leading-normal">
                     <input type="checkbox" required x-ref="agree" class="mt-0.5 rounded border-slate-300 text-black focus:ring-black w-4 h-4 shrink-0">
-                    <span>Saya menyetujui <a href="#" class="font-bold text-slate-800 hover:underline">Ketentuan Layanan</a> &amp; <a href="#" class="font-bold text-slate-800 hover:underline">Kebijakan Privasi</a> Batik Pandansari.</span>
+                    <span>Saya menyetujui <a href="/terms" target="_blank" rel="noopener noreferrer" class="font-bold text-slate-800 hover:underline">Ketentuan Layanan</a> &amp; <a href="/privacy" target="_blank" rel="noopener noreferrer" class="font-bold text-slate-800 hover:underline">Kebijakan Privasi</a> Batik Pandansari.</span>
                 </label>
             </div>
         </div>

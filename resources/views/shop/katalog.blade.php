@@ -92,7 +92,36 @@
             // --- Aksi filter ---
             selectCategory(key) {
                 this.selectedCategory = key;
+                this.sinkronURL();
                 this.loadProducts(1);
+            },
+            // Samakan URL dengan kategori terpilih (mendukung highlight menu navbar & refresh)
+            sinkronURL() {
+                const c = this.categories.find(x => x.id_category === this.selectedCategory);
+                const slug = this.namaKeSlug(c?.nama_kategori ?? '');
+                window.history.replaceState({}, '', slug ? '/katalog?category=' + encodeURIComponent(slug) : '/katalog');
+            },
+            // Slug menu navbar → nama kategori (contoh: 'pria' → 'Pakaian Pria')
+            slugKeNama(slug) {
+                const MAP = {
+                    'tulis': 'Batik Tulis', 'batik-tulis': 'Batik Tulis',
+                    'cap': 'Batik Cap', 'batik-cap': 'Batik Cap', 'kain': 'Batik Cap', 'kain-tradisional': 'Batik Cap',
+                    'handprint': 'Bahan Handprint', 'bahan-handprint': 'Bahan Handprint',
+                    'wanita': 'Pakaian Wanita', 'pakaian-wanita': 'Pakaian Wanita',
+                    'pria': 'Pakaian Pria', 'pakaian-pria': 'Pakaian Pria',
+                    'anak': 'Pakaian Anak-Anak', 'anak-anak': 'Pakaian Anak-Anak', 'pakaian-anak-anak': 'Pakaian Anak-Anak',
+                    'sarimbit': 'Sarimbit',
+                };
+                return MAP[String(slug ?? '').toLowerCase()] ?? '';
+            },
+            // Nama kategori → slug menu navbar (contoh: 'Pakaian Pria' → 'pria')
+            namaKeSlug(nama) {
+                const MAP = {
+                    'batik tulis': 'tulis', 'batik cap': 'cap', 'bahan handprint': 'handprint',
+                    'pakaian wanita': 'wanita', 'pakaian pria': 'pria',
+                    'pakaian anak-anak': 'anak', 'sarimbit': 'sarimbit',
+                };
+                return MAP[String(nama ?? '').toLowerCase()] ?? '';
             },
             clearCategory() {
                 this.selectCategory('');
@@ -108,7 +137,24 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             },
             async init() {
-                await Promise.all([this.loadCategories(), this.loadProducts(1)]);
+                // Baca filter dari menu navbar: /katalog?category=<slug> atau /katalog?category_id=<id>
+                const qs = new URLSearchParams(window.location.search);
+                await this.loadCategories();
+
+                const cid = qs.get('category_id');
+                const slug = qs.get('category');
+                if (cid) {
+                    this.selectedCategory = cid;
+                } else if (slug) {
+                    const nama = this.slugKeNama(slug);
+                    const c = this.categories.find(x => String(x.nama_kategori ?? '').toLowerCase() === nama.toLowerCase())
+                        ?? this.categories.find(x => nama && String(x.nama_kategori ?? '').toLowerCase().includes(nama.toLowerCase()));
+                    this.selectedCategory = c ? c.id_category : '';
+                }
+                // Kata kunci dari pencarian navbar: /katalog?q=...
+                this.searchQuery = qs.get('q') ?? '';
+
+                await this.loadProducts(1);
             }
          }">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
