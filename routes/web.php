@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\MediaProxyController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -21,6 +22,10 @@ Route::get('/katalog', function () {
 Route::get('/detail/{id?}', function ($id = 1) {
     return view('shop.product-detail', compact('id'));
 })->name('product.detail');
+
+Route::get('/media/products/{filename}', MediaProxyController::class)
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('media.products');
 
 Route::get('/cart', function () {
     return view('shop.cart');
@@ -73,6 +78,10 @@ Route::prefix('admin')->group(function () {
     Route::get('/stock', function () {
         return view('admin.stock');
     })->name('admin.stock');
+
+    Route::get('/inventory/movements', function () {
+        return view('admin.inventory-movements');
+    })->name('admin.inventory-movements');
 
     Route::get('/orders', function () {
         return view('admin.orders');

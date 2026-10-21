@@ -40,6 +40,11 @@
                             <i class="fa-solid fa-boxes-packing text-sm"></i>
                             <span>Kurasi Stok & Varian</span>
                         </a>
+                    <a href="{{ route('admin.inventory-movements') }}" 
+                        class="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition {{ request()->routeIs('admin.inventory-movements') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-300 hover:bg-slate-800' }}">
+                            <i class="fa-solid fa-history text-sm"></i>
+                            <span>Riwayat Stok</span>
+                        </a>
                 </div>
             </div>
 

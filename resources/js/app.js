@@ -338,9 +338,22 @@ window.PandansariAPI = {
         createVariant(id_product, payload) { return PandansariAPI.fetch(`/products/${id_product}/variants`, { method: 'POST', body: payload }); },
         updateVariant(id, payload) { return PandansariAPI.fetch(`/variants/${id}`, { method: 'PUT', body: payload }); },
         deleteVariant(id) { return PandansariAPI.fetch(`/variants/${id}`, { method: 'DELETE' }); },
-        /** Upload gambar: payload = FormData { gambar, alt_text?, is_primary?, urutan? }. */
-        addProductImage(id_product, formData) { return PandansariAPI.fetch(`/products/${id_product}/images`, { method: 'POST', body: formData }); },
+        /** Upload gambar produk/draft. Payload FormData: { gambar, type?, id_variant?, alt_text?, is_primary?, urutan? }. */
+        addProductImage(id_product, formData) { return PandansariAPI.fetch(`/admin/products/${id_product}/images`, { method: 'POST', body: formData }); },
+        /** GET /admin/products/{id}/images?type=produk|size_chart (produk draft/nonaktif ikut terlihat). */
+        adminProductImages(id_product, type = null) {
+            return PandansariAPI.fetch(`/admin/products/${id_product}/images${type ? `?type=${encodeURIComponent(type)}` : ''}`);
+        },
+        uploadAdminProductImage(id_product, formData) { return PandansariAPI.fetch(`/admin/products/${id_product}/images`, { method: 'POST', body: formData }); },
+        deleteAdminProductImage(id_product, imageId) { return PandansariAPI.fetch(`/admin/products/${id_product}/images/${imageId}`, { method: 'DELETE' }); },
         deleteImage(id) { return PandansariAPI.fetch(`/images/${id}`, { method: 'DELETE' }); },
+        /** Simpan banyak varian sekaligus. Body: { items: [...], hapus_yang_tidak_disediakan?: bool }. */
+        bulkVariants(id_product, items, hapusYangTidakDisediakan = false) {
+            return PandansariAPI.fetch(`/admin/products/${id_product}/variants/bulk`, {
+                method: 'POST',
+                body: { items, hapus_yang_tidak_disediakan: !!hapusYangTidakDisediakan },
+            });
+        },
 
         /* -- 4.4 Kategori (daftar: PandansariAPI.categories() publik) -- */
         createCategory(payload) { return PandansariAPI.fetch('/admin/categories', { method: 'POST', body: payload }); },
@@ -402,6 +415,64 @@ window.PandansariAPI = {
                 method: 'POST', body: { destination: Number(destination), weight: Number(weight), ...(courier ? { courier } : {}) },
             });
         },
+
+        /* -- 4.9 Inventaris -- */
+        /** GET /admin/inventory/movements — query: page, per_page, tipe, id_variant, dari, sampai. */
+        inventoryMovements(params = {}) {
+            return PandansariAPI.fetch('/admin/inventory/movements' + this._qs(params))
+                .then(res => {
+                    if (res.ok && res.data) {
+                        res.data = res.data.map(item => ({
+                            ...item,
+                            tipe: this._deriveTipe(item.jenis_pergerakan, item.referensi),
+                            referensi_tipe: this._parseReferensiType(item.referensi),
+                            referensi_id: item.referensi,
+                            tanggal: item.waktu_pergerakan?.split('T')[0] || item.dibuat_pada?.split('T')[0],
+                        }));
+                    }
+                    return res;
+                });
+        },
+        /** GET /admin/inventory/low-stock — varian dengan stok <= threshold. */
+        inventoryLowStock() { return PandansariAPI.fetch('/admin/inventory/low-stock'); },
+        /** GET /admin/inventory/valuation — { total_nilai_modal, total_nilai_jual, margin_potensial }. */
+        inventoryValuation() { return PandansariAPI.fetch('/admin/inventory/valuation'); },
+        /** GET /admin/inventory/export — CSV export. */
+        inventoryExport() { return PandansariAPI.downloadCsv('/admin/inventory/export', 'inventaris.csv'); },
+        /** POST /admin/inventory/adjustments — { id_variant, tipe: 'masuk'|'keluar'|'koreksi', jumlah, catatan? }. */
+        inventoryAdjustment(payload) { return PandansariAPI.fetch('/admin/inventory/adjustments', { method: 'POST', body: payload }); },
+
+        _deriveTipe(jenis, referensi) {
+            if ((jenis === 'penyesuaian_masuk' || jenis === 'penyesuaian_keluar') && referensi?.startsWith('OPN-')) {
+                return 'opname';
+            }
+            if (jenis === 'keluar' && referensi?.startsWith('ORD-')) {
+                return 'penjualan';
+            }
+            if (jenis === 'masuk') {
+                return 'masuk';
+            }
+            if (jenis === 'keluar') {
+                if (referensi?.startsWith('RET-')) return 'retur';
+                if (referensi?.startsWith('KOR-')) return 'koreksi';
+                return 'keluar';
+            }
+            if (jenis === 'koreksi') return 'koreksi';
+            if (jenis === 'retur') return 'retur';
+            if (jenis === 'penyesuaian_masuk' || jenis === 'penyesuaian_keluar') return 'opname';
+            return 'lain';
+        },
+
+        _parseReferensiType(ref) {
+            if (!ref) return 'lain';
+            if (ref.startsWith('ORD-')) return 'penjualan';
+            if (ref.startsWith('OPN-')) return 'opname';
+            if (ref.startsWith('RET-')) return 'retur';
+            if (ref.startsWith('KOR-')) return 'koreksi';
+            if (ref.startsWith('PUR-') || ref.startsWith('PO-')) return 'pembelian';
+            if (ref === 'DUMMY-SEED') return 'seed';
+            return 'lain';
+        },
     },
 
     /**
@@ -433,16 +504,36 @@ window.PandansariAPI = {
     },
 
     /**
-     * URL lengkap gambar dari field backend `path_gambar` (relatif, mis. "products/x.jpg").
-     * Backend menyimpan file di disk public → disajikan di {origin}/storage/{path}.
-     * Jika sudah absolut (http...), dikembalikan apa adanya.
+     * URL gambar dari field backend `path_gambar` (relatif, mis. "products/x.jpg").
+     * File storage diproksikan lewat frontend (/media/products/...) agar request
+     * gambar tidak terkena halaman peringatan ngrok free. URL non-storage
+     * (mis. CDN/Unsplash/data/blob) dikembalikan apa adanya.
      */
     imgUrl(path) {
         const p = String(path ?? '').trim();
         if (!p) return '';
-        if (/^https?:\/\//i.test(p)) return p;
-        const origin = API_URL.replace(/\/api\/?$/i, ''); // buang suffix /api
-        return origin + '/storage/' + p.replace(/^\/+/, '');
+
+        let pathname = p;
+
+        if (/^https?:\/\//i.test(p)) {
+            try {
+                const u = new URL(p);
+                if (!u.pathname.startsWith('/storage/')) return p;
+                pathname = u.pathname;
+            } catch {
+                return p;
+            }
+        }
+
+        let clean = pathname.replace(/^\/+/, '');
+        if (clean.startsWith('storage/')) clean = clean.slice('storage/'.length);
+
+        if (!clean.startsWith('products/')) return p;
+
+        const filename = clean.slice('products/'.length);
+        if (!filename || filename.includes('/')) return p;
+
+        return '/media/products/' + encodeURIComponent(filename);
     },
 
     /**
