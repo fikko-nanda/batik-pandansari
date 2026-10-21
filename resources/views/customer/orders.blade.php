@@ -131,9 +131,25 @@
                 && (res.data.redirect_url ?? res.data.payment_url);
             if (!bisaLanjut) res = await PandansariAPI.payOrder(order.id_order);
             this.busyPay = null;
-            const url = res.data?.redirect_url ?? res.data?.payment_url;
-            if (url) {
-                window.location.href = url;
+            const pay = res.data ?? {};
+            const adaUrl = pay.redirect_url ?? pay.payment_url;
+
+            if (pay.snap_token && pay.client_key) {
+                // === Popup Midtrans Snap (window.snap.pay) ===
+                await PandansariAPI.bayarSnap(pay, {
+                    // 1. Pembayaran SUKSES: status di server diperbarui webhook Midtrans →
+                    //    muat ulang daftar pesanan agar badge 'Menunggu Pembayaran' langsung berganti.
+                    onSuccess: () => window.location.reload(),
+                    // Menunggu (pembayaran diproses/di luar window) → refresh juga
+                    onPending: () => window.location.reload(),
+                    onError: (r) => PandansariAPI.toast(r?.message ?? 'Pembayaran gagal. Silakan coba lagi.', false),
+                    // 2. Popup DITUTUP user selesai/kosong → ambil ulang status pembayaran terbaru
+                    //    (tanpa reload penuh) agar kartu pesanan menunjukkan kondisi nyata.
+                    onClose: () => this.muatStatusPembayaran(),
+                });
+            } else if (adaUrl) {
+                // Fallback alur lama: redirect halaman bayar Snap (page reload otomatis setelah kembali)
+                window.location.href = adaUrl;
             } else {
                 alert(res.message); // sederhana; bisa diganti toast
             }

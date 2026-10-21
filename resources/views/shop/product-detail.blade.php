@@ -271,7 +271,7 @@
                         </button>
 
                         <!-- WhatsApp Consultation Button -->
-                        <a href="https://wa.me/6281234567890?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi%20ukuran%20Kemeja%20Pria%20Parang%20Seling%20Indigo" target="_blank" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
+                        <a href="https://wa.me/6282210516993?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi%20ukuran%20Kemeja%20Pria%20Parang%20Seling%20Indigo" target="_blank" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
                             <i class="fa-brands fa-whatsapp text-emerald-600 text-sm"></i>
                             <span>Konsultasi Ukuran & Fitting via WhatsApp</span>
                         </a>

@@ -177,7 +177,9 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 - Token Sanctum disimpan di `localStorage` (kunci: `pandansari_token`) dari `data.token` response login, dikirim via header `Authorization: Bearer`. Profil user (`data.user`, diperbarui `GET /me`) tersimpan di `pandansari_user`.
 - **Base URL API** dari `VITE_API_URL` di `.env` (karena URL ngrok free berubah tiap restart tunnel). Fallback default: tunnel ngrok aktif.
 - Format respons backend: `{ success, message, data?, errors?, meta? }` — `ok` di helper = HTTP 2xx; pesan error sudah berbahasa Indonesia, langsung ditampilkan di UI.
-- Register backend TIDAK memakai OTP email — langsung aktif role `pelanggan` (API rev. Laravel). 401 → redirect `/login` otomatis di halaman keranjang/checkout/wishlist.
+- Register 2 langkah: `POST /register` (data diri → OTP ke email) → `POST /otp/verify-registration` (`{email, otp}` → token) → kirim-ulang via `POST /otp/resend-registration`.
+- Lupa password 3 langkah: `POST /forgot-password` (minta OTP) → `POST /forgot-password/verify-otp` → `POST /forgot-password/reset` (`{email, otp, kata_sandi, kata_sandi_confirmation}`) → kirim-ulang via `POST /forgot-password/resend-otp`.
+- Fallback register: bila alur OTP gagal 404, halaman `auth/register` jatuh ke `POST /register` langsung → aktif role `pelanggan` → auto-login. 401 → redirect `/login` otomatis di halaman keranjang/checkout/wishlist.
 
 ## 6. Checklist Sebelum Merge
 

@@ -177,7 +177,7 @@
                     Katalog Batik Pandansari
                 </h1>
                 <p class="text-xs sm:text-sm text-slate-600 max-w-3xl mt-1 leading-relaxed">
-                    Eksplorasi kurasi busana batik autentik Batik Pandansari karya pengrajin maestro dari episentrum budaya: Surakarta, Yogyakarta, Pekalongan, dan Cirebon. Menyajikan batik tulis, cap tembaga, hingga busana siap pakai berfuring premium.
+                   Koleksi batik autentik pilihan dari pusatnya batik Indonesia: Surakarta, Yogyakarta, Pekalongan, dan Cirebon. Mulai dari batik tulis, batik cap, hingga pakaian siap pakai berbahan premium yang nyaman dipakai seharian.
                 </p>
             </div>
 

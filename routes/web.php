@@ -64,6 +64,11 @@ Route::get('/register', function () {
     return view('auth.register');
 })->name('register');
 
+// 3b. Lupa Password (3 langkah: email → OTP → sandi baru)
+Route::get('/forgot-password', function () {
+    return view('auth.forgot-password');
+})->name('forgot-password');
+
 // 4. Modul Admin Dashboard
 Route::prefix('admin')->group(function () {
     Route::get('/dashboard', function () {

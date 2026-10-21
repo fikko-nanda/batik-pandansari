@@ -8,16 +8,16 @@
                     </div>
                     <div>
                         <h4 class="font-bold text-[#0F1A24] text-base leading-none">BATIK PANDANSARI</h4>
-                        <span class="text-[9px] font-bold text-[#0284C7] tracking-[2.25px] uppercase">MAHARDIKA AUTENTIK</span>
+                        <span class="text-[9px] font-bold text-[#0284C7] tracking-[2.25px] uppercase">BATIK AUTENTIK</span>
                     </div>
                 </div>
                 <p class="text-slate-500 leading-relaxed pr-4">
-                    Menghidupkan kemegahan wastra Nusantara melalui mahakarya batik tulis dan cap berstandar keraton dengan kurasi mutu dan pakem autentik.
+                    Menghidupkan kemegahan wastra Nusantara melalui mahakarya batik tulis dan cap dengan mutu dan autentik.
                 </p>
                 <div class="flex gap-2 pt-1">
-                    <a href="#" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-instagram"></i></a>
-                    <a href="#" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-tiktok"></i></a>
-                    <a href="#" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-whatsapp"></i></a>
+                    <a href="https://www.instagram.com/_pandansari_/" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-instagram"></i></a>
+                    <a href="https://www.tiktok.com/@batikpandansari" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-tiktok"></i></a>
+                    <a href="https://wa.me/6282210516993" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-whatsapp"></i></a>
                 </div>
             </div>
 
@@ -38,10 +38,10 @@
                     <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span> TOKO RESMI
                 </h5>
                 <ul class="space-y-2.5 text-slate-600">
-                    <li><a href="#" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-solid fa-bag-shopping text-[#EE4D2D]"></i> Shopee Mall</a></li>
-                    <li><a href="#" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-brands fa-tiktok text-slate-900"></i> TikTok Shop</a></li>
-                    <li><a href="#" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-solid fa-store text-[#059669]"></i> Tokopedia</a></li>
-                    <li><a href="#" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-brands fa-instagram text-[#F43F5E]"></i> Instagram</a></li>
+                    <li><a href="https://shopee.co.id/batik_pandansari_" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-solid fa-bag-shopping text-[#EE4D2D]"></i> Shopee Mall</a></li>
+                    <li><a href="https://www.tiktok.com/@batikpandansari" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-brands fa-tiktok text-slate-900"></i> TikTok Shop</a></li>
+                    <li><a href="https://tk.tokopedia.com/ZSgDUVn5g/" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-solid fa-store text-[#059669]"></i> Tokopedia</a></li>
+                    <li><a href="https://www.instagram.com/_pandansari_/" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-brands fa-instagram text-[#F43F5E]"></i> Instagram</a></li>
                 </ul>
             </div>
 
@@ -51,7 +51,7 @@
                 </h5>
                 <div>
                     <div class="flex items-center gap-1.5 font-medium text-slate-800 mb-1">
-                        <i class="fa-solid fa-clock text-sky-600"></i> Layanan Kurator Batik:
+                        <i class="fa-solid fa-clock text-sky-600"></i> Layanan  Batik:
                     </div>
                     <p class="text-slate-500 text-[11px] leading-relaxed pl-5">
                         Senin – Sabtu: 08.30 – 21.00 WIB<br>
@@ -64,9 +64,8 @@
         <div class="pt-6 flex flex-col md:flex-row justify-between items-center gap-4 text-slate-400 text-[11px]">
             <p>© 2026 BATIK PANDANSARI. SELURUH HAK CIPTA DILINDUNGI.</p>
             <div class="flex flex-wrap gap-6">
-                <a href="#" class="hover:text-slate-600">Ketentuan Pemesanan</a>
-                <a href="#" class="hover:text-slate-600">Pedoman Perawatan Kain</a>
-                <a href="#" class="hover:text-slate-600">Jaminan Keaslian Canting</a>
+                <a href="{{ route('terms') }}" class="hover:text-slate-600">Ketentuan Pemesanan</a>
+                <a href="{{ route('privacy') }}" class="hover:text-slate-600">Kebijakan Privasi</a>
             </div>
         </div>
     </div>
