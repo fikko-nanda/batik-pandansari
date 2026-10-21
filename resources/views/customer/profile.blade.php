@@ -10,6 +10,9 @@
         saving: false,
         msg: '', msgOk: true,
 
+        // === Tautkan Akun Google (POST /me/google) ===
+        googleBusy: false, googleMsg: '', googleOk: false,
+
         initials() {
             const n = this.user?.nama_pengguna ?? '';
             return n.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
@@ -62,7 +65,58 @@
             PandansariAPI.clearSession();
             window.location.href = '/';
         },
-        init() { this.load(); }
+        async tautkanGoogle() {
+            this.googleBusy = true; this.googleMsg = '';
+            try {
+                // Popup OAuth Google (Token Client) → access token
+                const googleToken = await PandansariAPI.mintaGoogleToken();
+                // POST /api/me/google — butuh Bearer token (sudah otomatis di fetch())
+                const res = await PandansariAPI.linkGoogle(googleToken);
+                this.googleBusy = false;
+                if (res.ok) {
+                    this.googleOk = true;
+                    this.googleMsg = 'Akun Google berhasil ditautkan!';
+                    if (res.data) { this.user = res.data; PandansariAPI.setUser(res.data); }
+                    else await PandansariAPI.me();            // segarkan profil (google_id terisi)
+                    this.user = PandansariAPI.getUser();
+                } else {
+                    this.googleOk = false;
+                    this.googleMsg = res.message || 'Gagal menautkan akun Google.';
+                }
+            } catch (e) {
+                this.googleBusy = false;
+                this.googleOk = false;
+                const pesan = {
+                    GOOGLE_CLIENT_ID_BELUM_DISET: 'Login Google belum dikonfigurasi (VITE_GOOGLE_CLIENT_ID kosong).',
+                    GOOGLE_SDK_TIDAK_SIAP: 'Layanan Google gagal dimuat. Periksa koneksi internet Anda, lalu coba lagi.',
+                    GOOGLE_POPUP_DITUTUP: 'Popup Google ditutup sebelum akun dipilih. Silakan coba lagi.',
+                    GOOGLE_POPUP_TIDAK_TAMPIL: 'Popup Google diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.',
+                    GOOGLE_TOKEN_KOSONG: 'Google tidak mengembalikan token akses. Silakan coba lagi.',
+                }[e.message];
+                this.googleMsg = pesan || 'Gagal memulai Google. Silakan coba lagi.';
+            }
+        },
+        // === Riwayat pemakaian voucher (GET /voucher-usages/me) ===
+        vkList: [], vkMsg: '',
+        async muatRiwayatVoucher() {
+            const r = await PandansariAPI.voucherUsagesMe();
+            this.vkList = r.ok ? (r.data ?? []) : [];
+            if (!r.ok) this.vkMsg = r.message;
+        },
+        vkTanggal(s) {
+            try { return s ? new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'; }
+            catch { return '—'; }
+        },
+        vkWarna(st) {
+            const s = String(st ?? '').toLowerCase();
+            if (['berhasil', 'digunakan', 'dibayar'].includes(s)) return 'bg-emerald-100 text-emerald-700';
+            if (['dibatalkan', 'gagal', 'expired', 'kedaluwarsa'].includes(s)) return 'bg-rose-100 text-rose-700';
+            return 'bg-amber-100 text-amber-700';
+        },
+        vkLabel(st) {
+            return String(st ?? '').toLowerCase().toUpperCase() || 'MENUNGGU';
+        },
+        init() { this.load(); this.muatRiwayatVoucher(); }
      }">
 
     <!-- Gate: belum login -->
@@ -150,6 +204,31 @@
                     </div>
                 </div>
 
+                <!-- Card Tautkan Akun Google (POST /me/google) -->
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm space-y-2.5">
+                    <div class="flex items-center gap-2 text-xs font-bold text-[#0F1A24]">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                        </svg>
+                        <span>Akun Google</span>
+                        <span x-show="user?.google_id" class="ml-auto text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full uppercase">Tertaut</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 leading-relaxed" x-text="user?.google_id ? 'Akun Google Anda sudah tertaut. Anda bisa masuk satu klik via Google.' : 'Tautkan akun Google agar bisa masuk satu klik di lain waktu.'"></p>
+                    <template x-if="!user?.google_id">
+                        <button type="button"
+                                @click="tautkanGoogle()"
+                                :disabled="googleBusy"
+                                class="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-[11px] font-bold py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                            <span x-show="!googleBusy">TAUTKAN AKUN GOOGLE</span>
+                            <span x-show="googleBusy" class="inline-flex items-center gap-2"><i class="fa-solid fa-circle-notch fa-spin"></i> MENGHUBUNGKAN…</span>
+                        </button>
+                    </template>
+                    <p x-show="googleMsg" :class="googleOk ? 'text-emerald-600' : 'text-rose-600'" class="text-[11px] font-semibold" x-text="googleMsg"></p>
+                </div>
+
             </div>
 
             <!-- RIGHT SIDE: Form Profil & Informasi Akun (8 Kolom) -->
@@ -216,11 +295,7 @@
 
                     </div>
 
-                    <p class="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
-                        <i class="fa-solid fa-circle-info text-sky-500 mr-1"></i>
-                        Saat ini backend menyimpan <span class="font-semibold">nama, email, dan nomor telepon</span> saja.
-                        Tanggal lahir & jenis kelamin akan menyusul bila kolomnya tersedia di API.
-                    </p>
+                   
 
                     <!-- Pesan hasil simpan -->
                     <div x-show="msg" x-cloak
@@ -252,6 +327,46 @@
 
                 </form>
 
+            </div>
+
+            <!-- Riwayat pemakaian voucher (GET /voucher-usages/me) -->
+            <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 mt-8">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                    <h2 class="text-sm font-bold text-[#0F1A24] flex items-center gap-2">
+                        <i class="fa-solid fa-ticket text-sky-600"></i> Riwayat Pemakaian Voucher
+                    </h2>
+                    <span class="text-[10px] text-slate-400">
+                        <span x-text="vkList.length"></span> penggunaan
+                    </span>
+                </div>
+
+                <p x-show="vkMsg" x-cloak class="text-xs text-rose-600 font-semibold" x-text="vkMsg"></p>
+
+                <div x-show="!vkList.length && !vkMsg" class="text-center py-8">
+                    <i class="fa-solid fa-ticket text-3xl text-slate-200 block mb-2"></i>
+                    <p class="text-xs font-bold text-[#0F1A24]">Belum ada voucher terpakai</p>
+                    <p class="text-[11px] text-slate-400 mt-1">Voucher yang dipakai saat checkout akan tampil di sini.</p>
+                </div>
+
+                <div class="space-y-2.5">
+                    <template x-for="vk in vkList" :key="vk.id_voucher_usage ?? vk.id_order">
+                        <div class="flex items-center justify-between gap-3 border border-slate-100 rounded-xl px-4 py-3">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-mono font-bold text-sky-800 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5" x-text="vk.voucher?.kode_voucher ?? 'VOUCHER'"></span>
+                                    <span class="text-xs font-bold text-slate-700 truncate" x-text="vk.voucher?.nama_voucher ?? ''"></span>
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-0.5">
+                                    Tanggal: <span x-text="vkTanggal(vk.digunakan_pada ?? vk.dibuat_pada)"></span>
+                                </p>
+                            </div>
+                            <div class="text-right shrink-0 space-y-1">
+                                <div class="text-xs font-bold text-[#0F1A24]" x-text="'- ' + PandansariAPI.formatRp(vk.jumlah_diskon)"></div>
+                                <span class="text-[9px] font-bold rounded-full px-2 py-0.5 inline-block" :class="vkWarna(vk.status_penggunaan)" x-text="vkLabel(vk.status_penggunaan)"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
             </div>
 
         </div>

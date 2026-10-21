@@ -18,7 +18,7 @@
                     <span class="italic font-normal text-[#ADD8E6] font-['Playfair_Display']">Koleksi Sarimbit</span>
                 </h2>
 
-                <a href="#sarimbit" class="inline-flex items-center gap-2 bg-[#0B2545] border border-sky-400/30 text-white text-xs font-bold tracking-wider uppercase px-6 py-3.5 rounded-xl shadow-md hover:bg-[#0369A1] transition font-['Plus_Jakarta_Sans']">
+                <a href="/katalog?category=sarimbit" class="inline-flex items-center gap-2 bg-[#0B2545] border border-sky-400/30 text-white text-xs font-bold tracking-wider uppercase px-6 py-3.5 rounded-xl shadow-md hover:bg-[#0369A1] transition font-['Plus_Jakarta_Sans']">
                     <i class="fa-solid fa-bag-shopping text-xs"></i> BELI KOLEKSI SARIMBIT
                 </a>
             </div>

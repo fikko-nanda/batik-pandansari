@@ -352,9 +352,16 @@ Ordering response GET: `is_primary` desc, lalu `urutan` asc.
   "nama_kecamatan": "string (required/max:60)",
   "kode_pos": "string (required/max:10)",
   "alamat_lengkap": "string (required)",
-  "alamat_utama": "boolean (nullable)"
+  "alamat_utama": "boolean (nullable)",
+  "id_tujuan_rajaongkir": "integer (dari GET /shipping/destinations — berlaku juga di PUT)"
 }
 ```
+
+> ⚠️ **Update live 20 Okt 2026 (probe CI):** `POST /addresses` menerima `id_tujuan_rajaongkir` (angka `id` dari `/shipping/destinations`) dan menyimpannya. Field ini **WAJIB diperlakukan frontend sebagai wajib** — karena:
+> - Checkout **menolak alamat tanpa itu** → 422 `ALAMAT_TANPA_TUJUAN_RAJAONGKIR`.
+> - Setelah alamat punya `id_tujuan_rajaongkir`, checkout **lolos validasi alamat** (tinggal bug ongkir upstream).
+> - Form frontend (customer/address) kini sudah punya pencarian tujuan + auto-isi provinsi/kota/kecamatan/kode pos.
+> - Respons alamat memuat kembali field `id_tujuan_rajaongkir`.
 
 Jika `alamat_utama = true`, alamat lain milik user di-unset jadi false. Alamat pertama otomatis jadi utama. Ordering: `alamat_utama` desc, `dibuat_pada` desc. **404** jika tidak ditemukan / bukan milik user.
 
@@ -437,6 +444,8 @@ GET menyertakan relasi `product.category`, `product.variants` (aktif), `product.
 | GET | `/voucher-usages` | `admin` | Riwayat penggunaan voucher (semua user) |
 | GET | `/voucher-usages/me` | `auth:sanctum` | Riwayat penggunaan voucher milik sendiri |
 
+> **Format item `data[]` (probe 20 Okt):** `id_voucher_usage`, `id_voucher`, `id_order`, `jumlah_diskon`, `status_penggunaan` (`menunggu`/`berhasil`/`dibatalkan`), `digunakan_pada`, `dibuat_pada`, `voucher: { kode_voucher, nama_voucher, deskripsi, tipe_diskon, nilai_diskon, min_pembelian, … }`.
+
 **POST `/vouchers` Body:**
 
 ```json
@@ -507,8 +516,25 @@ Status penggunaan voucher: `menunggu` | `digunakan` | `dibatalkan`.
 }
 ```
 
+**Body saat Tarif Manual (fallback ketika RajaOngkir gagal/habis kuota)** — frontend menambahkan atribut pengganti berikut (backend masih belum membacanya; hanya `biaya_pengiriman` yang terpakai di formula total):
+
+```json
+{
+  "is_manual_shipping": true,
+  "shipping_cost": 22000,
+  "courier_name": "JNE Reguler (REG)"
+}
+```
+
+> 📌 **Permintaan ke backend:** mohon `is_manual_shipping` + `courier_name` diterima (atau minimal diabaikan) agar checkout tarif manual tidak menolak field asing.
+> Saat tarif manual aktif frontend **melewati** pra-validasi `id_tujuan_rajaongkir` di sisi client — bila backend tetap 422 `ALAMAT_TANPA_TUJUAN_RAJAONGKIR`, frontend akan menerjemahkannya jadi pesan "perbarui alamat di Buku Alamat".
+
 > ⚠️ **Update live 20 Okt 2026 (probe):** backend kini mewajibkan `kurir` + `layanan` (422 `{"kurir":["The kurir field is required."]}` jika kosong). Temuan probe:
 > - `kurir` enum: **`tiki` diterima**, tapi **`jne` ditolak** `"The selected kurir is invalid."` — padahal `jne` berstatus `aktif: true` di `/admin/shipping/couriers`. Daftar enum checkout ≠ daftar kurir aktif → **perlu kesepakatan nilai enum** antara backend & frontend.
+>
+> ⚠️ **Update lagi 20 Okt 2026 (probe CI lengkap):** enum `kurir` kini **menerima `jne`, `sicepat`, `lion`, `pos`, `tiki`** (hasil awal kemungkinan konfigurasi lama). Validasi berjalan → gagal sesudahnya `502 RAJAONGKIR_INVALID_RESPONSE` (upstream Komerce) — lihat catatan kurir di bagian pengiriman. Juga:
+> - `ALAMAT_TANPA_TUJUAN_RAJAONGKIR` hilang ketika alamat dibuat dengan `id_tujuan_rajaongkir` (lihat §7) → akar masalahnya form alamat lama, bukan checkout.
+> - Register **tidak mengembalikan token** → frontend kini auto-login setelah register sukses.
 > - Setelah `kurir` lolos, checkout gagal **422 `ALAMAT_TANPA_TUJUAN_RAJAONGKIR`** — resolusi tujuan RajaOngkir dari alamat user (kembug yang sama dengan `POST /shipping/cost` 422 `RAJAONGKIR_DESTINATION_NOT_FOUND`).
 > - Alur frontend setelah checkout sukses: `POST /orders/{id}/payment` → redirect `data.redirect_url` (Snap). Endpoint payment TERBUKTI bekerja (3 payment `menunggu` dengan `redirect_url` sandbox ada di DB) — jadi error "Snap" yang dikeluhkan terjadi HULUAN di `POST /checkout`, bukan di payment.
 
@@ -732,7 +758,13 @@ Response sukses:
 
 **POST `/admin/shipping/simulate` Body:** `{ destination: int (id hasil /shipping/destinations), weight: int (gram), courier: string|null }`.
 
-> ⚠️ **BUG DILAPORKAN (per 20 Okt 2026):** `/shipping/cost` (publik login) dan `/admin/shipping/simulate` selalu **422 `RAJAONGKIR_DESTINATION_NOT_FOUND`** untuk SEMUA format tujuan (id search, city id, zip, string) walau config sehat (origin `99999`, base `rajaongkir.komerce.id`). Menunggu perbaikan backend; checkout pelanggan fallback ke tarif manual statis.
+> ⚠️ **STATUS 20 Okt 2026 (probe CI lengkap) — berubah dari laporan pagi:**
+> - Origin aktual: `82935`; health ok; `POST /shipping/cost` **SUDAH MELAKUKAN RESOLUSI TUJUAN** ketika `destination` = `id` hasil `/shipping/destinations` (id subdistrict, mis. 61650 Laweyan).
+> - **UBAH FORMAT (dilaporkan user, verifikasi front team):** `/shipping/cost` kini mengembalikan `data` berupa **array langsung** daftar layanan:
+>   `[{ "name", "code", "service", "description", "cost", "etd" }]` (contoh sicepat: GOKIL/HALU/REG…).
+>   Frontend checkout sudah menyesuaikan (baca array + kompatibel format lama `{ hasil: [ { layanan } ] }`).
+> - **Peta kurir via `/shipping/cost`:** ✅ `jne`, `sicepat`, `lion` (200 + layanan) · ❌ `tiki`, `pos`, `jnt`, `anteraja`, `ninja` → 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` · ❌ `jxpress` → 422 `RAJAONGKIR_INVALID_REQUEST` · `wahana`/`idexpress`/`jet` ditolak validasi. 7 kurir aktif di config gagal meminta tarif.
+> - **Checkout** (kurir valid + alamat ber-`id_tujuan_rajaongkir`): lolos validasi lalu **502 `RAJAONGKIR_INVALID_RESPONSE`** — upstream Komerce flakiness (`/shipping/cost` sempat 200 lalu 502 beberapa menit kemudian, health tetap "ok"). Frontend punya fallback tarif manual; mohon backend cek log requestnya.
 
 ---
 
@@ -803,7 +835,6 @@ Response sukses:
 **GET `/users` — paginator:** beda dari endpoint lain — seluruh paginator (`data[]` + `current_page/per_page/total/last_page`) berada DI DALAM `data`. Helper `PandansariAPI.admin.users()` sudah menormalkan ke `{data, meta}`.
 
 **GET `/shipping/destinations?search=`** — param literal `search`, min. 3 karakter:
-
 ```json
 { "id": 17466, "label": "SURAKARTA, SURANENGGALA, CIREBON, JAWA BARAT, 45152",
   "province_name": "JAWA BARAT", "city_name": "CIREBON",

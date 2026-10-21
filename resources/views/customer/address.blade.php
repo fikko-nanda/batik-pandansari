@@ -22,6 +22,33 @@
             return n.split(' ').map(x => x[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'BP';
         },
 
+        // === Destinasi RajaOngkir (WAJIB untuk ongkir & checkout) ===
+        tujuanCari: '', tujuanHasil: [], tujuanLoading: false, tujuanTerpilih: null, tujuanTimer: null,
+        resetTujuan() {
+            this.tujuanCari = ''; this.tujuanHasil = []; this.tujuanTerpilih = null;
+        },
+        async cariTujuan() {
+            clearTimeout(this.tujuanTimer);
+            const q = this.tujuanCari.trim();
+            if (q.length < 3) { this.tujuanHasil = []; this.tujuanLoading = false; return; }
+            this.tujuanTimer = setTimeout(async () => {
+                this.tujuanLoading = true;
+                const res = await PandansariAPI.shippingDestinations(q);
+                this.tujuanLoading = false;
+                this.tujuanHasil = res.ok ? (res.data ?? []) : [];
+            }, 350);
+        },
+        pilihTujuan(d) {
+            this.tujuanTerpilih = d;
+            // auto-isi field alamat dari data tujuan (sesuaikan nama utk backend)
+            this.form.nama_provinsi = d.province_name ?? this.form.nama_provinsi;
+            this.form.nama_kota = d.city_name ?? this.form.nama_kota;
+            this.form.nama_kecamatan = d.district_name ?? this.form.nama_kecamatan;
+            this.form.kode_pos = d.zip_code ?? this.form.kode_pos;
+            this.tujuanCari = '';
+            this.tujuanHasil = [];
+        },
+
         lineOf(a) {
             return [a.alamat_lengkap, a.nama_kecamatan, a.nama_kota, a.nama_provinsi, a.kode_pos].filter(Boolean).join(', ');
         },
@@ -43,6 +70,7 @@
         bukaTambah() {
             this.editingId = null;
             this.form = { label_alamat: '', nama_penerima: '', nomor_telepon: '', nama_provinsi: '', nama_kota: '', nama_kecamatan: '', kode_pos: '', alamat_lengkap: '', alamat_utama: false };
+            this.resetTujuan();
             this.showAddModal = true;
         },
         bukaUbah(a) {
@@ -58,14 +86,25 @@
                 alamat_lengkap: a.alamat_lengkap ?? '',
                 alamat_utama: !!a.alamat_utama,
             };
+            this.resetTujuan();
+            // kalau alamat lama sudah punya tujuan, tandai agar tidak hilang saat edit
+            this.tujuanTerpilih = a.id_tujuan_rajaongkir
+                ? { id: a.id_tujuan_rajaongkir, label: 'Tujuan tersimpan (#' + a.id_tujuan_rajaongkir + ')' }
+                : null;
             this.showAddModal = true;
         },
 
         async simpan() {
+            // tujuan RajaOngkir wajib (dipakai ongkir & checkout)
+            if (!this.tujuanTerpilih?.id) {
+                this.tampil('Pilih dulu tujuan ongkir: cari kecamatan/kota di kolom Cari Tujuan, lalu klik salah satu hasil.', false);
+                return;
+            }
+            const payload = { ...this.form, id_tujuan_rajaongkir: this.tujuanTerpilih.id };
             this.saving = true;
             const res = this.isEdit
-                ? await PandansariAPI.updateAddress(this.editingId, this.form)
-                : await PandansariAPI.addAddress(this.form);
+                ? await PandansariAPI.updateAddress(this.editingId, payload)
+                : await PandansariAPI.addAddress(payload);
             this.saving = false;
             if (res.ok) {
                 this.showAddModal = false;
@@ -261,6 +300,9 @@
                                         ★ ALAMAT UTAMA
                                     </span>
                                     <span class="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md uppercase" x-text="item.label_alamat ?? 'Alamat'"></span>
+                                    <span class="px-2.5 py-1 rounded-md uppercase flex items-center gap-1"
+                                          :class="item.id_tujuan_rajaongkir ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'"
+                                          x-text="item.id_tujuan_rajaongkir ? '🚚 SIAP ONGKIR' : '⚠ PERLU TUJUAN ONGKIR'"></span>
                                 </div>
 
                                 <div class="flex items-center gap-3">
@@ -320,6 +362,38 @@
                                     <input type="text" x-model="form.nomor_telepon" required
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
+                            </div>
+                            <!-- Cari tujuan RajaOngkir (wajib — dipakai hitung ongkir & checkout) -->
+                            <div class="relative rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                                <label class="block text-[11px] font-semibold text-slate-700 mb-1">
+                                    🚚 Cari Tujuan Ongkir (kecamatan/kota) <span class="text-rose-500">*</span>
+                                </label>
+                                <div class="relative">
+                                    <input type="text" x-model="tujuanCari" @input="cariTujuan()"
+                                           placeholder="cth: Laweyan, Laweyan" autocomplete="off"
+                                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                    <span x-show="tujuanLoading" class="absolute right-3 top-2.5 text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+                                </div>
+                                <!-- Hasil pencarian -->
+                                <div x-show="tujuanHasil.length" x-cloak class="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+                                    <template x-for="d in tujuanHasil" :key="d.id">
+                                        <button type="button" @click="pilihTujuan(d)" class="w-full text-left px-3 py-2 hover:bg-sky-50 transition cursor-pointer">
+                                            <span class="block text-slate-800 font-semibold" x-text="d.label"></span>
+                                            <span class="block text-[10px] text-slate-400">ID tujuan #<span x-text="d.id"></span></span>
+                                        </button>
+                                    </template>
+                                </div>
+                                <div x-show="!tujuanHasil.length && tujuanCari.length >= 3 && !tujuanLoading" x-cloak class="mt-2 text-[10px] text-slate-500">
+                                    Tidak ada tujuan yang cocok — coba kata lain (min. 3 huruf).
+                                </div>
+                                <!-- Terpilih -->
+                                <template x-if="tujuanTerpilih">
+                                    <div class="mt-2 flex items-center gap-2 bg-sky-100 text-sky-800 rounded-xl px-3 py-2 font-bold text-[11px]">
+                                        <i class="fa-solid fa-location-dot"></i>
+                                        <span x-text="tujuanTerpilih.label"></span>
+                                    </div>
+                                </template>
+                                <p class="mt-1.5 text-[10px] text-slate-500 italic">Memilih tujuan otomatis mengisi Provinsi, Kota, Kecamatan &amp; Kode Pos dan <b>wajib</b> agar ongkir &amp; checkout bisa dihitung.</p>
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>

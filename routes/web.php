@@ -19,6 +19,10 @@ Route::get('/katalog', function () {
     return view('shop.katalog');
 })->name('katalog');
 
+// 2b. Halaman Info (Public) — Ketentuan Layanan & Kebijakan Privasi
+Route::view('/terms', 'terms')->name('terms');
+Route::view('/privacy', 'privacy')->name('privacy');
+
 Route::get('/detail/{id?}', function ($id = 1) {
     return view('shop.product-detail', compact('id'));
 })->name('product.detail');
@@ -64,6 +68,11 @@ Route::get('/login', function () {
 Route::get('/register', function () {
     return view('auth.register');
 })->name('register');
+
+// 3b. Lupa Password (3 langkah: email → OTP → sandi baru)
+Route::get('/forgot-password', function () {
+    return view('auth.forgot-password');
+})->name('forgot-password');
 
 // 4. Modul Admin Dashboard
 Route::prefix('admin')->group(function () {

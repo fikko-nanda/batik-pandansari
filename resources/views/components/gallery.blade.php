@@ -2,8 +2,8 @@
     <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
         <div class="bg-slate-50 border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
             <div class="p-6 md:p-8 border-b border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <h2 class="text-2xl font-bold text-[#0F1A24] font-['Plus_Jakarta_Sans']">Galeri Butik & Atelier Batik Pandansari</h2>
-                <a href="https://maps.google.com" target="_blank" class="bg-[#0369A1] text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 uppercase hover:bg-sky-700 transition font-['Plus_Jakarta_Sans']">
+                <h2 class="text-2xl font-bold text-[#0F1A24] font-['Plus_Jakarta_Sans']">Galeri Butik & Batik Pandansari</h2>
+                <a href="https://share.google/EFRSYAMaqQoDhYvND" target="_blank" class="bg-[#0369A1] text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 uppercase hover:bg-sky-700 transition font-['Plus_Jakarta_Sans']">
                     <i class="fa-solid fa-location-dot"></i> PETUNJUK LOKASI GALERI
                 </a>
             </div>
@@ -13,8 +13,8 @@
                     <img src="{{ asset('images/hero-bg.jpg') }}" alt="Galeri Butik Pandansari" class="w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-[#0F1A24]/90 via-transparent to-transparent flex items-end p-6">
                         <div>
-                            <span class="text-[11px] font-semibold text-sky-300 uppercase tracking-wider block font-['Plus_Jakarta_Sans']">PENGRAJIN & GALERI UTAMA PANDANSARI</span>
-                            <h3 class="text-lg font-semibold text-white font-['Plus_Jakarta_Sans']">Ruang Kurasi Kain Keraton & Galeri Fitting Adibusana</h3>
+                            <span class="text-[11px] font-semibold text-sky-300 uppercase tracking-wider block font-['Plus_Jakarta_Sans']">PENGRAJIN & GALERI UTAMA BATIK PANDANSARI</span>
+                            <h3 class="text-lg font-semibold text-white font-['Plus_Jakarta_Sans']">Melayani pemesanan seragam custom serta pembuatan desain motif dan batik berlogo</h3>
                         </div>
                     </div>
                 </div>
@@ -23,7 +23,7 @@
                     <div>
                         <h3 class="text-xl font-bold text-[#0F1A24] mb-2">Kunjungi Butik & Galeri Resmi Kami</h3>
                         <p class="text-xs text-slate-500 leading-relaxed mb-6">
-                            Jl. Mayor Kusmanto No. 28, Klaten / Sentra Batik Sragen & Solo. Nikmati pengalaman kurasi langsung bersama kurator wastra bersertifikat.
+                            Batik pandansari, Wonokerto, Jembangan, Kec. Plupuh, Kabupaten Sragen, Jawa Tengah 57283.
                         </p>
 
                         <div class="space-y-3 pt-4 border-t border-slate-100 text-xs text-slate-700">
@@ -37,7 +37,7 @@
                             </div>
                             <div class="flex items-center gap-2.5">
                                 <i class="fa-solid fa-square-parking text-[#0369A1]"></i>
-                                <span>Area Parkir Luas & Heritage Lounge Nyaman</span>
+                                <span>Area Parkir Luas & Tempat Nyaman</span>
                             </div>
                         </div>
                     </div>

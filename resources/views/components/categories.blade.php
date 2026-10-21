@@ -19,13 +19,14 @@
         <!-- 4 Grid Kartu Kategori Sesuai Figma -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             
-            <!-- Kartu 1: Kemeja & Hem Pria -->
-            <div class="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+            <!-- Kartu 1: Kemeja & Hem Pria → Katalog kategori Pria -->
+            <a href="/katalog?category=pria"
+               class="group cursor-pointer bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-lg hover:-translate-y-1 transition duration-200">
                 <div class="relative h-64 bg-slate-100 overflow-hidden">
-<img src="{{ asset('images/katalog1.webp') }}" 
-                          alt="Kemeja & Hem Pria" 
-                          class="w-full h-full object-cover">
-                    <span class="absolute top-3 left-3 bg-[#0F1A24] text-[#BAE6FD] text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
+                    <img src="{{ asset('images/katalog1.webp') }}"
+                          alt="Kemeja & Hem Pria"
+                          class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+                    <span class="absolute top-3 left-3 bg-[#0284C7] text-white text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
                         BUSANA PRIA
                     </span>
                 </div>
@@ -36,19 +37,20 @@
                             Kemeja lengan panjang dan pendek dengan furing katun adem berbobot premium.
                         </p>
                     </div>
-                    <a href="#pria" class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 hover:underline font-['Plus_Jakarta_Sans']">
+                    <span class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 group-hover:underline font-['Plus_Jakarta_Sans']">
                         Lihat 48+ Koleksi Pria <i class="fa-solid fa-arrow-right text-[10px]"></i>
-                    </a>
+                    </span>
                 </div>
-            </div>
+            </a>
 
-            <!-- Kartu 2: Dress & Tunik Elegan -->
-            <div class="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+            <!-- Kartu 2: Dress & Tunik Elegan → Katalog kategori Wanita -->
+            <a href="/katalog?category=wanita"
+               class="group cursor-pointer bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-lg hover:-translate-y-1 transition duration-200">
                 <div class="relative h-64 bg-slate-100 overflow-hidden">
-<img src="{{ asset('images/katalog2.webp') }}" 
-                          alt="Dress & Tunik Elegan" 
-                          class="w-full h-full object-cover">
-                    <span class="absolute top-3 left-3 bg-[#0369A1] text-white text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
+                    <img src="{{ asset('images/katalog2.webp') }}"
+                          alt="Dress & Tunik Elegan"
+                          class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+                    <span class="absolute top-3 left-3 bg-[#0284C7] text-white text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
                         BUSANA WANITA
                     </span>
                 </div>
@@ -59,18 +61,19 @@
                             Siluet feminin anggun sutra alam dan katun halus untuk acara formal maupun harian.
                         </p>
                     </div>
-                    <a href="#wanita" class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 hover:underline font-['Plus_Jakarta_Sans']">
+                    <span class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 group-hover:underline font-['Plus_Jakarta_Sans']">
                         Lihat 62+ Koleksi Wanita <i class="fa-solid fa-arrow-right text-[10px]"></i>
-                    </a>
+                    </span>
                 </div>
-            </div>
+            </a>
 
-            <!-- Kartu 3: Batik Anak-Anak & Remaja -->
-            <div class="bg-white rounded-2xl overflow-hidden border border-sky-200/80 shadow-sm flex flex-col justify-between bg-sky-50/20 hover:shadow-md transition">
+            <!-- Kartu 3: Batik Anak-Anak & Remaja → Katalog kategori Anak -->
+            <a href="/katalog?category=anak"
+               class="group cursor-pointer bg-white rounded-2xl overflow-hidden border border-sky-200/80 shadow-sm flex flex-col justify-between bg-sky-50/20 hover:shadow-lg hover:-translate-y-1 transition duration-200">
                 <div class="relative h-64 bg-sky-50 overflow-hidden">
-<img src="{{ asset('images/hero-bg.jpg') }}" 
-                          alt="Batik Anak-Anak & Remaja" 
-                          class="w-full h-full object-cover">
+                    <img src="{{ asset('images/hero-bg.jpg') }}"
+                          alt="Batik Anak-Anak & Remaja"
+                          class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
                     <span class="absolute top-3 left-3 bg-[#0284C7] text-white text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider inline-flex items-center gap-1 font-['Plus_Jakarta_Sans']">
                         <i class="fa-solid fa-child text-[9px]"></i> KOLEKSI ANAK
                     </span>
@@ -82,19 +85,20 @@
                             Kemeja cilik, dress anak, dan sarimbit keluarga mini dengan bahan katun lembut tanpa gatal.
                         </p>
                     </div>
-                    <a href="#anak" class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 hover:underline font-['Plus_Jakarta_Sans']">
+                    <span class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 group-hover:underline font-['Plus_Jakarta_Sans']">
                         Lihat 24+ Koleksi Anak <i class="fa-solid fa-arrow-right text-[10px]"></i>
-                    </a>
+                    </span>
                 </div>
-            </div>
+            </a>
 
-            <!-- Kartu 4: Kain Tradisional Lembaran -->
-            <div class="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+            <!-- Kartu 4: Kain Tradisional Lembaran → Katalog kategori Batik Cap (badge BATIK CAP) -->
+            <a href="/katalog?category=cap"
+               class="group cursor-pointer bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-lg hover:-translate-y-1 transition duration-200">
                 <div class="relative h-64 bg-slate-100 overflow-hidden">
-<img src="{{ asset('images/katalog1.webp') }}" 
-                          alt="Kain Tradisional Lembaran" 
-                          class="w-full h-full object-cover">
-                    <span class="absolute top-3 left-3 bg-[#0F1A24] text-[#BAE6FD] text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
+                    <img src="{{ asset('images/katalog1.webp') }}"
+                          alt="Kain Tradisional Lembaran"
+                          class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+                    <span class="absolute top-3 left-3 bg-[#0284C7] text-white text-[10px] font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider font-['Plus_Jakarta_Sans']">
                         BATIK CAP
                     </span>
                 </div>
@@ -105,11 +109,11 @@
                             Kain panjang primisima, sutra baron, dan paris asli karya empu pembatik sentra Nusantara.
                         </p>
                     </div>
-                    <a href="#kain" class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 hover:underline font-['Plus_Jakarta_Sans']">
+                    <span class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 group-hover:underline font-['Plus_Jakarta_Sans']">
                         Lihat 75+ Kain Tradisional <i class="fa-solid fa-arrow-right text-[10px]"></i>
-                    </a>
+                    </span>
                 </div>
-            </div>
+            </a>
 
         </div>
     </div>

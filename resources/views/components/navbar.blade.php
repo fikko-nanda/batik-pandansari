@@ -1,5 +1,12 @@
-<!-- Main Header Wrapper -->
-<header class="sticky top-0 z-40 w-full bg-white border-b border-slate-100 shadow-sm" x-data="{ mobileMenuOpen: false }">
+<!-- Main Header Wrapper (badge Keranjang & Wishlist = $store.lencana, sinkron dari API) -->
+<header class="sticky top-0 z-40 w-full bg-white border-b border-slate-100 shadow-sm"
+        x-data="{
+            mobileMenuOpen: false,
+            init() {
+                // Saat halaman dibuka & user login → tarik jumlah sekah dari API sekali
+                if (window.PandansariAPI && PandansariAPI.getToken()) PandansariAPI.muatLencana();
+            },
+        }">
     
 
     <!-- Main Navbar Container -->
@@ -39,8 +46,9 @@
                 class="relative p-1.5 transition {{ request()->is('wishlist') || request()->is('favorit') ? 'text-black font-bold' : 'text-slate-600 hover:text-black' }}">
                     <!-- Jika di halaman wishlist, gunakan icon heart solid (terisi), jika tidak gunakan regular (garis) -->
                     <i class="{{ request()->is('wishlist') || request()->is('favorit') ? 'fa-solid fa-heart' : 'fa-regular fa-heart' }} text-lg"></i>
-                    <span class="absolute -top-1 -right-1 w-4 h-4 bg-black text-white text-[9px] font-bold rounded-full flex items-center justify-center font-['Plus_Jakarta_Sans']">
-                        6
+                    <span x-show="$store.lencana && $store.lencana.wishlist > 0" x-cloak
+                          class="absolute -top-1 -right-1 w-4 h-4 bg-black text-white text-[9px] font-bold rounded-full flex items-center justify-center font-['Plus_Jakarta_Sans']"
+                          x-text="$store.lencana ? $store.lencana.wishlist : 0">
                     </span>
                 </a>
 
@@ -58,12 +66,13 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.25 10.5a.75.75 0 100-1.5.75.75 0 000 1.5zm7.5 0a.75.75 0 100-1.5.75.75 0 000 1.5z" />
                             </svg>
 
-                            <span class="absolute -top-1 -right-1 w-4 h-4 {{ request()->is('cart') || request()->is('keranjang') ? 'bg-black' : 'bg-[#0369A1]' }} text-white text-[9px] font-bold rounded-full flex items-center justify-center font-['Plus_Jakarta_Sans']">
-                                3
+                            <span x-show="$store.lencana && $store.lencana.cart > 0" x-cloak
+                                  class="absolute -top-1 -right-1 w-4 h-4 {{ request()->is('cart') || request()->is('keranjang') ? 'bg-black' : 'bg-[#0369A1]' }} text-white text-[9px] font-bold rounded-full flex items-center justify-center font-['Plus_Jakarta_Sans']"
+                                  x-text="$store.lencana ? $store.lencana.cart : 0">
                             </span>
                         </a>
                 <!-- WhatsApp CS Button -->
-                <a href="https://wa.me/6281234567890?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi" 
+                <a href="https://wa.me/6282210516993?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi" 
                    target="_blank" 
                    rel="noopener noreferrer"
                    class="hidden md:inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-sm font-['Plus_Jakarta_Sans']">
@@ -76,16 +85,36 @@
                      open: false,
                      logged: false,
                      name: 'Pengguna',
+                     avatar: '',          // foto_profil dari API (null/undefined diperlakukan sama dengan '')
+                     avatarGagal: false,  // false → true saat <img> gagal dimuat (event error)
                      async init() {
                          if (!PandansariAPI.getToken()) return;
                          const res = await PandansariAPI.me();
                          if (res.ok) {
                              this.logged = true;
-                             this.name = res.data?.data?.nama_pengguna ?? res.data?.data?.name ?? res.data?.nama_pengguna ?? res.data?.name ?? 'Pengguna';
+                             // Pola unwrap sama dengan kode lama: dukung {data:{...}} maupun data langsung
+                             const d = res.data ?? {};
+                             const inner = (d && typeof d === 'object' && 'data' in d) ? (d.data ?? {}) : d;
+                             this.name = inner?.nama_pengguna ?? inner?.name ?? 'Pengguna';
+                             // Field foto profil backend: foto_profil (fallback: avatar) — null/'' → icon default
+                             this.avatar = inner?.foto_profil ?? inner?.avatar ?? '';
                          } else {
                              // Token usang tidak valid — bersihkan
                              PandansariAPI.clearToken();
                          }
+                     },
+                     /**
+                      * URL avatar hanya dipakai bila benar-benar valid:
+                      *   -apes http(s) langsung → dipakai apa adanya
+                      *   - path relatif → ditempelkan ke origin backend (bukan /api)
+                      * Selain itu → '' (tampilkan icon default, BUKAN <img> kosong yang pecah).
+                      */
+                     get avatarUrl() {
+                         const f = String(this.avatar ?? '').trim();
+                         if (this.avatarGagal || !f) return '';
+                         if (/^https?:\/\//i.test(f)) return f;
+                         try { return new URL(PandansariAPI.url).origin + '/' + f.replace(/^\/+/, ''); }
+                         catch { return ''; }
                      },
                      async keluar() {
                          // Coba cabut token di server lebih dulu, lalu selalu bersihkan token di sisi client
@@ -94,9 +123,25 @@
                          window.location.href = '/';
                      }
                  }" @click.outside="open = false">
-                 <button @click="open = !open" 
-                 class="w-8 h-8 bg-black text-white rounded-full flex items-center justify-center text-xs hover:bg-slate-800 transition {{ request()->is('profile') || request()->is('orders') || request()->is('address') || request()->is('security') ? 'ring-2 ring-sky-500' : '' }}">
-                     <i class="fa-regular" :class="logged ? 'fa-user-check' : 'fa-user'"></i>
+                 <!-- Tombol lingkaran ukuran tetap w-8 h-8 (konsisten kedua-duanya keadaan). overflow-hidden memotong gambar ke bentuk bulat -->
+                 <button @click="open = !open"
+                 class="relative w-8 h-8 bg-black text-white rounded-full overflow-hidden flex items-center justify-center text-xs hover:bg-slate-800 transition {{ request()->is('profile') || request()->is('orders') || request()->is('address') || request()->is('security') ? 'ring-2 ring-sky-500' : '' }}">
+                     <!-- 1. Foto profil user (hanya saat login & URL valid; event gagal-muat bermuara ke fallback) -->
+                     <img x-show="logged && avatarUrl !== ''"
+                          :src="avatarUrl"
+                          x-on:error="avatarGagal = true"
+                          :alt="'Foto profil ' + name"
+                          class="w-8 h-8 rounded-full object-cover">
+                     <!-- 2. Fallback: SVG user outline default (belum login / avatar kosong / avatar gagal dimuat) -->
+                     <svg x-show="!logged || avatarUrl === ''"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke-width="1.8"
+                          stroke="currentColor"
+                          class="w-4 h-4 pointer-events-none">
+                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.117a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                     </svg>
                  </button>
 
                  <!-- Dropdown -->
