@@ -17,12 +17,29 @@
     notice: '', noticeOk: true,
     savingKey: '',           // key produk yang sedang disimpan
 
+    // === Inventory summary ===
+    lowStockCount: 0,
+    valuation: null,
+    loadingSummary: true,
+
     // === Edit stok sementara per varian: { id_variant: angka } ===
     draft: {},
 
     fmt(n) { return PandansariAPI.formatRp(n); },
     num(n) { return Number(n ?? 0).toLocaleString('id-ID'); },
     pesan(ok, msg) { this.noticeOk = ok; this.notice = msg; setTimeout(() => this.notice = '', 4500); },
+
+    // === Load inventory summary ===
+    async loadInventorySummary() {
+        this.loadingSummary = true;
+        const [low, val] = await Promise.all([
+            PandansariAPI.admin.inventoryLowStock(),
+            PandansariAPI.admin.inventoryValuation(),
+        ]);
+        this.loadingSummary = false;
+        if (low.ok) this.lowStockCount = (low.data ?? []).length;
+        if (val.ok) this.valuation = val.data;
+    },
 
     activeVariants(p) {
         return (p.variants ?? []).filter(v => v.status_varian !== 'nonaktif');
@@ -113,7 +130,7 @@
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
         const me = await PandansariAPI.me();
         if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
-        await this.loadProduk();
+        await Promise.all([this.loadProduk(), this.loadInventorySummary()]);
         this.loading = false;
     }
 }" class="space-y-6 text-slate-800 font-sans">
@@ -142,11 +159,20 @@
             </p>
         </div>
 
-        <div class="flex items-center gap-3 shrink-0">
+        <div class="flex flex-wrap items-center gap-3 shrink-0">
+            <a href="/admin/inventory/movements" class="px-4 py-2.5 bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
+                <i class="fa-solid fa-history text-sky-600"></i>
+                <span>Riwayat Stok</span>
+            </a>
+            <button type="button" @click="PandansariAPI.admin.inventoryExport()"
+                    class="px-4 py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
+                <i class="fa-solid fa-file-export text-emerald-600"></i>
+                <span>Export Inventaris</span>
+            </button>
             <button type="button" @click="PandansariAPI.admin.productsExport()"
                     class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-download text-slate-500"></i>
-                <span>Unduh CSV</span>
+                <span>Unduh CSV Produk</span>
             </button>
             <a href="/admin/products" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#96d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2">
                 <i class="fa-solid fa-bolt text-slate-800"></i>
@@ -162,7 +188,7 @@
          x-text="notice"></div>
 
     <!-- 2. SUMMARY CARDS (dari API) -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
 
         <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
@@ -196,6 +222,57 @@
 
             <div class="absolute right-4 top-4 w-9 h-9 bg-sky-200/80 rounded-xl flex items-center justify-center text-sky-800 text-sm">
                 <i class="fa-solid fa-layer-group"></i>
+            </div>
+            <div class="absolute right-2 -bottom-6 z-0 opacity-30 pointer-events-none">
+                <img src="{{ asset('images/wayang.png') }}" alt="Wayang" class="h-36 w-auto object-contain">
+            </div>
+        </div>
+
+        <!-- Stok Kritis (Low Stock) -->
+        <div class="bg-rose-50 border border-rose-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
+            <div class="relative z-10 space-y-1">
+                <span class="text-[10px] font-extrabold text-rose-700 uppercase tracking-widest">STOK KRITIS (≤3)</span>
+                <div class="text-3xl sm:text-4xl font-black text-rose-600" x-text="loadingSummary ? '…' : num(lowStockCount)"></div>
+            </div>
+
+            <div class="relative z-10 mt-6 flex items-center gap-2 text-xs font-bold text-rose-700">
+                <i class="fa-solid fa-triangle-exclamation text-rose-500 text-sm"></i>
+                <span x-text="lowStockCount + ' varian butuh restock segera'"></span>
+            </div>
+
+            <a href="/admin/stock-opname" class="relative z-10 mt-4 inline-flex items-center gap-1.5 text-[10px] font-extrabold text-rose-700 hover:underline">
+                <span>Buat Opname</span>
+                <i class="fa-solid fa-arrow-right text-[9px]"></i>
+            </a>
+
+            <div class="absolute right-4 top-4 w-9 h-9 bg-rose-200/80 rounded-xl flex items-center justify-center text-rose-600 text-sm">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div class="absolute right-2 -bottom-6 z-0 opacity-30 pointer-events-none">
+                <img src="{{ asset('images/wayang.png') }}" alt="Wayang" class="h-36 w-auto object-contain">
+            </div>
+        </div>
+
+        <!-- Nilai Persediaan (Valuation) -->
+        <div class="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
+            <div class="relative z-10 space-y-1">
+                <span class="text-[10px] font-extrabold text-emerald-700 uppercase tracking-widest">NILAI PERSEDIAAN</span>
+                <div class="text-2xl sm:text-3xl font-black text-emerald-800" x-text="loadingSummary ? '…' : (valuation ? fmt(valuation.total_nilai_jual) : '—')"></div>
+            </div>
+
+            <div class="relative z-10 mt-4 space-y-1 text-xs font-bold text-emerald-700">
+                <div class="flex items-center justify-between">
+                    <span>Modal:</span>
+                    <span x-text="valuation ? fmt(valuation.total_nilai_modal) : '—'"></span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span>Margin Potensial:</span>
+                    <span x-text="valuation ? fmt(valuation.margin_potensial) : '—'"></span>
+                </div>
+            </div>
+
+            <div class="absolute right-4 top-4 w-9 h-9 bg-emerald-200/80 rounded-xl flex items-center justify-center text-emerald-600 text-sm">
+                <i class="fa-solid fa-sack-dollar"></i>
             </div>
             <div class="absolute right-2 -bottom-6 z-0 opacity-30 pointer-events-none">
                 <img src="{{ asset('images/wayang.png') }}" alt="Wayang" class="h-36 w-auto object-contain">
@@ -301,7 +378,7 @@
                                 <span class="block text-[9px] font-bold mt-1" :class="item.status_produk === 'aktif' ? 'text-sky-700' : 'text-slate-400'" x-text="item.status_produk"></span>
                             </td>
 
-                            <!-- Aksi Cepat (Simpan varian & Reset draft) -->
+                            <!-- Aksi Cepat (Simpan varian, Reset draft, Kelola Varian) -->
                             <td class="py-4 px-4 text-center">
                                 <div class="flex items-center justify-center gap-1.5">
                                     <button type="button" @click="simpanSemuaProduk(item)" :disabled="savingKey === item.id_product"
@@ -311,6 +388,9 @@
                                     <button type="button" @click="draft = {}" class="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 transition flex items-center justify-center cursor-pointer" title="Buang semua draft">
                                         <i class="fa-solid fa-rotate-left text-xs"></i>
                                     </button>
+                                    <a :href="'/admin/products?varian=' + item.id_product" class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 hover:bg-amber-200 transition flex items-center justify-center cursor-pointer" title="Kelola Varian">
+                                        <i class="fa-solid fa-boxes-packing text-xs"></i>
+                                    </a>
                                 </div>
                             </td>
 

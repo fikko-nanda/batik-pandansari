@@ -1,0 +1,57 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Support\Facades\Http;
+use Throwable;
+
+class MediaProxyController extends Controller
+{
+    private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
+
+    public function __invoke(string $filename)
+    {
+        $filename = basename($filename);
+
+        if (! preg_match('/^[A-Za-z0-9._-]+$/', $filename)) {
+            abort(404);
+        }
+
+        $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+        if (! in_array($extension, self::ALLOWED_EXTENSIONS, true)) {
+            abort(404);
+        }
+
+        $apiUrl = (string) env('VITE_API_URL', '');
+
+        if ($apiUrl === '') {
+            abort(500, 'VITE_API_URL belum dikonfigurasi.');
+        }
+
+        $origin = preg_replace('#/api/?$#i', '', $apiUrl);
+        $origin = rtrim((string) $origin, '/');
+        $url = $origin.'/storage/products/'.$filename;
+
+        try {
+            $response = Http::withHeaders([
+                'ngrok-skip-browser-warning' => 'true',
+                'Accept' => 'image/*',
+            ])->connectTimeout(10)->timeout(30)->get($url);
+        } catch (Throwable) {
+            abort(502);
+        }
+
+        abort_unless($response->successful(), 404);
+
+        $contentType = (string) $response->header('Content-Type');
+
+        abort_unless(str_starts_with($contentType, 'image/'), 502);
+
+        return response($response->body(), 200, [
+            'Content-Type' => $contentType,
+            'Cache-Control' => 'public, max-age=86400, immutable',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+}
