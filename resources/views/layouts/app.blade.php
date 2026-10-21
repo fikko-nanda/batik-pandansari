@@ -15,6 +15,8 @@
 
     <!-- app.js (window.PandansariAPI) HARUS dimuat SEBELUM Alpine.js, agar saat Alpine eval x-data global sudah ada -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <!-- Google Identity Services (GIS) client for Google Sign-In -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="flex flex-col min-h-screen text-[#0F1A24] antialiased font-['Plus_Jakarta_Sans',sans-serif] bg-[#FAF8F5] relative overflow-x-hidden">

@@ -59,10 +59,12 @@
 
                 <!-- Tombol CTA -->
                 <div class="flex flex-wrap items-center gap-4">
-                    <a href="#katalog" class="bg-[#ADD8E6] text-[#0F1A24] font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl shadow-md hover:bg-sky-200 transition font-['Plus_Jakarta_Sans']">
+                    <a href="/katalog" class="bg-[#ADD8E6] text-[#0F1A24] font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl shadow-md hover:bg-sky-200 transition font-['Plus_Jakarta_Sans']">
                         JELAJAHI KOLEKSI UTAMA
                     </a>
-                    <a href="#marketplace" class="bg-white/10 text-white border border-white/30 backdrop-blur-md font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl shadow-md hover:bg-white/20 transition font-['Plus_Jakarta_Sans']">
+                    <a href="#ecommerce-partners"
+                       @click.prevent="document.getElementById('ecommerce-partners')?.scrollIntoView({ behavior: 'smooth' })"
+                       class="bg-white/10 text-white border border-white/30 backdrop-blur-md font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl shadow-md hover:bg-white/20 transition font-['Plus_Jakarta_Sans']">
                         OFFICIAL STORE & MARKETPLACE
                     </a>
                 </div>

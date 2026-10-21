@@ -77,7 +77,7 @@
             <div>
                 <h2 class="text-base font-bold text-[#0F1A24] mb-2">8. Kontak</h2>
                 <p>Untuk pertanyaan terkait Kebijakan Privasi ini:
-                    <a href="https://wa.me/6281234567890" target="_blank" rel="noopener noreferrer"
+                    <a href="https://wa.me/6282210516993" target="_blank" rel="noopener noreferrer"
                        class="text-[#0369A1] hover:underline">WhatsApp CS Batik Pandansari</a>.</p>
             </div>
 

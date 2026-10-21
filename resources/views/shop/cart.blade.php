@@ -386,7 +386,7 @@
                         <div class="flex-1 min-w-0">
                             <h4 class="font-bold text-[#0F1A24] text-xs">Butuh Panduan Ukuran & Fitting?</h4>
                             <p class="text-[10px] text-slate-500 truncate">Konsultasikan postur</p>
-                            <a href="https://wa.me/6281234567890?text=Halo%20Batik%20Pandansari,%20saya%20butuh%20panduan%20ukuran%20baju" target="_blank" class="inline-block mt-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold px-3 py-1.5 rounded-lg transition w-full text-center">
+                            <a href="https://wa.me/6282210516993?text=Halo%20Batik%20Pandansari,%20saya%20butuh%20panduan%20ukuran%20baju" target="_blank" class="inline-block mt-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold px-3 py-1.5 rounded-lg transition w-full text-center">
                                 Konsultasi WhatsApp Atelier
                             </a>
                         </div>

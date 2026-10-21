@@ -26,7 +26,7 @@
                     <h3 class="font-['Playfair_Display'] text-2xl font-bold text-white mb-3 tracking-wide">
                         BATIK TULIS
                     </h3>
-                    <a href="#batik-tulis" 
+                    <a href="/katalog?category=tulis" 
                        class="inline-flex items-center gap-2 text-xs font-semibold text-white bg-[#0B2545] border border-sky-400/30 backdrop-blur-md px-5 py-2.5 rounded-xl hover:bg-[#0369A1] transition font-['Plus_Jakarta_Sans']">
                         Jelajahi Koleksinya <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </a>
@@ -45,7 +45,7 @@
                     <h3 class="font-['Playfair_Display'] text-2xl font-bold text-white mb-3 tracking-wide">
                         BATIK CAP
                     </h3>
-                    <a href="#batik-cap" 
+                    <a href="/katalog?category=cap" 
                        class="inline-flex items-center gap-2 text-xs font-semibold text-white bg-[#0B2545] border border-sky-400/30 backdrop-blur-md px-5 py-2.5 rounded-xl hover:bg-[#0369A1] transition font-['Plus_Jakarta_Sans']">
                         Jelajahi Koleksinya <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </a>
@@ -64,7 +64,7 @@
                     <h3 class="font-['Playfair_Display'] text-2xl font-bold text-white mb-3 tracking-wide">
                         BATIK HANDPRINT
                     </h3>
-                    <a href="#batik-handprint" 
+                    <a href="/katalog?category=handprint" 
                        class="inline-flex items-center gap-2 text-xs font-semibold text-white bg-[#0B2545] border border-sky-400/30 backdrop-blur-md px-5 py-2.5 rounded-xl hover:bg-[#0369A1] transition font-['Plus_Jakarta_Sans']">
                         Jelajahi Koleksinya <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </a>

@@ -19,6 +19,8 @@
  *   PUT  /api/me { nama_pengguna?, email?, nomor_telepon? }
  *   PUT  /api/me/password { kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation }
  *   GET  /api/shipping/destinations?search= | POST /api/shipping/cost { destination, weight, courier }
+ *   POST /api/auth/google { token | access_token | id_token } → login/daftar via Google (sesi Sanctum)
+ *   POST /api/me/google   { token | access_token | id_token } → tautkan akun Google (auth:sanctum)
  *   GET  /api/voucher-usages/me
  *   Seluruh endpoint admin → lihat sub-objek `PandansariAPI.admin` (di bawah).
  *
@@ -163,6 +165,8 @@ window.PandansariAPI = {
                 meta: payload?.meta ?? null,
                 message: payload?.message ?? ((res.ok) ? 'Berhasil.' : `Terjadi kesalahan server (${res.status}).`),
                 errors: payload?.errors ?? {},
+                // 429 rate-limit kirim ulang OTP: detik sisa tunggu dari backend
+                retry_after: payload?.retry_after ?? null,
             };
         } catch (e) {
             const timedOut = !!e && (e.name === 'AbortError' || e.name === 'TimeoutError');
@@ -178,7 +182,37 @@ window.PandansariAPI = {
     },
 
     /* ---------- Auth ---------- */
+    /**
+     * Registrasi 2 langkah (kontrak rev. diterima).
+     * POST /register — kirim data diri; backend mengirim OTP ke email.
+     * POST /otp/verify-registration — { email, otp } → token (Sanctum).
+     * POST /otp/resend-registration — kirim ulang OTP registrasi { email }.
+     */
     register(payload) { return this.fetch('/register', { method: 'POST', body: payload }); },
+    registerSendOtp(payload) { return this.fetch('/register', { method: 'POST', body: payload }); },
+    registerVerifyOtp(email, otp) {
+        return this.fetch('/otp/verify-registration', { method: 'POST', body: { email, otp } });
+    },
+    registerResendOtp(email) { return this.fetch('/otp/resend-registration', { method: 'POST', body: { email } }); },
+    /** Alias sesuai spesifikasi: POST /otp/verify-registration → { email, otp } → token. */
+    verifyRegisterOtp(email, otp) { return this.registerVerifyOtp(email, otp); },
+
+    /* ---------- Lupa Password: 3 langkah (OTP email, kontrak rev. diterima) ----------
+     * 1. POST /forgot-password             { email }                                        → OTP ke email
+     * 2. POST /forgot-password/verify-otp  { email, otp }                                   → OTP valid
+     * 3. POST /forgot-password/reset       { email, otp, kata_sandi, kata_sandi_confirmation }
+     * 4. POST /forgot-password/resend-otp  { email }                                        → kirim ulang OTP
+     */
+    forgotSendOtp(email) { return this.fetch('/forgot-password', { method: 'POST', body: { email } }); },
+    forgotVerifyOtp(email, otp) { return this.fetch('/forgot-password/verify-otp', { method: 'POST', body: { email, otp } }); },
+    resetPassword(email, otp, kata_sandi, kata_sandi_confirmation, token = null) {
+        return this.fetch('/forgot-password/reset', { method: 'POST', body: { email, otp, kata_sandi, kata_sandi_confirmation, ...(token ? { token } : {}) } });
+    },
+    forgotResendOtp(email) { return this.fetch('/forgot-password/resend-otp', { method: 'POST', body: { email } }); },
+    /** Alias sesuai spesifikasi: POST /forgot-password/reset → { email, otp, kata_sandi, kata_sandi_confirmation, token? }. */
+    forgotResetPassword(payload) {
+        return this.fetch('/forgot-password/reset', { method: 'POST', body: payload });
+    },
     async login(email, kata_sandi) {
         const res = await this.fetch('/login', { method: 'POST', body: { email, kata_sandi } });
         if (res.ok && res.data?.token) {
@@ -193,8 +227,105 @@ window.PandansariAPI = {
         if (res.ok && res.data) this.setUser(res.data);
         return res;
     },
+    /** Alias sesuai spesifikasi: GET /api/me. */
+    getProfile() { return this.me(); },
+
+    /* ---------- Google OAuth (Google Identity Services) ---------- */
+    /** Client ID Google dari .env → VITE_GOOGLE_CLIENT_ID (kosong = fitur belum dikonfigurasi). */
+    googleClientId() {
+        return String(import.meta.env?.VITE_GOOGLE_CLIENT_ID ?? '').trim();
+    },
+    /** Pra-muat SDK Google (GSI) lebih awal — dipanggil saat halaman auth dibuka. */
+    siapkanGoogleScript() { return this._pastikanGsiScript(); },
+    /** Muat script GSI (https://accounts.google.com/gsi/client) sekali → resolve window.google. */
+    _pastikanGsiScript() {
+        if (window.google?.accounts) return Promise.resolve(window.google);
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://accounts.google.com/gsi/client';
+            s.async = true;
+            s.defer = true;
+            s.onload = () => (window.google?.accounts ? resolve(window.google) : reject(new Error('Google Identity Services tidak termuat')));
+            s.onerror = () => reject(new Error('Script Google Identity Services gagal dimuat'));
+            document.head.appendChild(s);
+        });
+    },
+    /**
+     * Minta token akses Google via popup OAuth (Token Client — google.accounts.oauth2).
+     * Return: Promise<string accessToken>. Reject dengan kode error yang jelas:
+     *   GOOGLE_CLIENT_ID_BELUM_DISET  — VITE_GOOGLE_CLIENT_ID kosong
+     *   GOOGLE_SDK_TIDAK_SIAP         — script/objek window.google tidak tersedia
+     *   GOOGLE_POPUP_DITUTUP          — pengguna menutup popup tanpa memilih akun
+     *   GOOGLE_POPUP_TIDAK_TAMPIL     — popup gagal dibuka (diblokir browser)
+     *   GOOGLE_TOKEN_KOSONG           — callback dipanggil tanpa access_token
+     */
+    async mintaGoogleToken() {
+        const clientId = this.googleClientId();
+        if (!clientId) throw new Error('GOOGLE_CLIENT_ID_BELUM_DISET');
+        const gsi = await this._pastikanGsiScript();
+        // Cek eksplisit ketersediaan SDK Google di window sebelum memakai API-nya
+        if (!gsi || !window.google?.accounts?.oauth2) throw new Error('GOOGLE_SDK_TIDAK_SIAP');
+        return new Promise((resolve, reject) => {
+            const client = gsi.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: 'openid email profile',
+                // Sukses: popup selesai, token akses diterima
+                callback: (resp) => {
+                    if (resp?.access_token) resolve(resp.access_token);
+                    else reject(new Error('GOOGLE_TOKEN_KOSONG'));
+                },
+                // Gagal: pengguna menutup popup / popup gagal dibuka
+                error_callback: (err) => {
+                    if (err?.type === 'popup_failed_to_start') reject(new Error('GOOGLE_POPUP_TIDAK_TAMPIL'));
+                    else reject(new Error('GOOGLE_POPUP_DITUTUP'));
+                },
+            });
+            client.requestAccessToken();          // memicu popup pilihan akun Google
+        });
+    },
+    /** Alias kompatibilitas — kini mengembalikan access token dari Token Client. */
+    mintaGoogleCredential() { return this.mintaGoogleToken(); },
+    /**
+     * POST /auth/google — login/daftar via Google.
+     * Kontrak payload: { token } (access token hasil popup Token Client GSI).
+     * Sukses → { data: { token, user? } } → sesi disimpan otomatis (setToken + setUser + me()).
+     */
+    async loginGoogle(token) {
+        const res = await this.fetch('/auth/google', {
+            method: 'POST',
+            body: { access_token: token, token: token },  // kirim kedua kunci agar lulus validasi backend
+        });
+        if (res.ok) {
+            const sesi = res.data?.token ?? res.data?.data?.token ?? res.data?.access_token;
+            if (sesi) {
+                this.setToken(sesi);
+                this.setUser(res.data?.user ?? null);
+                // Refresh profil TIDAK memblokir tombol: bila /me lambat (tunnel ngrok),
+                // tombol tetap lepas dari 'MENGHUBUNGKAN…' maks. 8 detik setelah sesi tersimpan.
+                try {
+                    await Promise.race([this.me(), new Promise((r) => setTimeout(r, 8000))]);
+                } catch { /* profil tetap tersedia dari response /auth/google */ }
+            }
+        }
+        return res;
+    },
+    /** Alias kompatibilitas — nama baru: loginGoogle(token). */
+    authGoogle(token) { return this.loginGoogle(token); },
+    /**
+     * POST /me/google — tautkan akun Google ke user yang sedang login (butuh Bearer token).
+     * body: token akses popup Google (alias kunci sama seperti /auth/google).
+     * Sukses → data profil user terbaru (kolom google_id terisi).
+     */
+    linkGoogle(token) {
+        return this.fetch('/me/google', {
+            method: 'POST',
+            body: { token, access_token: token, id_token: token },
+        });
+    },
 
     /* ---------- Kategori & Produk (publik) ---------- */
+    /** GET /cms/homepage — konten homepage (hero, promo, banner). */
+    getHomepageCms() { return this.fetch('/cms/homepage'); },
     categories() { return this.fetch('/categories'); },
     category(id) { return this.fetch(`/categories/${id}`); },
     products(params = {}) {
@@ -209,11 +340,15 @@ window.PandansariAPI = {
 
     /* ---------- Keranjang ---------- */
     cart() { return this.fetch('/cart'); },
+    /** Alias sesuai spesifikasi: GET /api/cart. */
+    getCart() { return this.cart(); },
     async addCartItem(id_variant, jumlah = 1) {
         const r = await this.fetch('/cart/items', { method: 'POST', body: { id_variant, jumlah } });
         this.jadwalLencana();
         return r;
     },
+    /** Alias sesuai spesifikasi: POST /api/cart/items → { id_variant, jumlah }. */
+    addToCart(id_variant, jumlah = 1) { return this.addCartItem(id_variant, jumlah); },
     async updateCartItem(id, jumlah) {
         const r = await this.fetch(`/cart/items/${id}`, { method: 'PUT', body: { jumlah } });
         this.jadwalLencana();
@@ -232,11 +367,15 @@ window.PandansariAPI = {
 
     /* ---------- Wishlist ---------- */
     wishlist() { return this.fetch('/wishlist'); },
+    /** Alias sesuai spesifikasi: GET /api/wishlist. */
+    getWishlist() { return this.wishlist(); },
     async addWishlist(id_product) {
         const r = await this.fetch('/wishlist', { method: 'POST', body: { id_product } });
         this.jadwalLencana();
         return r;
     },
+    /** Alias sesuai spesifikasi: POST /api/wishlist → { id_product }. */
+    addToWishlist(id_product) { return this.addWishlist(id_product); },
     async removeWishlist(id) {
         const r = await this.fetch(`/wishlist/${id}`, { method: 'DELETE' });
         this.jadwalLencana();
@@ -245,6 +384,8 @@ window.PandansariAPI = {
 
     /* ---------- Alamat ---------- */
     addresses() { return this.fetch('/addresses'); },
+    /** Alias sesuai spesifikasi: GET /api/addresses. */
+    getAddresses() { return this.addresses(); },
     address(id) { return this.fetch(`/addresses/${id}`); },
     addAddress(payload) { return this.fetch('/addresses', { method: 'POST', body: payload }); },
     updateAddress(id, payload) { return this.fetch(`/addresses/${id}`, { method: 'PUT', body: payload }); },
@@ -253,6 +394,8 @@ window.PandansariAPI = {
     /* ---------- Profil & Kata Sandi ---------- */
     /** PUT /me — field terima backend: nama_pengguna, email, nomor_telepon (parsial). */
     updateMe(payload) { return this.fetch('/me', { method: 'PUT', body: payload }); },
+    /** Alias sesuai spesifikasi: PUT /me → { nama_pengguna?, email?, nomor_telepon? }. */
+    updateProfile(payload) { return this.updateMe(payload); },
     /** PUT /me/password — wajib: kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation. */
     updatePassword(kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation) {
         return this.fetch('/me/password', {
@@ -260,12 +403,20 @@ window.PandansariAPI = {
             body: { kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation },
         });
     },
+    /** Alias sesuai spesifikasi: PUT /me/password → menerima payload object { kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation }. */
+    updatePasswordPayload(payload) {
+        return this.updatePassword(payload.kata_sandi_saat_ini, payload.kata_sandi, payload.kata_sandi_confirmation);
+    },
+    /** PUT /me/password — ganti password sesuai spesifikasi (payload object). */
+    changePassword(payload) { return this.updatePasswordPayload(payload); },
 
     /* ---------- Pengiriman (RajaOngkir) ---------- */
     /** GET /shipping/destinations?search= — daftar tujuan (butuh min. 3 huruf). */
     shippingDestinations(search) {
         return this.fetch(`/shipping/destinations?search=${encodeURIComponent(search ?? '')}`);
     },
+    /** Alias sesuai spesifikasi: GET /api/shipping/destinations?search=. */
+    getDestinations(search) { return this.shippingDestinations(search); },
     /**
      * POST /shipping/cost — { destination (int id hasil search), weight (gram), courier }.
      * STATUS (20-Oct-2026, probe CI): resolusi tujuan sudah BERFUNGSI ketika `destination`
@@ -280,6 +431,34 @@ window.PandansariAPI = {
             body: { destination: Number(destination), weight: Number(weight), courier },
         });
     },
+    /**
+     * POST /rajaongkir/check-all — { destination, weight } → array layanan ongkir semua kurir.
+     * Digunakan checkout untuk pengecekan ongkir sekali panggil (tidak per-kurir).
+     */
+    rajaongkirCheckAll(destination, weight) {
+        return this.fetch('/rajaongkir/check-all', {
+            method: 'POST',
+            body: { destination: Number(destination), weight: Number(weight) },
+        });
+    },
+    /** Alias sesuai spesifikasi: POST /api/rajaongkir/check-all. */
+    checkAllOngkir(destination, weight) { return this.rajaongkirCheckAll(destination, weight); },
+    /** Alias sesuai spesifikasi: POST /api/shipping/cost. */
+    checkSingleOngkir(destination, weight, courier) { return this.shippingCost(destination, weight, courier); },
+    /**
+     * Hitung ongkir: coba POST /rajaongkir/check-all dulu,
+     * kalau gagal (404/405) fallback ke POST /shipping/cost (kurir default: jne).
+     */
+    async checkOngkir(destination, weight) {
+        try {
+            const res = await this.rajaongkirCheckAll(Number(destination), Number(weight));
+            if (res.ok) return res;
+        } catch (_) {
+            // ignore errors here, will fallback
+        }
+        // Fallback ke shipping/cost dengan kurir jne
+        return this.shippingCost(Number(destination), Number(weight), 'jne');
+    },
 
     /* ---------- Riwayat Voucher Pengguna ---------- */
     /** GET /voucher-usages/me — riwayat pakai voucher milik user login. */
@@ -292,6 +471,10 @@ window.PandansariAPI = {
     validateVoucher(kode_voucher, subtotal) {
         return this.fetch('/vouchers/validate', { method: 'POST', body: { kode_voucher, subtotal } });
     },
+    /** Alias sesuai spesifikasi: POST /vouchers/validate → hanya kode voucher (subtotal diabaikan bila tidak dikirim). */
+    validateVoucherCode(code) {
+        return this.validateVoucher(code, undefined);
+    },
 
     /* ---------- Checkout, Pesanan & Pembayaran ---------- */
     checkout(payload) { return this.fetch('/checkout', { method: 'POST', body: payload }); },
@@ -302,10 +485,68 @@ window.PandansariAPI = {
         return this.fetch(`/orders${qs ? '?' + qs : ''}`);
     },
     order(id) { return this.fetch(`/orders/${id}`); },
+    /** GET /orders/{id}/invoice — detail invoice (PDF/meta) untuk pesanan. */
+    getInvoice(id) { return this.fetch(`/orders/${id}/invoice`); },
     payOrder(id, payload = {}) {
         return this.fetch(`/orders/${id}/payment`, { method: 'POST', body: payload });
     },
     lastPayment(id) { return this.fetch(`/orders/${id}/payment`); },
+
+    /* ---------- Midtrans Snap (popup) ---------- */
+    /** URL snap.js — boleh dioverride via VITE_SNAP_URL di .env (default: sandbox). */
+    _snapUrl() {
+        return String(import.meta.env?.VITE_SNAP_URL ?? 'https://app.sandbox.midtrans.com/snap/snap.js').trim();
+    },
+    /**
+     * Muat script snap.js sekali (dengan data-client-key dari response backend).
+     * Resolve window.snap bila siap; throw bila gagal → pemanggil memakai fallback redirect_url.
+     */
+    _pastikanSnapScript(clientKey) {
+        if (!clientKey) throw new Error('client_key tidak ada');
+        const idScript = 'midtrans-snap-script';
+        const existing = document.getElementById(idScript);
+        if (existing && existing.dataset.clientKey === clientKey) {
+            if (window.snap?.pay) return window.snap;
+            throw new Error('Snap belum siap');
+        }
+        if (existing) existing.remove(); // client_key berubah → ganti script
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.id = idScript;
+            s.src = this._snapUrl();
+            s.dataset.clientKey = clientKey;
+            s.onload = () => { if (window.snap?.pay) resolve(window.snap); else reject(new Error('Snap tidak termuat')); };
+            s.onerror = () => reject(new Error('Script Midtrans Snap gagal dimuat'));
+            document.head.appendChild(s);
+        });
+    },
+    /**
+     * Buka popup Midtrans Snap utk satu transaksi pembayaran.
+     * Callback (opsional): onSuccess, onPending, onError, onClose.
+     * Jika snap_token/client_key tidak ada ATAU script gagal termuat →
+     * fallback ke redirect_url (alur lama) agar tombol bayar tetap bekerja.
+     * Return: 'snap' (popup dibuka) | 'redirect' (dialihkan).
+     */
+    async bayarSnap(payment, { onSuccess, onPending, onError, onClose } = {}) {
+        const url = payment?.redirect_url ?? payment?.payment_url;
+        const token = payment?.snap_token ?? payment?.token;
+        const key = payment?.client_key;
+        try {
+            const snap = await this._pastikanSnapScript(key);
+            snap.pay(token, {
+                // 1) Pembayaran sukses → backend sudah diperbarui webhook → muat/refresh data UI
+                onSuccess: (r) => { onSuccess ? onSuccess(r) : window.location.reload(); },
+                onPending: (r) => { onPending ? onPending(r) : null; },
+                onError: (r) => { onError ? onError(r) : this.toast(r?.message ?? 'Pembayaran gagal, silakan coba lagi.', false); },
+                // 2) Popup ditutup user (tanpa selesai bayar) → pemanggil menentukan re-fetch status
+                onClose: () => { onClose ? onClose() : null; },
+            });
+            return 'snap';
+        } catch {
+            if (url) { window.location.href = url; return 'redirect'; }
+            throw new Error('Midtrans Snap tidak tersedia dan redirect_url kosong.');
+        }
+    },
 
     /**
      * Tambah produk ke keranjang langsung dari kartu (katalog/landing).
