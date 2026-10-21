@@ -11,6 +11,16 @@ class MediaProxyController extends Controller
 
     public function __invoke(string $filename)
     {
+        return $this->proxy('products', $filename);
+    }
+
+    public function cmsHero(string $filename)
+    {
+        return $this->proxy('cms/hero', $filename);
+    }
+
+    private function proxy(string $folder, string $filename)
+    {
         $filename = basename($filename);
 
         if (! preg_match('/^[A-Za-z0-9._-]+$/', $filename)) {
@@ -31,7 +41,7 @@ class MediaProxyController extends Controller
 
         $origin = preg_replace('#/api/?$#i', '', $apiUrl);
         $origin = rtrim((string) $origin, '/');
-        $url = $origin.'/storage/products/'.$filename;
+        $url = $origin.'/storage/'.$folder.'/'.$filename;
 
         try {
             $response = Http::withHeaders([

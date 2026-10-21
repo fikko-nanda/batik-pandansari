@@ -37,6 +37,14 @@
     editId: '',
     editName: '',
 
+    // === Tab 3: Banner Hero (GET/POST/PUT/DELETE /admin/cms/hero) ===
+    heroes: [],
+    loadingHero: true,
+    savingHero: false,
+    heroDragging: false,
+    pendingDeletes: [],
+    lastSavedAt: '',
+
     notice: '', noticeOk: true,
     pesan(ok, msg) { this.noticeOk = ok; this.notice = msg; setTimeout(() => this.notice = '', 4500); },
 
@@ -143,12 +151,252 @@
         }
     },
 
+    // === Banner Hero ===
+    get heroesAktif() { return this.heroes.filter(h => !h._deleted); },
+
+    gambarUrl(h) { return PandansariAPI.imgUrl(h.url_gambar ?? h.gambar ?? ''); },
+
+    normalizeHero(h) {
+        const aktif = h.status_aktif === true || h.status_aktif === 1 || h.status_aktif === '1';
+        return {
+            ...h,
+            id_hero: h.id_slide_hero ?? h.id_hero ?? h.id ?? h.id_banner ?? '',
+            judul: h.judul ?? '',
+            subjudul: h.subjudul ?? '',
+            label_badge: h.label_badge ?? '',
+            teks_tombol: h.teks_tombol ?? '',
+            tautan_tombol: h.tautan_tombol ?? '',
+            urutan_tampilan: Number(h.urutan_tampilan ?? 0),
+            status_aktif: aktif ? 1 : 0,
+            url_gambar: h.url_gambar ?? h.gambar ?? '',
+            _isNew: false,
+            _dirty: false,
+            _deleted: false,
+            _file: null,
+            _preview: PandansariAPI.imgUrl(h.url_gambar ?? h.gambar ?? ''),
+            _dimensi: '',
+        };
+    },
+
+    async loadHeroes() {
+        this.loadingHero = true;
+        const res = await PandansariAPI.admin.heroes();
+        this.loadingHero = false;
+        if (!res.ok) {
+            this.heroes = [];
+            const errs = Object.values(res.errors ?? {}).flat();
+            this.pesan(false, errs[0] ?? res.message);
+            return;
+        }
+        this.heroes.forEach(h => {
+            if (h._preview && h._preview.startsWith('blob:')) URL.revokeObjectURL(h._preview);
+        });
+        const raw = res.data;
+        const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+        this.heroes = list.map(h => this.normalizeHero(h));
+        this.pendingDeletes = [];
+        if (!this.lastSavedAt) {
+            const stamp = this.heroes.map(h => h.diperbarui_pada).filter(Boolean).sort().pop();
+            if (stamp) this.lastSavedAt = this.formatTanggal(stamp);
+        }
+    },
+
+    nextUrutan() {
+        return this.heroesAktif.reduce((max, h) => Math.max(max, Number(h.urutan_tampilan) || 0), 0) + 1;
+    },
+
+    draftHero() {
+        return {
+            id_hero: 'baru-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+            judul: '',
+            subjudul: '',
+            label_badge: '',
+            teks_tombol: '',
+            tautan_tombol: '',
+            urutan_tampilan: this.nextUrutan(),
+            status_aktif: 1,
+            url_gambar: '',
+            _isNew: true,
+            _dirty: true,
+            _deleted: false,
+            _file: null,
+            _preview: '',
+            _dimensi: '',
+        };
+    },
+
+    validasiGambar(file) {
+        const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (!allowed.includes(file.type)) return 'Format gambar harus JPG, PNG, atau WEBP.';
+        if (file.size > 2 * 1024 * 1024) return 'Ukuran gambar maksimal 2 MB.';
+        return '';
+    },
+
+    pilihDropzone(event) {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (file) this.tambahDariFile(file);
+    },
+
+    onDropHero(event) {
+        this.heroDragging = false;
+        const file = event.dataTransfer?.files?.[0];
+        if (file) this.tambahDariFile(file);
+    },
+
+    tambahDariFile(file) {
+        const err = this.validasiGambar(file);
+        if (err) { this.pesan(false, err); return; }
+        const h = this.draftHero();
+        h._file = file;
+        h._preview = URL.createObjectURL(file);
+        this.heroes.push(h);
+        this.pesan(true, 'Banner baru ditambahkan. Lengkapi datanya lalu simpan.');
+    },
+
+    pilihGambar(h, event) {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        const err = this.validasiGambar(file);
+        if (err) { this.pesan(false, err); return; }
+        if (h._preview && h._preview.startsWith('blob:')) URL.revokeObjectURL(h._preview);
+        h._file = file;
+        h._preview = URL.createObjectURL(file);
+        h._dimensi = '';
+        h._dirty = true;
+    },
+
+    hapusHero(h) {
+        if (h._isNew) {
+            if (h._preview && h._preview.startsWith('blob:')) URL.revokeObjectURL(h._preview);
+            this.heroes = this.heroes.filter(x => x !== h);
+            return;
+        }
+        if (!confirm('Hapus banner ' + (h.judul || 'tanpa judul') + '? Perubahan diterapkan saat Simpan Semua.')) return;
+        h._deleted = true;
+        if (!this.pendingDeletes.includes(h.id_hero)) this.pendingDeletes.push(h.id_hero);
+    },
+
+    adaPerubahanHero() {
+        return this.pendingDeletes.length > 0 || this.heroes.some(h => h._dirty || h._isNew || h._deleted);
+    },
+
+    batalHero() {
+        if (this.adaPerubahanHero() && !confirm('Batalkan semua perubahan banner hero?')) return;
+        this.lastSavedAt = '';
+        this.loadHeroes();
+    },
+
+    heroFormData(h) {
+        const fd = new FormData();
+        ['judul', 'subjudul', 'label_badge', 'teks_tombol', 'tautan_tombol'].forEach(k => {
+            const v = String(h[k] ?? '').trim();
+            if (v !== '') fd.append(k, v);
+        });
+        fd.append('urutan_tampilan', String(Number(h.urutan_tampilan) || 0));
+        fd.append('status_aktif', h.status_aktif ? '1' : '0');
+        if (h._file) fd.append('gambar', h._file);
+        return fd;
+    },
+
+    _heroError(res) {
+        const errs = Object.values(res.errors ?? {}).flat();
+        return errs[0] ?? res.message;
+    },
+
+    async simpanSemuaHero() {
+        const aktif = this.heroesAktif;
+        const baru = aktif.filter(h => h._isNew);
+
+        for (const h of aktif) {
+            if (!String(h.judul ?? '').trim()) {
+                this.pesan(false, 'HEADLINE wajib diisi pada setiap banner.');
+                return;
+            }
+        }
+        for (const h of baru) {
+            if (!String(h.teks_tombol ?? '').trim() || !String(h.tautan_tombol ?? '').trim()) {
+                this.pesan(false, 'LABEL TOMBOL dan LINK BUTTON wajib diisi pada banner baru.');
+                return;
+            }
+            if (!h._file) {
+                this.pesan(false, 'Pilih gambar untuk banner baru sebelum menyimpan.');
+                return;
+            }
+        }
+
+        this.savingHero = true;
+        const gagal = [];
+
+        for (const id of [...this.pendingDeletes]) {
+            const res = await PandansariAPI.admin.deleteHero(id);
+            if (res.ok) this.pendingDeletes = this.pendingDeletes.filter(x => x !== id);
+            else gagal.push(this._heroError(res));
+        }
+
+        for (const h of baru) {
+            const res = await PandansariAPI.admin.createHero(this.heroFormData(h));
+            if (!res.ok) gagal.push(this._heroError(res));
+        }
+
+        for (const h of aktif.filter(x => !x._isNew && x._dirty)) {
+            const res = await PandansariAPI.admin.updateHero(h.id_hero, this.heroFormData(h));
+            if (!res.ok) gagal.push(this._heroError(res));
+        }
+
+        this.savingHero = false;
+
+        if (gagal.length) {
+            this.pesan(false, gagal[0]);
+            this.loadHeroes();
+            return;
+        }
+
+        this.lastSavedAt = '';
+        await this.loadHeroes();
+        this.lastSavedAt = this.formatTanggal(new Date());
+        this.pesan(true, 'Semua perubahan banner hero berhasil disimpan.');
+    },
+
+    formatTanggal(value) {
+        if (!value) return '';
+        const d = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(d.getTime())) return '';
+        const tgl = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        const jam = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+        return `${tgl}, ${jam} WIB`;
+    },
+
+    namaFileHero(h) {
+        if (h._file) return h._file.name;
+        const p = String(h.url_gambar ?? h.gambar ?? '').split('?')[0];
+        return p.split('/').filter(Boolean).pop() || 'Belum ada gambar';
+    },
+
+    ukuranFileHero(h) {
+        if (!h._file) return '';
+        const mb = h._file.size / (1024 * 1024);
+        return (mb >= 0.1 ? mb.toFixed(1) : mb.toFixed(2)) + ' MB';
+    },
+
+    metaHero(h) {
+        const parts = [this.namaFileHero(h)];
+        if (h._dimensi) parts.push(h._dimensi);
+        const ukuran = this.ukuranFileHero(h);
+        if (ukuran) parts.push(ukuran);
+        const tanggal = h._isNew ? '' : this.formatTanggal(h.diperbarui_pada ?? h.dibuat_pada);
+        if (tanggal) parts.push('Diunggah ' + tanggal);
+        return parts.join(' • ');
+    },
+
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; return; }
         const me = await PandansariAPI.me();
         if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; return; }
         this.loadMe();
         this.loadKategori();
+        this.loadHeroes();
     }
 }" class="space-y-6 text-slate-800 font-sans pb-8">
 
@@ -171,7 +419,7 @@
             Pengaturan & Profil Atelier
         </h1>
         <p class="text-xs text-slate-500 mt-1">
-            Profil akun admin (PUT /me) dan kelola kategori toko (POST/PUT/DELETE /admin/categories).
+            Profil akun admin (PUT /me), kelola kategori toko, dan banner hero beranda (GET/POST/PUT/DELETE /admin/cms/hero).
         </p>
     </div>
 
@@ -371,23 +619,205 @@
     </div>
 
     <!-- ========================================== -->
-    <!-- TAB 3: BANNER & GALERI (PLACEHOLDER JUJUR) -->
+    <!-- TAB 3: KELOLA BANNER HERO                  -->
     <!-- ========================================== -->
-    <div x-show="activeTab === 'info'" x-transition>
-        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-12 text-center space-y-4">
+    <div x-show="activeTab === 'info'" x-transition class="space-y-6">
+
+        <!-- Judul seksi -->
+        <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+            <div>
+                <h2 class="text-xl font-extrabold text-slate-900 tracking-tight">Kelola Banner Hero</h2>
+                <p class="text-xs text-slate-500 mt-1">
+                    Atur gambar dan teks slide yang tampil di beranda toko. Perubahan diterapkan setelah menekan Simpan Semua.
+                </p>
+            </div>
+            <button type="button" @click="loadHeroes()" :disabled="loadingHero"
+                    class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-60 w-fit">
+                <i class="fa-solid fa-rotate" :class="loadingHero ? 'fa-spin' : ''"></i>
+                <span>Muat ulang</span>
+            </button>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="loadingHero" x-cloak class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-12 text-center">
+            <p class="text-xs text-slate-400 font-semibold"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Memuat banner hero…</p>
+        </div>
+
+        <!-- Empty state -->
+        <div x-show="!loadingHero && !heroesAktif.length" x-cloak
+             class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-12 text-center space-y-3">
             <div class="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-300 text-2xl mx-auto">
                 <i class="fa-regular fa-images"></i>
             </div>
-            <h2 class="text-base font-extrabold text-slate-900">Kelola Banner Hero & Galeri Atelier</h2>
+            <h3 class="text-sm font-extrabold text-slate-900">Belum ada banner hero</h3>
             <p class="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                Endpoint API untuk banner hero, logo, dan galeri foto belum tersedia di backend
-                (lihat <span class="font-mono text-[11px]">list-api.md</span>). Fitur ini akan diaktifkan
-                otomatis begitu endpoint-nya menyediakan CRUD media.
+                Tambahkan banner pertama lewat area unggah di bawah. Banner akan tampil di beranda setelah disimpan dan berstatus aktif.
             </p>
-            <span class="inline-block px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-extrabold uppercase tracking-wider rounded-lg">
-                Menunggu endpoint backend
+        </div>
+
+        <!-- Daftar kartu banner -->
+        <div class="space-y-6">
+            <template x-for="(h, index) in heroesAktif" :key="h.id_hero">
+                <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+
+                    <!-- Header kartu -->
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4 border-b border-slate-100">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-9 h-9 bg-[#0A192F] text-sky-300 rounded-xl flex items-center justify-center text-sm shrink-0">
+                                <i class="fa-regular fa-image"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <p class="text-[9px] font-black tracking-[0.18em] text-slate-400 uppercase"
+                                   x-text="index === 0 ? 'Banner Utama Dashboard' : 'Banner Tambahan'"></p>
+                                <p class="text-sm font-extrabold text-slate-900 truncate" x-text="h.judul || 'Banner tanpa judul'"></p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <span x-show="h._dirty || h._isNew" class="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[9px] font-extrabold uppercase tracking-wider">
+                                Belum disimpan
+                            </span>
+                            <button type="button"
+                                    @click="h.status_aktif = h.status_aktif ? 0 : 1; h._dirty = true"
+                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-extrabold uppercase tracking-wider transition cursor-pointer"
+                                    :class="h.status_aktif ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'">
+                                <span class="w-1.5 h-1.5 rounded-full" :class="h.status_aktif ? 'bg-emerald-500' : 'bg-slate-400'"></span>
+                                <span x-text="h.status_aktif ? 'Aktif' : 'Nonaktif'"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="px-6 pt-5">
+                        <!-- Preview gambar 1920x600 -->
+                        <div class="relative w-full aspect-[1920/600] rounded-xl overflow-hidden bg-slate-100 border border-slate-200">
+                            <template x-if="h._preview">
+                                <img :src="h._preview" :alt="h.judul || 'Banner hero'"
+                                     class="w-full h-full object-cover"
+                                     @load="h._dimensi = $event.target.naturalWidth + ' × ' + $event.target.naturalHeight + ' px'">
+                            </template>
+                            <template x-if="!h._preview">
+                                <div class="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                                    <i class="fa-regular fa-image text-2xl"></i>
+                                    <span class="text-[11px] font-bold">Belum ada gambar</span>
+                                </div>
+                            </template>
+                            <span class="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/55 text-white text-[9px] font-extrabold tracking-widest backdrop-blur"
+                                  x-text="index === 0 ? 'BANNER 1' : 'BANNER ' + (index + 1)"></span>
+                        </div>
+
+                        <!-- Meta info + aksi gambar -->
+                        <div class="mt-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                            <p class="text-[11px] text-slate-500 font-medium break-all" x-text="metaHero(h)"></p>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <label class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-extrabold uppercase tracking-wider transition cursor-pointer">
+                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                    <span>Ganti Banner</span>
+                                    <input type="file" class="hidden" accept="image/jpeg,image/png,image/webp"
+                                           @change="pilihGambar(h, $event)">
+                                </label>
+                                <button type="button" @click="hapusHero(h)"
+                                        class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[10px] font-extrabold uppercase tracking-wider transition cursor-pointer">
+                                    <i class="fa-regular fa-trash-can"></i>
+                                    <span>Hapus</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form teks banner -->
+                    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-medium">
+                        <div class="md:col-span-2">
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Headline</label>
+                            <input type="text" x-model="h.judul" @input="h._dirty = true"
+                                   placeholder="Contoh: Koleksi Batik Pandansari — Edisi Terbatas"
+                                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                                Teks Pendukung <span class="text-slate-300 font-bold normal-case tracking-normal">(opsional)</span>
+                            </label>
+                            <textarea rows="2" x-model="h.subjudul" @input="h._dirty = true"
+                                      placeholder="Deskripsi singkat yang tampil di bawah headline"
+                                      class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                                Badge <span class="text-slate-300 font-bold normal-case tracking-normal">(opsional)</span>
+                            </label>
+                            <input type="text" x-model="h.label_badge" @input="h._dirty = true"
+                                   placeholder="Contoh: EDISI TERBATAS"
+                                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Label Tombol</label>
+                            <input type="text" x-model="h.teks_tombol" @input="h._dirty = true"
+                                   placeholder="Isi label tombol"
+                                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Link Button</label>
+                            <input type="text" x-model="h.tautan_tombol" @input="h._dirty = true"
+                                   placeholder="/koleksi"
+                                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Dropzone tambah banner -->
+        <div @dragover.prevent="heroDragging = true"
+             @dragleave.prevent="heroDragging = false"
+             @drop.prevent="onDropHero($event)"
+             @click="$refs.dropHero.click()"
+             class="bg-white rounded-2xl border-2 border-dashed p-10 text-center space-y-4 transition cursor-pointer"
+             :class="heroDragging ? 'border-sky-400 bg-sky-50/60' : 'border-slate-200 hover:border-sky-300 hover:bg-slate-50/60'">
+            <input type="file" x-ref="dropHero" class="hidden" accept="image/jpeg,image/png,image/webp"
+                   @click.stop @change="pilihDropzone($event)">
+            <div class="w-14 h-14 rounded-full bg-sky-50 text-sky-500 border border-sky-100 flex items-center justify-center text-xl mx-auto">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+            <div class="space-y-1">
+                <p class="text-sm font-extrabold text-slate-900">Tarik &amp; lepas file banner di sini</p>
+                <p class="text-xs text-slate-500 font-medium">atau klik untuk menambah banner baru</p>
+            </div>
+            <span class="inline-block px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[9px] font-extrabold tracking-widest uppercase">
+                PNG, JPG, WEBP Maks 2MB (Rekomendasi 1920×600px)
             </span>
         </div>
+
+        <!-- Catatan galeri -->
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
+                <i class="fa-regular fa-images"></i>
+            </div>
+            <div class="min-w-0">
+                <p class="text-sm font-extrabold text-slate-900">Galeri Atelier</p>
+                <p class="text-xs text-slate-500">Pengelolaan galeri belum tersedia di API. Tab ini khusus banner hero.</p>
+            </div>
+            <span class="sm:ml-auto inline-block px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-extrabold uppercase tracking-wider rounded-lg w-fit">
+                Menunggu endpoint galeri
+            </span>
+        </div>
+
+        <!-- Footer aksi sticky -->
+        <div class="sticky bottom-0 z-20 -mx-6 sm:-mx-8 px-6 sm:px-8 py-4 bg-[#FAF8F5]/95 backdrop-blur border-t border-slate-200">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p class="text-[11px] text-slate-500 font-semibold"
+                   x-text="lastSavedAt ? 'Perubahan terakhir disimpan pada ' + lastSavedAt : 'Belum ada perubahan tersimpan.'"></p>
+                <div class="flex items-center gap-2">
+                    <button type="button" @click="batalHero()" :disabled="savingHero"
+                            class="px-5 py-3 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-extrabold hover:bg-slate-50 transition cursor-pointer disabled:opacity-50">
+                        Batal
+                    </button>
+                    <button type="button" @click="simpanSemuaHero()" :disabled="savingHero"
+                            class="px-6 py-3 rounded-xl bg-sky-400 hover:bg-sky-500 text-white text-xs font-extrabold shadow-sm transition cursor-pointer disabled:opacity-60 flex items-center gap-2">
+                        <i class="fa-solid" :class="savingHero ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
+                        <span x-text="savingHero ? 'Menyimpan…' : 'SIMPAN SEMUA PERUBAHAN'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     </div>

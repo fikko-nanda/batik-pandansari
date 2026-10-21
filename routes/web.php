@@ -31,6 +31,10 @@ Route::get('/media/products/{filename}', MediaProxyController::class)
     ->where('filename', '[A-Za-z0-9._-]+')
     ->name('media.products');
 
+Route::get('/media/cms-hero/{filename}', [MediaProxyController::class, 'cmsHero'])
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('media.cms-hero');
+
 Route::get('/cart', function () {
     return view('shop.cart');
 })->name('cart');

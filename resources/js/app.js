@@ -326,6 +326,8 @@ window.PandansariAPI = {
     /* ---------- Kategori & Produk (publik) ---------- */
     /** GET /cms/homepage — konten homepage (hero, promo, banner). */
     getHomepageCms() { return this.fetch('/cms/homepage'); },
+    /** GET /cms/hero — slide banner hero aktif (publik), urut urutan_tampilan. */
+    cmsHeroes() { return this.fetch('/cms/hero'); },
     categories() { return this.fetch('/categories'); },
     category(id) { return this.fetch(`/categories/${id}`); },
     products(params = {}) {
@@ -648,6 +650,26 @@ window.PandansariAPI = {
         updateCategory(id, payload) { return PandansariAPI.fetch(`/admin/categories/${id}`, { method: 'PUT', body: payload }); },
         deleteCategory(id) { return PandansariAPI.fetch(`/admin/categories/${id}`, { method: 'DELETE' }); },
 
+        /* -- 19.8 Banner Hero CMS -- */
+        /** GET /admin/cms/hero — semua slide (termasuk nonaktif). */
+        heroes() { return PandansariAPI.fetch('/admin/cms/hero'); },
+        /** POST /admin/cms/hero — multipart: judul, teks_tombol, tautan_tombol, gambar, urutan_tampilan?, status_aktif?. */
+        createHero(formData) { return PandansariAPI.fetch('/admin/cms/hero', { method: 'POST', body: formData }); },
+        /**
+         * PUT /admin/cms/hero/{id}.
+         * FormData (ganti gambar) dikirim via POST + `_method=PUT` karena PHP tidak
+         * mem-parse body multipart pada method PUT. JSON dipakai untuk update teks saja.
+         */
+        updateHero(id, payload) {
+            if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+                payload.set('_method', 'PUT');
+                return PandansariAPI.fetch(`/admin/cms/hero/${id}`, { method: 'POST', body: payload });
+            }
+            return PandansariAPI.fetch(`/admin/cms/hero/${id}`, { method: 'PUT', body: payload });
+        },
+        /** DELETE /admin/cms/hero/{id} — hapus baris + berkas gambar. */
+        deleteHero(id) { return PandansariAPI.fetch(`/admin/cms/hero/${id}`, { method: 'DELETE' }); },
+
         /* -- 4.3 Voucher -- */
         vouchers(params = {}) { return PandansariAPI.fetch('/vouchers' + this._qs(params)); },
         voucher(id) { return PandansariAPI.fetch(`/vouchers/${id}`); },
@@ -815,6 +837,13 @@ window.PandansariAPI = {
 
         let clean = pathname.replace(/^\/+/, '');
         if (clean.startsWith('storage/')) clean = clean.slice('storage/'.length);
+
+        if (clean.startsWith('cms/hero/')) {
+            const filename = clean.slice('cms/hero/'.length);
+            if (!filename || filename.includes('/')) return p;
+
+            return '/media/cms-hero/' + encodeURIComponent(filename);
+        }
 
         if (!clean.startsWith('products/')) return p;
 

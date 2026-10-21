@@ -20,7 +20,7 @@
 
         <!-- Live Midtrans Status Badge -->
         <div class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl font-bold flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
             <span class="text-[11px]">Midtrans Live</span>
         </div>
 

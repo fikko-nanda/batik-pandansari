@@ -162,14 +162,14 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 | Midtrans | `GET /admin/payments` (filter status/provider), `GET /admin/payments/summary` | `admin/midtrans.blade.php` |
 | RajaOngkir | `GET /admin/shipping/{config,health,couriers}`, `PUT /admin/shipping/couriers/{code}`, `GET /shipping/destinations`, `POST /admin/shipping/simulate` | `admin/rajaongkir.blade.php` |
 | Laporan | `GET /admin/{orders,payments}/summary`, buku kas `GET /admin/payments` | `admin/sales-report.blade.php` |
-| Pengaturan | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories` | `admin/settings.blade.php` |
+| Pengaturan | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories`, CRUD `/admin/cms/hero` (multipart `gambar`) | `admin/settings.blade.php` |
 
-> Halaman admin **tanpa endpoint API** (placeholder jujur di UI): kelola banner hero & galeri foto (`settings` tab "Banner & Galeri") — menunggu backend.
+> Galeri foto (`settings` tab "Banner & Galeri") masih placeholder — menunggu endpoint galeri. Banner hero sudah terhubung.
 
 ### 🔜 Belum (butuh backend)
 - Ongkir otomatis saat checkout — `POST /shipping/cost` & `/admin/shipping/simulate` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis.
 - CRUD user admin (ubah/hapus) — `GET /users` hanya punya list/detail + `POST /users`.
-- Banner hero, logo, galeri atelier — belum ada endpoint.
+- Galeri atelier — belum ada endpoint.
 - Login Google GIS — menyusul client ID disepakati.
 - Sort katalog (`price_asc` dll) — belum didukung API produk.
 
