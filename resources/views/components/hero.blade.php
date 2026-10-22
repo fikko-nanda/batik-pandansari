@@ -1,27 +1,54 @@
-<section class="relative w-full bg-[#0F1A24] overflow-hidden" 
-         x-data="{ 
-            activeSlide: 0, 
+<section class="relative w-full bg-[#0F1A24] overflow-hidden"
+         x-data="{
+            activeSlide: 0,
             slides: [
                 {
                     badge: 'MAHAKARYA WASTRA NUSANTARA',
                     title: 'Artistry in<br><span class=\'italic font-normal text-[#ADD8E6]\'>Every Thread</span>',
                     description: 'Menghadirkan keagungan warisan budaya Nusantara melalui karya batik tulis dan cap otentik yang ditutur dan dicanting halus khusus untuk Anda.',
-                    image: '{{ asset('images/katalog1.webp') }}'
+                    image: '{{ asset('images/katalog1.webp') }}',
+                    cta: '/katalog',
+                    ctaText: 'JELAJAHI KOLEKSI UTAMA'
                 },
                 {
                     badge: 'SERAGAM & CUSTOM DESAIN',
                     title: 'Kustomisasi Batik<br><span class=\'italic font-normal text-[#ADD8E6]\'>Instansi & Pernikahan</span>',
                     description: 'Melayani pembuatan batik custom seragam kantor, instansi, hingga busana acara keluarga bernilai seni tinggi.',
-                    image: '{{ asset('images/katalog2.webp') }}'
+                    image: '{{ asset('images/katalog2.webp') }}',
+                    cta: '/katalog',
+                    ctaText: 'JELAJAHI KOLEKSI UTAMA'
                 }
             ],
             next() { this.activeSlide = (this.activeSlide + 1) % this.slides.length; },
             prev() { this.activeSlide = (this.activeSlide - 1 + this.slides.length) % this.slides.length; },
-            timer: null
+            timer: null,
+            startTimer() { clearInterval(this.timer); this.timer = setInterval(() => { this.next() }, 5000); },
+            /** Ambil slide dari CMS (GET /cms/hero); fallback tetap slide statis bila kosong/gagal. */
+            async muatCms() {
+                try {
+                    const res = await PandansariAPI.cmsHeroes();
+                    if (!res.ok || !Array.isArray(res.data) || !res.data.length) return;
+                    const fallback = this.slides[0];
+                    const mapped = res.data
+                        .map(h => ({
+                            badge: String(h.label_badge ?? '').trim() || fallback.badge,
+                            title: String(h.judul ?? '').trim(),
+                            description: String(h.subjudul ?? '').trim() || fallback.description,
+                            image: PandansariAPI.imgUrl(h.url_gambar ?? h.gambar ?? ''),
+                            cta: String(h.tautan_tombol ?? '').trim() || '/katalog',
+                            ctaText: String(h.teks_tombol ?? '').trim() || fallback.ctaText,
+                        }))
+                        .filter(s => s.image);
+                    if (!mapped.length) return;
+                    this.slides = mapped;
+                    this.activeSlide = 0;
+                    this.startTimer();
+                } catch { /* fallback slide statis */ }
+            }
          }"
-         x-init="timer = setInterval(() => { next() }, 5000)"
+         x-init="muatCms(); startTimer()"
          @mouseenter="clearInterval(timer)"
-         @mouseleave="timer = setInterval(() => { next() }, 5000)">
+         @mouseleave="startTimer()">
 
     <!-- CONTAINER HERO FULL WIDTH -->
     <div class="relative w-full min-h-[520px] md:min-h-[580px] flex items-center shadow-2xl">
@@ -59,8 +86,8 @@
 
                 <!-- Tombol CTA -->
                 <div class="flex flex-wrap items-center gap-4">
-                    <a href="/katalog" class="bg-[#ADD8E6] text-[#0F1A24] font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl shadow-md hover:bg-sky-200 transition font-['Plus_Jakarta_Sans']">
-                        JELAJAHI KOLEKSI UTAMA
+                    <a :href="slides[activeSlide].cta" class="bg-[#ADD8E6] text-[#0F1A24] font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl shadow-md hover:bg-sky-200 transition font-['Plus_Jakarta_Sans']">
+                        <span x-text="slides[activeSlide].ctaText"></span>
                     </a>
                     <a href="#ecommerce-partners"
                        @click.prevent="document.getElementById('ecommerce-partners')?.scrollIntoView({ behavior: 'smooth' })"

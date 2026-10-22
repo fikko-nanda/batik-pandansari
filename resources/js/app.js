@@ -326,6 +326,19 @@ window.PandansariAPI = {
     /* ---------- Kategori & Produk (publik) ---------- */
     /** GET /cms/homepage — konten homepage (hero, promo, banner). */
     getHomepageCms() { return this.fetch('/cms/homepage'); },
+    /** GET /cms/hero — slide banner hero aktif (publik), urut urutan_tampilan. */
+    cmsHeroes() { return this.fetch('/cms/hero'); },
+    /** GET /cms/kategori — kartu kategori beranda CMS aktif (publik), urut urutan_tampilan. */
+    cmsKategori() { return this.fetch('/cms/kategori'); },
+
+    /** GET /cms/galeri — info galeri + daftar foto (publik); data: null bila galeri tidak ada / nonaktif. */
+    cmsGaleriPublik() { return this.fetch('/cms/galeri'); },
+
+    /** GET /cms/profil-usaha — identitas, alamat, jam_operasional, Google Maps (publik); data: null bila belum diisi. */
+    cmsProfilUsahaPublik() { return this.fetch('/cms/profil-usaha'); },
+
+    /** GET /cms/fasilitas — daftar fasilitas aktif (publik). */
+    cmsFasilitasPublik() { return this.fetch('/cms/fasilitas'); },
     categories() { return this.fetch('/categories'); },
     category(id) { return this.fetch(`/categories/${id}`); },
     products(params = {}) {
@@ -648,6 +661,78 @@ window.PandansariAPI = {
         updateCategory(id, payload) { return PandansariAPI.fetch(`/admin/categories/${id}`, { method: 'PUT', body: payload }); },
         deleteCategory(id) { return PandansariAPI.fetch(`/admin/categories/${id}`, { method: 'DELETE' }); },
 
+        /* -- 19.8 Banner Hero CMS -- */
+        /** GET /admin/cms/hero — semua slide (termasuk nonaktif). */
+        heroes() { return PandansariAPI.fetch('/admin/cms/hero'); },
+        /** POST /admin/cms/hero — multipart: judul, teks_tombol, tautan_tombol, gambar, urutan_tampilan?, status_aktif?. */
+        createHero(formData) { return PandansariAPI.fetch('/admin/cms/hero', { method: 'POST', body: formData }); },
+        /**
+         * PUT /admin/cms/hero/{id}.
+         * FormData (ganti gambar) dikirim via POST + `_method=PUT` karena PHP tidak
+         * mem-parse body multipart pada method PUT. JSON dipakai untuk update teks saja.
+         */
+        updateHero(id, payload) {
+            if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+                payload.set('_method', 'PUT');
+                return PandansariAPI.fetch(`/admin/cms/hero/${id}`, { method: 'POST', body: payload });
+            }
+            return PandansariAPI.fetch(`/admin/cms/hero/${id}`, { method: 'PUT', body: payload });
+        },
+        /** DELETE /admin/cms/hero/{id} — hapus baris + berkas gambar. */
+        deleteHero(id) { return PandansariAPI.fetch(`/admin/cms/hero/${id}`, { method: 'DELETE' }); },
+
+        /* -- 19.9 Kategori CMS (kartu kategori beranda) -- */
+        /** GET /admin/cms/kategori — semua kartu kategori CMS. */
+        cmsKategori() { return PandansariAPI.fetch('/admin/cms/kategori'); },
+        /** POST /admin/cms/kategori — multipart: nama_kategori (unik), judul, tautan_tujuan, gambar. */
+        createCmsKategori(formData) { return PandansariAPI.fetch('/admin/cms/kategori', { method: 'POST', body: formData }); },
+        /** PUT /admin/cms/kategori/{id} — multipart via POST + `_method=PUT` (alasan sama dengan updateHero). */
+        updateCmsKategori(id, payload) {
+            if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+                payload.set('_method', 'PUT');
+                return PandansariAPI.fetch(`/admin/cms/kategori/${id}`, { method: 'POST', body: payload });
+            }
+            return PandansariAPI.fetch(`/admin/cms/kategori/${id}`, { method: 'PUT', body: payload });
+        },
+        /** DELETE /admin/cms/kategori/{id} — hapus baris + berkas gambar. */
+        deleteCmsKategori(id) { return PandansariAPI.fetch(`/admin/cms/kategori/${id}`, { method: 'DELETE' }); },
+
+        /* -- 19.10-19.12 Galeri, Profil Usaha, Fasilitas ( Kelola admin ) -- */
+        /** GET /admin/cms/galeri — info galeri (judul wajib saat pertama) + daftar foto terurut. */
+        cmsGaleri() { return PandansariAPI.fetch('/admin/cms/galeri'); },
+        /** PUT /admin/cms/galeri — buat/ubah info galeri (judul wajib saat pertama). */
+        updateCmsGaleri(payload) { return PandansariAPI.fetch('/admin/cms/galeri', { method: 'PUT', body: payload }); },
+        /** POST /admin/cms/galeri/gambar — multipart `gambar` wajib (unggah sebelum galeri ada -> 404). */
+        uploadGaleriFoto(formData) { return PandansariAPI.fetch('/admin/cms/galeri/gambar', { method: 'POST', body: formData }); },
+        /** POST + `_method=PUT` /admin/cms/galeri/gambar/{id} — ganti gambar / teks alternatif / urutan (PUT multipart tak diparse PHP). */
+        updateGaleriFoto(id, formData) {
+            if (typeof FormData !== 'undefined' && formData instanceof FormData) {
+                formData.set('_method', 'PUT');
+                return PandansariAPI.fetch(`/admin/cms/galeri/gambar/${id}`, { method: 'POST', body: formData });
+            }
+            return PandansariAPI.fetch(`/admin/cms/galeri/gambar/${id}`, { method: 'PUT', body: formData });
+        },
+        /** DELETE /admin/cms/galeri/gambar/{id} — hapus foto + berkasnya. */
+        deleteGaleriFoto(id) { return PandansariAPI.fetch(`/admin/cms/galeri/gambar/${id}`, { method: 'DELETE' }); },
+        /** GET /admin/cms/profil-usaha — identitas toko, alamat, maps, jam_operasional (array objek). */
+        profilUsaha() { return PandansariAPI.fetch('/admin/cms/profil-usaha'); },
+        /** PUT /admin/cms/profil-usaha — parsial; multipart dikirim POST + `_method=PUT` (alasan sama dengan updateCmsKategori). */
+        updateProfilUsaha(payload) {
+            if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+                payload.set('_method', 'PUT');
+                return PandansariAPI.fetch('/admin/cms/profil-usaha', { method: 'POST', body: payload });
+            }
+            return PandansariAPI.fetch('/admin/cms/profil-usaha', { method: 'PUT', body: payload });
+        },
+        /** GET /admin/cms/fasilitas — semua fasilitas (admin), urut urutan_tampilan. */
+        fasilitas() { return PandansariAPI.fetch('/admin/cms/fasilitas'); },
+        /** POST /admin/cms/fasilitas — nama_fasilitas wajib. */
+        createFasilitas(payload) { return PandansariAPI.fetch('/admin/cms/fasilitas', { method: 'POST', body: payload }); },
+        /** PUT /admin/cms/fasilitas/{id} — parsial. */
+        updateFasilitas(id, payload) { return PandansariAPI.fetch(`/admin/cms/fasilitas/${id}`, { method: 'PUT', body: payload }); },
+        /** DELETE /admin/cms/fasilitas/{id}. */
+        deleteFasilitas(id) { return PandansariAPI.fetch(`/admin/cms/fasilitas/${id}`, { method: 'DELETE' }); },
+
         /* -- 4.3 Voucher -- */
         vouchers(params = {}) { return PandansariAPI.fetch('/vouchers' + this._qs(params)); },
         voucher(id) { return PandansariAPI.fetch(`/vouchers/${id}`); },
@@ -815,6 +900,27 @@ window.PandansariAPI = {
 
         let clean = pathname.replace(/^\/+/, '');
         if (clean.startsWith('storage/')) clean = clean.slice('storage/'.length);
+
+        if (clean.startsWith('cms/hero/')) {
+            const filename = clean.slice('cms/hero/'.length);
+            if (!filename || filename.includes('/')) return p;
+
+            return '/media/cms-hero/' + encodeURIComponent(filename);
+        }
+
+        if (clean.startsWith('cms/kategori/')) {
+            const filename = clean.slice('cms/kategori/'.length);
+            if (!filename || filename.includes('/')) return p;
+
+            return '/media/cms-kategori/' + encodeURIComponent(filename);
+        }
+
+        if (clean.startsWith('cms/galeri/')) {
+            const filename = clean.slice('cms/galeri/'.length);
+            if (!filename || filename.includes('/')) return p;
+
+            return '/media/cms-galeri/' + encodeURIComponent(filename);
+        }
 
         if (!clean.startsWith('products/')) return p;
 
