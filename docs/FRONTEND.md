@@ -22,7 +22,7 @@ resources/views/
 │   ├── womens-wear.blade.php   #   <x-womens-wear>
 │   ├── mens-wear.blade.php     #   <x-mens-wear>
 │   ├── promo-banner.blade.php  #   <x-promo-banner>
-│   ├── craft-categories.blade.php # <x-craft-categories> — Tulis/Cap/Handprint
+│   ├── craft-categories.blade.php # <x-craft-categories> — 3 Kategori Utama: dinamis dari GET /cms/kategori, fallback statis Tulis/Cap/Handprint
 │   ├── gallery.blade.php       #   <x-gallery>
 │   ├── consultation-banner.blade.php # <x-consultation-banner>
 │   ├── product-card.blade.php  #   <x-product-card> — kartu produk reusable (punya @props)
@@ -162,9 +162,9 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 | Midtrans | `GET /admin/payments` (filter status/provider), `GET /admin/payments/summary` | `admin/midtrans.blade.php` |
 | RajaOngkir | `GET /admin/shipping/{config,health,couriers}`, `PUT /admin/shipping/couriers/{code}`, `GET /shipping/destinations`, `POST /admin/shipping/simulate` | `admin/rajaongkir.blade.php` |
 | Laporan | `GET /admin/{orders,payments}/summary`, buku kas `GET /admin/payments` | `admin/sales-report.blade.php` |
-| Pengaturan | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories`, CRUD `/admin/cms/hero` (multipart `gambar`) | `admin/settings.blade.php` |
+| Pengaturan | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories`, CRUD `/admin/cms/hero` + `/admin/cms/kategori`, `GET/PUT /admin/cms/galeri` + `POST/PUT/DELETE /admin/cms/galeri/gambar(/{id})`, `GET/PUT /admin/cms/profil-usaha`, CRUD `/admin/cms/fasilitas` | `admin/settings.blade.php` |
 
-> Galeri foto (`settings` tab "Banner & Galeri") masih placeholder — menunggu endpoint galeri. Banner hero sudah terhubung.
+> Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), dan fasilitas sudah terhubung. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri/{filename}`.
 
 ### 🔜 Belum (butuh backend)
 - Ongkir otomatis saat checkout — `POST /shipping/cost` & `/admin/shipping/simulate` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis.

@@ -35,6 +35,14 @@ Route::get('/media/cms-hero/{filename}', [MediaProxyController::class, 'cmsHero'
     ->where('filename', '[A-Za-z0-9._-]+')
     ->name('media.cms-hero');
 
+Route::get('/media/cms-kategori/{filename}', [MediaProxyController::class, 'cmsKategori'])
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('media.cms-kategori');
+
+Route::get('/media/cms-galeri/{filename}', [MediaProxyController::class, 'cmsGaleri'])
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('media.cms-galeri');
+
 Route::get('/cart', function () {
     return view('shop.cart');
 })->name('cart');

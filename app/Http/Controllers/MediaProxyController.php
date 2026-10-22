@@ -19,6 +19,16 @@ class MediaProxyController extends Controller
         return $this->proxy('cms/hero', $filename);
     }
 
+    public function cmsKategori(string $filename)
+    {
+        return $this->proxy('cms/kategori', $filename);
+    }
+
+    public function cmsGaleri(string $filename)
+    {
+        return $this->proxy('cms/galeri', $filename);
+    }
+
     private function proxy(string $folder, string $filename)
     {
         $filename = basename($filename);
