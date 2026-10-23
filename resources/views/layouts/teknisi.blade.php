@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ $title ?? 'Engineering Console — Batik Pandansari' }}</title>
+    <title>@yield('title', $title ?? 'Engineering Console — Batik Pandansari')</title>
 
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- app.js (window.PandansariAPI) sebelum Alpine -->
-    @vite(['resources/js/app.js'])
+    @vite(['resources/js/app.js', 'resources/js/teknisi.js'])
 
     <!-- Alpine.js CDN -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -23,6 +23,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
 
     <style>
+        [x-cloak] { display: none !important; }
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
         }
@@ -67,14 +68,14 @@
                     <span>Socket 12ms</span>
                 </span>
 
-                <!-- Profile User -->
-                <div class="flex items-center gap-2 pl-2 border-l border-slate-200">
-                    <div class="w-7 h-7 bg-slate-900 text-white rounded-full flex items-center justify-center font-black text-[10px]">
-                        AS
-                    </div>
+                <!-- Profile User (dinamis dari user terotentikasi) -->
+                <div x-data="teknisiTopbar" class="flex items-center gap-2 pl-2 border-l border-slate-200">
+                    <div class="w-7 h-7 bg-slate-900 text-white rounded-full flex items-center justify-center font-black text-[10px]"
+                         :title="displayName"
+                         x-text="getInitials(displayName)"></div>
                     <div>
-                        <strong class="text-xs font-extrabold text-slate-900 block leading-none">Arya Seno</strong>
-                        <span class="text-[9px] font-semibold text-slate-400 block mt-0.5">Lead Tech Operator</span>
+                        <strong class="text-xs font-extrabold text-slate-900 block leading-none" x-text="displayName"></strong>
+                        <span class="text-[9px] font-semibold text-slate-400 block mt-0.5" x-text="roleLabel"></span>
                     </div>
                 </div>
             </div>

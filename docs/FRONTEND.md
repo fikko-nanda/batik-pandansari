@@ -38,7 +38,7 @@ resources/views/
 ├── customer/                   # profile, orders, address, wishlist, security
 ├── auth/                       # login, register
 ├── admin/                      # 11 halaman dashboard admin
-└── teknisi/                    # audit-log, webhook-logs
+└── teknisi/                    # index (dashboard), audit-log, webhook-logs, notification-logs, failed-jobs
 ```
 
 **Aturan:** Reusable component **wajib** ditaruh di `components/` (boleh subfolder per modul), sehingga bisa dipanggil `<x-...>`. Komponen halaman admin sebelumnya memakai `@include('admin.components...')` — sudah dikonversi ke `<x-admin.*>`.
@@ -92,7 +92,7 @@ Buat komponen baru via artisan: `php artisan make:component Nama --view` (hanya 
 - **Styling:** Tailwind 3 via Vite. Warna brand: `#0F1A24` (teks gelap), `#FAF8F5` (bg), aksen sky. Ditata pada `tailwind.config.js`.
 - **Font:** Plus Jakarta Sans (+ Playfair Display di landing) — Google Fonts.
 - **CDN vs npm:** FontAwesome & Alpine.js dimuat via CDN. Tailwind **di-Vite-kan** untuk halaman publik. Layout `admin` & `teknisi` masih memakai Tailwind CDN — TODO: migrasi ke Vite agar satu sumber build.
-- **Data:** semua halaman utama (publik, customer, admin) sudah terhubung API nyata via `PandansariAPI` (lihat §5b). Angka statis hanya tersisa di halaman teknisi & placeholder banner/galeri.
+- **Data:** semua halaman utama (publik, customer, admin, teknisi) sudah terhubung API nyata via `PandansariAPI` (lihat §5b). Angka statis hanya tersisa di placeholder banner/galeri.
 - **Icon:** FontAwesome 6 (`fa-brands`, `fa-solid`, `fa-regular`).
 - Setelah mengubah CSS: `npm run build` (atau `npm run dev` saat developing).
 - Validasi syntax Blade: `php artisan view:cache` (lalu `php artisan view:clear`).
@@ -141,7 +141,7 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 | Tambah keranjang | `POST /cart/items { id_variant, jumlah }` | `shop/product-detail.blade.php` |
 | Wishlist | `POST /wishlist { id_product }` | katalog + detail |
 | Keranjang | `GET /cart`, `PUT/DELETE /cart/items/{id}`, `DELETE /cart`, voucher validate | `shop/cart.blade.php` |
-| Checkout | `GET /addresses`, `GET /shipping/destinations`, `POST /shipping/cost`, **`GET /vouchers/available` (chips voucher yang bisa dipakai)**, `POST /vouchers/validate`, `POST /checkout` → `POST /orders/{id}/payment` → redirect Midtrans Snap | `shop/checkout.blade.php` |
+| Checkout | `GET /addresses`, **`GET /vouchers/available` (chips voucher yang bisa dipakai)**, `POST /vouchers/validate`, `POST /checkout` (`is_manual_shipping: true`) → **buka WhatsApp admin** untuk konfirmasi ongkir & pembayaran | `shop/checkout.blade.php` |
 | Riwayat pesanan | `GET /orders?page&per_page`, **cek transaksi tertunda `GET /orders/{id}/payment`**, bayar ulang via `POST /orders/{id}/payment`, beli-lagi via `POST /cart/items` | `customer/orders.blade.php` |
 | Buku alamat | CRUD `/addresses` (tambah/ubah/hapus via modal) | `customer/address.blade.php` |
 | Wishlist user | `GET /wishlist` (relasi `product.category/variants/images`), `DELETE /wishlist/{id}` | `customer/wishlist.blade.php` |
@@ -166,8 +166,25 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 
 > Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), dan fasilitas sudah terhubung. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri/{filename}`.
 
+### ✅ Terhubung — Modul Teknisi (Engineering Console)
+Endpoint dipusatkan di `PandansariAPI.teknisi` (`resources/js/app.js`). Semua request otomatis memakai header `Authorization: Bearer <token>` + `ngrok-skip-browser-warning: true`.
+
+| Halaman | Endpoint | File |
+|---|---|---|
+| Dashboard | `GET /teknisi/dashboard`, `GET /teknisi/health` | `teknisi/index.blade.php` + `components/teknisi/dashboard-widgets.blade.php` |
+| Audit Logs | `GET /teknisi/audit-logs`, detail `GET /teknisi/audit-logs/{id}` | `teknisi/audit-log.blade.php` |
+| Webhook Logs | `GET /teknisi/webhook-logs`, detail `GET /teknisi/webhook-logs/{id}` | `teknisi/webhook-logs.blade.php` |
+| Notification Logs | `GET /teknisi/notification-logs`, detail `GET /teknisi/notification-logs/{id}` | `teknisi/notification-logs.blade.php` |
+| Failed Jobs | `GET /teknisi/failed-jobs`, detail `GET /teknisi/failed-jobs/{id}` | `teknisi/failed-jobs.blade.php` |
+
+- Tabel + paginasi + pencarian (`search`, `page`, `per_page`) dirender oleh komponen reusable `<x-teknisi.log-explorer kind="...">`; state Alpine-nya ada di `resources/js/teknisi.js` (`teknisiLogExplorer`).
+- Klik baris → `GET .../{id}` → modal JSON viewer `<pre><code>` dengan tab **Payload / Response / Data Lengkap** (`JSON.stringify(data, null, 2)`).
+- Spinner tampil saat halaman/tab dimuat, saat refresh, dan saat detail modal mengambil data. Toggle **Auto-refresh aktif** (interval 15 detik) aktif secara default.
+- Navigasi antar modul teknisi hanya lewat sidebar kiri (`components/teknisi/sidebar.blade.php`); sub-navbar horizontal sudah dihapus.
+- Profil di top navbar dinamis dari user terotentikasi (`name` / `nama` / `nama_pengguna`) dengan avatar inisial (`getInitials`).
+
 ### 🔜 Belum (butuh backend)
-- Ongkir otomatis saat checkout — `POST /shipping/cost` & `/admin/shipping/simulate` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis.
+- **Pembayaran manual via WhatsApp** — checkout tidak lagi menghitung ongkir otomatis (RajaOngkir) dan tidak membuka Midtrans Snap. Pesanan dibuat dengan total **belum termasuk ongkir**, lalu pelanggan diarahkan ke WhatsApp admin (`6282210516993`) berisi nomor pesanan, alamat, nomor HP, daftar barang, dan total. Tombol **Bayar via WhatsApp** di halaman Pesanan Saya memakai alur yang sama. Halaman admin RajaOngkir/Midtrans tetap ada.
 - CRUD user admin (ubah/hapus) — `GET /users` hanya punya list/detail + `POST /users`.
 - Galeri atelier — belum ada endpoint.
 - Login Google GIS — menyusul client ID disepakati.

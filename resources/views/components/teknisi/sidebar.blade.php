@@ -20,21 +20,42 @@
             <div class="space-y-1">
                 <p class="px-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">MONITORING & AUDIT</p>
 
-                <!-- Menu 1: Audit Log & Teknis -->
-                <a href="{{ route('teknisi.audit-log') }}" 
+                <!-- Dashboard -->
+                <a href="{{ route('teknisi.dashboard') }}"
+                   class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition {{ request()->routeIs('teknisi.dashboard') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60' }}">
+                    <i class="fa-solid fa-gauge-high text-sm w-4"></i>
+                    <span>Dashboard Teknisi</span>
+                </a>
+
+                <!-- Audit Log & Teknis -->
+                <a href="{{ route('teknisi.audit-log') }}"
                    class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition {{ request()->routeIs('teknisi.audit-log') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60' }}">
                     <i class="fa-solid fa-code-commit text-sm w-4"></i>
                     <span>Audit Log & Teknis</span>
                 </a>
 
-                <!-- Menu 2: Log Webhook & Notifikasi -->
-                <a href="{{ route('teknisi.webhook-logs') }}" 
+                <!-- Log Webhook -->
+                <a href="{{ route('teknisi.webhook-logs') }}"
                    class="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition {{ request()->routeIs('teknisi.webhook-logs') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60' }}">
                     <div class="flex items-center gap-3">
-                        <i class="fa-solid fa-diagram-project text-sm w-4"></i>
-                        <span>Log Webhook & Notifikasi</span>
+                        <i class="fa-solid fa-bolt text-sm w-4"></i>
+                        <span>Log Webhook</span>
                     </div>
                     <span class="text-[9px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded font-mono font-extrabold border border-sky-400/30">LIVE</span>
+                </a>
+
+                <!-- Log Notifikasi -->
+                <a href="{{ route('teknisi.notification-logs') }}"
+                   class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition {{ request()->routeIs('teknisi.notification-logs') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60' }}">
+                    <i class="fa-solid fa-envelope text-sm w-4"></i>
+                    <span>Log Notifikasi</span>
+                </a>
+
+                <!-- Failed Jobs -->
+                <a href="{{ route('teknisi.failed-jobs') }}"
+                   class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition {{ request()->routeIs('teknisi.failed-jobs') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60' }}">
+                    <i class="fa-solid fa-triangle-exclamation text-sm w-4"></i>
+                    <span>Failed Jobs</span>
                 </a>
             </div>
 
