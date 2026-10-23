@@ -1074,7 +1074,7 @@
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; return; }
         const me = await PandansariAPI.me();
-        if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; return; }
+        if (!me.ok || me.data?.peran !== 'admin') { this.notAdmin = true; return; }
         this.loadMe();
         this.loadKategori();
         this.loadHeroes();

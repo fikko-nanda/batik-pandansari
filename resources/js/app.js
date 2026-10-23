@@ -23,6 +23,8 @@
  *   POST /api/me/google   { token | access_token | id_token } → tautkan akun Google (auth:sanctum)
  *   GET  /api/voucher-usages/me
  *   Seluruh endpoint admin → lihat sub-objek `PandansariAPI.admin` (di bawah).
+ *   Seluruh endpoint teknisi → lihat sub-objek `PandansariAPI.teknisi` (dashboard,
+ *     health, audit-logs, webhook-logs, notification-logs, failed-jobs + detail).
  *
  * ATURAN PATH — SEMUA endpoint dipanggil TANPA prefix '/api', cukup:
  *   this.fetch('/me'), this.fetch('/cart/items', {...})
@@ -590,6 +592,71 @@ window.PandansariAPI = {
             (ok ? 'background:#059669;color:#fff;' : 'background:#e11d48;color:#fff;');
         document.body.appendChild(el);
         setTimeout(() => el.remove(), 3000);
+    },
+
+    /* ---------- Teknisi / Engineering Console ---------- */
+    /**
+     * Endpoint modul teknisi (dipanggil: PandansariAPI.teknisi.auditLogs()).
+     * Semua request tetap lewat PandansariAPI.fetch → otomatis membawa
+     * header `ngrok-skip-browser-warning` + `Authorization: Bearer <token>`.
+     *
+     *   GET /teknisi/dashboard
+     *   GET /teknisi/health
+     *   GET /teknisi/audit-logs[?page=&per_page=&search=]
+     *   GET /teknisi/audit-logs/{id}
+     *   GET /teknisi/webhook-logs[?page=&per_page=&search=]
+     *   GET /teknisi/webhook-logs/{id}
+     *   GET /teknisi/notification-logs[?page=&per_page=&search=]
+     *   GET /teknisi/notification-logs/{id}
+     *   GET /teknisi/failed-jobs[?page=&per_page=&search=]
+     *   GET /teknisi/failed-jobs/{id}
+     */
+    teknisi: {
+        _TYPES: {
+            audit: 'audit-logs',
+            webhook: 'webhook-logs',
+            notification: 'notification-logs',
+            failed: 'failed-jobs',
+        },
+        _qs(params = {}) {
+            const q = new URLSearchParams();
+            for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') q.set(k, v);
+            const qs = q.toString();
+            return qs ? '?' + qs : '';
+        },
+        /** GET /teknisi/{dashboard|health}. */
+        dashboard() { return PandansariAPI.fetch('/teknisi/dashboard'); },
+        health() { return PandansariAPI.fetch('/teknisi/health'); },
+        /** Daftar log generik: kind = audit | webhook | notification | failed. */
+        list(kind, params = {}) {
+            const path = this._TYPES[kind];
+            if (!path) {
+                return Promise.resolve({
+                    ok: false, status: 0, data: null, meta: null, errors: {},
+                    message: `Jenis log teknisi tidak dikenal: ${kind}.`,
+                });
+            }
+            return PandansariAPI.fetch(`/teknisi/${path}${this._qs(params)}`);
+        },
+        /** Detail satu baris log/job (untuk JSON viewer di modal). */
+        detail(kind, id) {
+            const path = this._TYPES[kind];
+            if (!path) {
+                return Promise.resolve({
+                    ok: false, status: 0, data: null, meta: null, errors: {},
+                    message: `Jenis log teknisi tidak dikenal: ${kind}.`,
+                });
+            }
+            return PandansariAPI.fetch(`/teknisi/${path}/${encodeURIComponent(id)}`);
+        },
+        auditLogs(params = {}) { return this.list('audit', params); },
+        auditLog(id) { return this.detail('audit', id); },
+        webhookLogs(params = {}) { return this.list('webhook', params); },
+        webhookLog(id) { return this.detail('webhook', id); },
+        notificationLogs(params = {}) { return this.list('notification', params); },
+        notificationLog(id) { return this.detail('notification', id); },
+        failedJobs(params = {}) { return this.list('failed', params); },
+        failedJob(id) { return this.detail('failed', id); },
     },
 
     /* ---------- Admin (role: admin) ---------- */

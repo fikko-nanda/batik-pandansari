@@ -14,6 +14,12 @@ return [
     |
     */
 
+    // Base URL API backend (dipakai MediaProxyController). WAJIB lewat config()
+    // agar tetap terbaca setelah `php artisan config:cache` (env() = null di runtime).
+    'api' => [
+        'url' => env('VITE_API_URL'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

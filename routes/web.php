@@ -60,6 +60,11 @@ Route::get('/orders', function () {
     return view('customer.orders');
 })->name('customer.orders');
 
+// Detail pesanan (customer) — sumber alur konfirmasi WhatsApp → bayar Midtrans Snap
+Route::get('/orders/{id}', function ($id) {
+    return view('orders.show', ['id' => $id]);
+})->name('customer.order.show');
+
 Route::get('/address', function () {
     return view('customer.address');
 })->name('customer.address');
@@ -135,6 +140,10 @@ Route::prefix('admin')->group(function () {
 
 // 5. Modul Teknisi (Engineering Console) - DIPISAH AGAR URL STANDALONE
 Route::prefix('teknisi')->group(function () {
+    Route::get('/', function () {
+        return view('teknisi.index');
+    })->name('teknisi.dashboard');
+
     Route::get('/audit-logs', function () {
         return view('teknisi.audit-log');
     })->name('teknisi.audit-log');
@@ -142,4 +151,12 @@ Route::prefix('teknisi')->group(function () {
     Route::get('/webhook-logs', function () {
         return view('teknisi.webhook-logs');
     })->name('teknisi.webhook-logs');
+
+    Route::get('/notification-logs', function () {
+        return view('teknisi.notification-logs');
+    })->name('teknisi.notification-logs');
+
+    Route::get('/failed-jobs', function () {
+        return view('teknisi.failed-jobs');
+    })->name('teknisi.failed-jobs');
 });
