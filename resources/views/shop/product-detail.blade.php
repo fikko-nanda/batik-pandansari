@@ -16,15 +16,55 @@
             // State UI
             activeImage: '',
             fallbackImage: '{{ asset('images/katalog1.webp') }}',
-            selectedVariantId: null,
+            selectedWarna: '',
+            selectedUkuran: '',
             qty: 1,
             cartBusy: false,
             notice: '',       // pesan sukses/eror aksi (keranjang/wishlist)
             noticeOk: false,
             rekomendasi: [],  // produk serupa dari kategori sama (GET /products?category=...)
 
+            // Varian terpilih = kombinasi warna + ukuran
             get selectedVariant() {
-                return this.variants.find(v => v.id_variant === this.selectedVariantId) ?? null;
+                return this.variantFor(this.selectedWarna, this.selectedUkuran);
+            },
+
+            // Daftar warna unik dari varian aktif
+            get listWarna() {
+                return [...new Set(this.variants.map(v => v.warna).filter(Boolean))];
+            },
+
+            // Ukuran unik untuk warna terpilih, diurutkan logis
+            get listUkuran() {
+                const URUT = ['ALL SIZE', 'FREE SIZE', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL'];
+                const src = this.selectedWarna
+                    ? this.variants.filter(v => (v.warna ?? '') === this.selectedWarna)
+                    : this.variants;
+                const uniq = [...new Set(src.map(v => v.ukuran).filter(Boolean))];
+                return uniq.sort((a, b) => {
+                    const ia = URUT.indexOf(String(a).toUpperCase());
+                    const ib = URUT.indexOf(String(b).toUpperCase());
+                    if (ia === -1 && ib === -1) return String(a).localeCompare(String(b));
+                    if (ia === -1) return 1;
+                    if (ib === -1) return -1;
+                    return ia - ib;
+                });
+            },
+
+            // Cari varian dari kombinasi warna + ukuran
+            variantFor(warna, ukuran) {
+                return this.variants.find(v => (v.warna ?? '') === (warna ?? '') && (v.ukuran ?? '') === (ukuran ?? '')) ?? null;
+            },
+
+            pilihWarna(w) {
+                this.selectedWarna = w;
+                this.selectedUkuran = this.listUkuran[0] ?? '';
+                this.qty = 1;
+            },
+
+            pilihUkuran(u) {
+                this.selectedUkuran = u;
+                this.qty = 1;
             },
 
             async load() {
@@ -42,9 +82,10 @@
                 this.images = imgs.map(i => ({ src: PandansariAPI.imgUrl(i.path_gambar ?? i.url), fallback: this.fallbackImage, label: i.alt_text ?? 'Foto Produk' }));
                 this.activeImage = this.images[0]?.src ?? this.fallbackImage;
 
-                // Varian aktif hanya; pilih default = varian pertama
+                // Varian aktif hanya; default = warna pertama + ukuran pertama yang tersedia
                 this.variants = (v.data ?? []).filter(x => x.status_varian !== 'nonaktif');
-                if (this.variants.length) this.selectedVariantId = this.variants[0].id_variant;
+                this.selectedWarna = this.listWarna[0] ?? '';
+                this.selectedUkuran = this.listUkuran[0] ?? '';
             },
 
             changeImage(img) { this.activeImage = img.src; },
@@ -193,27 +234,49 @@
                         </div>
                     </div>
 
-                    <!-- Varian Selector (dari GET /api/products/{id}/variants) -->
-                    <div class="space-y-2">
-                        <div class="flex items-center justify-between text-xs">
-                            <span class="font-bold text-[#0F1A24]">Pilih Ukuran / Varian:</span>
-                            <span class="text-slate-400 font-medium" x-show="selectedVariant" x-text="'Warna: ' + (selectedVariant?.warna ?? '-')"></span>
+                    <!-- Varian Selector — 2 tahap: Warna → Ukuran (dari GET /api/products/{id}/variants) -->
+                    <div class="space-y-4">
+
+                        <!-- Tahap 1: Pilih Warna -->
+                        <div class="space-y-2" x-show="listWarna.length">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-bold text-[#0F1A24]">Pilih Warna:</span>
+                                <span class="text-slate-400 font-medium" x-text="selectedWarna || '—'"></span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="w in listWarna" :key="'w-' + w">
+                                    <button @click="pilihWarna(w)"
+                                            type="button"
+                                            class="px-4 h-10 sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center"
+                                            :class="selectedWarna === w ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
+                                        <span x-text="w"></span>
+                                    </button>
+                                </template>
+                            </div>
                         </div>
 
-                        <div class="flex flex-wrap gap-2">
-                            <template x-for="v in variants" :key="v.id_variant">
-                                <button @click="if (v.stok > 0) { selectedVariantId = v.id_variant; qty = 1; }"
-                                        type="button"
-                                        :disabled="v.stok <= 0"
-                                        class="px-3 h-10 sm:w-auto sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed"
-                                        :class="selectedVariantId === v.id_variant ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
-                                    <span x-text="v.ukuran ? v.ukuran : (v.nama_varian ?? 'Varian')"></span>
-                                    <span class="block text-[9px] font-medium" :class="selectedVariantId === v.id_variant ? 'text-slate-300' : 'text-slate-400'"
-                                          x-text="v.stok > 0 ? PandansariAPI.formatRp(v.harga) : 'HABIS'"></span>
-                                </button>
-                            </template>
-                            <p class="text-xs text-slate-400 italic w-full" x-show="!loading && !variants.length">Varian tidak tersedia.</p>
+                        <!-- Tahap 2: Pilih Ukuran (terfilter sesuai warna terpilih) -->
+                        <div class="space-y-2" x-show="listUkuran.length">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-bold text-[#0F1A24]">Pilih Ukuran:</span>
+                                <span class="text-slate-400 font-medium" x-show="selectedVariant" x-text="'Tersedia ' + (selectedVariant?.stok ?? 0) + ' buah'"></span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="u in listUkuran" :key="'u-' + u">
+                                    <button @click="pilihUkuran(u)"
+                                            type="button"
+                                            :disabled="(variantFor(selectedWarna, u)?.stok ?? 0) <= 0"
+                                            class="px-3 h-10 sm:w-auto sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed"
+                                            :class="selectedUkuran === u ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
+                                        <span x-text="u"></span>
+                                        <span class="block text-[9px] font-medium" :class="selectedUkuran === u ? 'text-slate-300' : 'text-slate-400'"
+                                              x-text="(variantFor(selectedWarna, u)?.stok ?? 0) > 0 ? PandansariAPI.formatRp(variantFor(selectedWarna, u).harga) : 'HABIS'"></span>
+                                    </button>
+                                </template>
+                            </div>
                         </div>
+
+                        <p class="text-xs text-slate-400 italic" x-show="!loading && !variants.length">Varian tidak tersedia.</p>
                     </div>
 
                     <!-- Size Chart Table Box -->
