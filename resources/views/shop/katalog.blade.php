@@ -181,24 +181,6 @@
                 </p>
             </div>
 
-            <!-- 3. Promo Banner Diskon 25% -->
-            <div class="relative bg-[#0F1A24] rounded-2xl p-5 sm:p-8 text-white mb-6 sm:mb-8 overflow-hidden shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div class="relative z-10 max-w-2xl">
-                    <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-900/60 border border-sky-400/30 text-[#BAE6FD] text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mb-2">
-                        <i class="fa-solid fa-tag text-[9px]"></i> BANNER PROMO INDONESIA
-                    </div>
-                    <h2 class="text-lg sm:text-2xl font-bold text-white tracking-tight">
-                        Diskon Spesial Hingga 25%
-                    </h2>
-                    <p class="text-xs text-slate-300 mt-1 leading-relaxed">
-                        Nikmati penawaran eksklusif untuk koleksi sarimbit keluarga, kemeja pria, dan Wastra Tradisional Lembaran. Gunakan kode kupon istimewa di keranjang belanja Anda: <span class="font-mono text-sky-300 font-bold underline underline-offset-2">PANDANSARI25</span>
-                    </p>
-                </div>
-                <a href="#" class="relative z-10 w-full sm:w-auto text-center shrink-0 bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold px-5 py-3 rounded-xl transition shadow">
-                    KLAIM VOUCHER & BELANJA →
-                </a>
-            </div>
-
             <!-- Pencarian Kata Kunci Motif / Produk -->
             <div class="relative w-full mb-4">
                 <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
@@ -214,7 +196,7 @@
                 </button>
             </div>
 
-            <!-- 4. Filter Category Pills (Rapi Flex-Wrap Tanpa Geser) -->
+            <!-- 3. Filter Category Pills (Rapi Flex-Wrap Tanpa Geser) -->
             <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-4 sm:mb-6 text-[11px] sm:text-xs font-semibold font-['Plus_Jakarta_Sans']">
                 <!-- Pill: Semua (tanpa filter kategori) -->
                 <button @click="clearCategory()"
@@ -235,7 +217,7 @@
                 </template>
             </div>
 
-            <!-- 5. Active Filter Header Bar -->
+            <!-- 4. Active Filter Header Bar -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200/80 mb-6 shadow-sm font-['Plus_Jakarta_Sans']">
                 
                 <!-- Applied Filter Tags -->
@@ -300,7 +282,7 @@
 
             </div>
 
-            <!-- 6. Grid Produk (2 Kolom di HP / Smartphone, 4 Kolom di Desktop) -->
+            <!-- 5. Grid Produk (2 Kolom di HP / Smartphone, 4 Kolom di Desktop) -->
             <div class="grid gap-3 sm:gap-6 mb-10"
                  :class="viewMode === 'grid' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'">
 
@@ -331,7 +313,7 @@
             </template>
             </div>
 
-            <!-- 7. Pagination Bar (dari meta GET /api/products) -->
+            <!-- 6. Pagination Bar (dari meta GET /api/products) -->
             <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-200/80 mb-12 font-['Plus_Jakarta_Sans']">
                 <span class="text-xs text-slate-500 text-center sm:text-left">
                     Halaman <span class="font-bold text-slate-900" x-text="page"></span> dari <span class="font-bold text-slate-900" x-text="lastPage"></span> (Menampilkan <span x-text="total"></span> mahakarya)
@@ -355,7 +337,7 @@
                 </div>
             </div>
 
-            <!-- 8. Banner Konsultasi Custom WhatsApp -->
+            <!-- 7. Banner Konsultasi Custom WhatsApp -->
             <x-consultation-banner />
 
         </div>

@@ -158,16 +158,15 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 | Stok | `GET /admin/products` (variants), stepper stok → `PUT /variants/{id}`, toggle toko → `PUT /products/{id}` | `admin/stock.blade.php` |
 | Pesanan | `GET /admin/orders` (filter status), `GET /admin/orders/{id}` (detail), `PUT /admin/orders/{id}/status`, `POST /admin/orders/{id}/fulfillments`, `GET /admin/order-fulfillments` | `admin/orders.blade.php` |
 | Userlist | `GET /users` (dinormalisasi helper), `GET /admin/users/summary`, `POST /users`, CSV `/users/export` | `admin/userlist.blade.php` |
-| Promo/Voucher | `GET /vouchers`, `POST /vouchers`, `GET /vouchers/summary`, `PUT /vouchers/{id}/publish|unpublish`, `DELETE /vouchers/{id}` | `admin/create-promo.blade.php` |
+| Promo/Voucher | `GET /vouchers`, `POST /vouchers` (judul 2 jenis: semua produk / `id_product_peruntukan` khusus 1 produk — BE sudah enforce server-side), `GET /vouchers/summary`, `PUT /vouchers/{id}/publish|unpublish`, `DELETE /vouchers/{id}` | `admin/create-promo.blade.php` |
 | Midtrans | `GET /admin/payments` (filter status/provider), `GET /admin/payments/summary` | `admin/midtrans.blade.php` |
-| RajaOngkir | `GET /admin/shipping/{config,health,couriers}`, `PUT /admin/shipping/couriers/{code}`, `GET /shipping/destinations`, `POST /admin/shipping/simulate` | `admin/rajaongkir.blade.php` |
 | Laporan | `GET /admin/{orders,payments}/summary`, buku kas `GET /admin/payments` | `admin/sales-report.blade.php` |
-| Pengaturan | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories`, CRUD `/admin/cms/hero` + `/admin/cms/kategori`, `GET/PUT /admin/cms/galeri` + `POST/PUT/DELETE /admin/cms/galeri/gambar(/{id})`, `GET/PUT /admin/cms/profil-usaha`, CRUD `/admin/cms/fasilitas` | `admin/settings.blade.php` |
+| Pengaturan | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories`, CRUD `/admin/cms/hero` + `/admin/cms/kategori`, `GET/PUT /admin/cms/galeri` + `POST/PUT/DELETE /admin/cms/galeri/gambar(/{id})`, `GET/PUT /admin/cms/profil-usaha`, CRUD `/admin/cms/fasilitas`, CRUD `/admin/cms/promos` (tab Kelola Promo) | `admin/settings.blade.php` |
 
-> Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), dan fasilitas sudah terhubung. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri/{filename}`.
+> Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), fasilitas, dan **multi promo beranda** (`GET /cms/promos` + CRUD `/admin/cms/promos`, lihat `docs/ADENDUM-CMS-PROMO-MULTI.md`) sudah terhubung. Landing fallback ke `GET /cms/promo` lalu banner statis. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri|cms-promo/{filename}`.
 
 ### 🔜 Belum (butuh backend)
-- Ongkir otomatis saat checkout — `POST /shipping/cost` & `/admin/shipping/simulate` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis.
+- Ongkir otomatis saat checkout — `POST /shipping/cost` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis. Halaman admin Integrasi RajaOngkir sudah dihapus; endpoint `/admin/shipping/*` tidak dipakai UI.
 - CRUD user admin (ubah/hapus) — `GET /users` hanya punya list/detail + `POST /users`.
 - Galeri atelier — belum ada endpoint.
 - Login Google GIS — menyusul client ID disepakati.

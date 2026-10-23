@@ -88,6 +88,26 @@
     fasEditNama: '',
     pendingFasDeletes: [],
 
+    // === Tab 5: Kelola Promo Beranda (multi-promo) ===
+    promoList: [],
+    promoVouchers: [],
+    loadingPromo: true,
+    savingPromo: false,
+    promoEditorOpen: false,
+    promoEditingId: null,
+    promoEditingVoucher: null,
+    promoForm: {
+        id_voucher: '',
+        badge: '',
+        tautan_tujuan: '',
+    },
+    promoGambarPending: null,
+    promoGambarPreview: '',
+    promoGambarUrl: '',
+    promoEndpointSiap: true,
+    promoLoadError: '',
+    lastSavedPromoAt: '',
+
     notice: '', noticeOk: true,
     pesan(ok, msg) { this.noticeOk = ok; this.notice = msg; setTimeout(() => this.notice = '', 4500); },
 
@@ -1071,6 +1091,211 @@
         this.puDirty = v;
     },
 
+    // === Kelola Promo Beranda (multi-promo) ===
+    get promoVoucher() {
+        const id = String(this.promoForm?.id_voucher ?? '');
+        if (!id) return null;
+        return this.promoVouchers.find(v => String(v.id_voucher) === id)
+            ?? this.promoEditingVoucher ?? null;
+    },
+    get promoLinkOtomatis() {
+        const v = this.promoVoucher;
+        return (v && v.id_product_peruntukan) ? '/detail/' + v.id_product_peruntukan : '';
+    },
+    get promoVoucherOptions() {
+        const terpilih = String(this.promoForm?.id_voucher ?? '');
+        return this.promoVouchers.filter(v => {
+            const id = String(v.id_voucher ?? '');
+            if (!id) return false;
+            if (id === terpilih) return true;
+            return this.voucherAktif(v) && !this.voucherDipakai(id);
+        });
+    },
+    voucherAktif(v) {
+        if (!v) return false;
+        const status = String(v.status_voucher ?? '').toLowerCase();
+        if (status && status !== 'aktif') return false;
+        const sekarang = Date.now();
+        const mulai = v.tanggal_mulai ? new Date(v.tanggal_mulai).getTime() : null;
+        const selesai = v.tanggal_selesai ? new Date(v.tanggal_selesai).getTime() + 86400000 : null;
+        if (mulai && mulai > sekarang) return false;
+        if (selesai && selesai < sekarang) return false;
+        return true;
+    },
+    promoStatus(p) {
+        const v = p?.voucher ?? p ?? null;
+        if (!v) return { label: 'Tidak diketahui', kelas: 'bg-slate-100 text-slate-600 border-slate-200' };
+        const status = String(v.status_voucher ?? '').toLowerCase();
+        if (status && status !== 'aktif') {
+            return { label: 'Nonaktif', kelas: 'bg-slate-100 text-slate-600 border-slate-200' };
+        }
+        const sekarang = Date.now();
+        const mulai = v.tanggal_mulai ? new Date(v.tanggal_mulai).getTime() : null;
+        const selesai = v.tanggal_selesai ? new Date(v.tanggal_selesai).getTime() + 86400000 : null;
+        if (mulai && mulai > sekarang) {
+            return { label: 'Belum mulai', kelas: 'bg-amber-50 text-amber-700 border-amber-200' };
+        }
+        if (selesai && selesai < sekarang) {
+            return { label: 'Kedaluwarsa', kelas: 'bg-rose-50 text-rose-700 border-rose-200' };
+        }
+        return { label: 'Aktif', kelas: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    },
+    voucherDipakai(id) {
+        const target = String(id ?? '');
+        if (!target) return false;
+        return this.promoList.some(p => {
+            const promoId = String(p.id_cms_promo ?? p.id ?? '');
+            if (this.promoEditingId != null && promoId === String(this.promoEditingId)) return false;
+            return String(p.id_voucher ?? p.voucher?.id_voucher ?? '') === target;
+        });
+    },
+    promoKode(p) {
+        const v = p?.voucher ?? p ?? {};
+        return v.kode_voucher ?? '';
+    },
+    promoNama(p) {
+        const v = p?.voucher ?? p ?? {};
+        return v.nama_voucher || this.promoKode(p) || 'Promo';
+    },
+    promoBadge(p) {
+        const v = p?.voucher ?? p ?? {};
+        return p?.badge ?? v.badge ?? '';
+    },
+    promoGambar(p) {
+        const v = p?.voucher ?? p ?? {};
+        return PandansariAPI.imgUrl(p?.url_gambar ?? p?.gambar ?? v.url_gambar ?? '');
+    },
+    promoLink(p) {
+        const v = p?.voucher ?? p ?? {};
+        return p?.tautan_tujuan ?? p?.link ?? (v.id_product_peruntukan ? '/detail/' + v.id_product_peruntukan : '/katalog');
+    },
+    promoJenis(v) {
+        if (!v) return '';
+        return v.id_product_peruntukan
+            ? ('Khusus 1 produk' + (v.nama_produk_peruntukan ? ' — ' + v.nama_produk_peruntukan : ''))
+            : 'Semua produk';
+    },
+    formatDiskon(v) {
+        if (!v) return '—';
+        return v.tipe_diskon === 'persentase' ? (v.nilai_diskon + '%') : PandansariAPI.formatRp(v.nilai_diskon);
+    },
+    async loadPromo() {
+        this.loadingPromo = true;
+        const [vRes, cRes] = await Promise.all([
+            PandansariAPI.admin.vouchers({ per_page: 100 }),
+            PandansariAPI.admin.cmsPromos(),
+        ]);
+        if (vRes.ok) {
+            this.promoVouchers = Array.isArray(vRes.data) ? vRes.data : (vRes.data?.data ?? []);
+        } else {
+            this.pesan(false, vRes.message);
+        }
+        this.promoEndpointSiap = cRes.ok || ![404, 405].includes(cRes.status ?? 0);
+        this.promoLoadError = cRes.ok ? '' : (cRes.message || 'Gagal memuat daftar promo.');
+        if (cRes.ok) {
+            const data = cRes.data;
+            this.promoList = Array.isArray(data)
+                ? data
+                : (Array.isArray(data?.data) ? data.data : (data ? [data] : []));
+        } else {
+            this.promoList = [];
+            if (this.promoEndpointSiap) this.pesan(false, this.promoLoadError);
+        }
+        this.loadingPromo = false;
+    },
+    _lepasGambarPromo() {
+        if (String(this.promoGambarPreview).startsWith('blob:')) URL.revokeObjectURL(this.promoGambarPreview);
+    },
+    bukaTambahPromo() {
+        this._lepasGambarPromo();
+        this.promoEditingId = null;
+        this.promoEditingVoucher = null;
+        this.promoForm = { id_voucher: '', badge: '', tautan_tujuan: '' };
+        this.promoGambarPending = null;
+        this.promoGambarPreview = '';
+        this.promoGambarUrl = '';
+        this.promoEditorOpen = true;
+    },
+    bukaEditPromo(p) {
+        this._lepasGambarPromo();
+        const v = p?.voucher ?? p ?? {};
+        this.promoEditingId = String(p?.id_cms_promo ?? p?.id ?? '');
+        this.promoEditingVoucher = p?.voucher ?? null;
+        this.promoForm = {
+            id_voucher: String(p?.id_voucher ?? v?.id_voucher ?? ''),
+            badge: p?.badge ?? v?.badge ?? '',
+            tautan_tujuan: p?.tautan_tujuan ?? p?.link ?? '',
+        };
+        this.promoGambarPending = null;
+        this.promoGambarPreview = '';
+        this.promoGambarUrl = PandansariAPI.imgUrl(p?.url_gambar ?? p?.gambar ?? v?.url_gambar ?? '');
+        this.promoEditorOpen = true;
+    },
+    tutupPromoEditor() {
+        this._lepasGambarPromo();
+        this.promoEditorOpen = false;
+        this.promoEditingId = null;
+        this.promoEditingVoucher = null;
+        this.promoForm = { id_voucher: '', badge: '', tautan_tujuan: '' };
+        this.promoGambarPending = null;
+        this.promoGambarPreview = '';
+        this.promoGambarUrl = '';
+    },
+    pilihGambarPromo(event) {
+        const fl = event.target.files?.[0];
+        event.target.value = '';
+        if (!fl) return;
+        if (fl.size > 2 * 1024 * 1024) { this.pesan(false, fl.name + ' melebihi 2 MB. Gambar tidak diganti.'); return; }
+        this._lepasGambarPromo();
+        this.promoGambarPending = fl;
+        this.promoGambarPreview = URL.createObjectURL(fl);
+    },
+    batalkanGambarPromo() {
+        this._lepasGambarPromo();
+        this.promoGambarPending = null;
+        this.promoGambarPreview = '';
+    },
+    async simpanPromo() {
+        const voucherId = String(this.promoForm?.id_voucher ?? '').trim();
+        if (!voucherId) { this.pesan(false, 'Pilih voucher promo terlebih dahulu.'); return; }
+        if (this.voucherDipakai(voucherId)) { this.pesan(false, 'Voucher ini sudah dipakai promo lain.'); return; }
+
+        this.savingPromo = true;
+        const fd = new FormData();
+        fd.append('id_voucher', voucherId);
+        fd.append('badge', String(this.promoForm?.badge ?? '').trim());
+        fd.append('tautan_tujuan', String(this.promoForm?.tautan_tujuan ?? '').trim());
+        if (this.promoGambarPending) fd.append('gambar', this.promoGambarPending);
+
+        const res = this.promoEditingId
+            ? await PandansariAPI.admin.updateCmsPromo(this.promoEditingId, fd)
+            : await PandansariAPI.admin.createCmsPromo(fd);
+        this.savingPromo = false;
+
+        if (res.ok) {
+            this.pesan(true, this.promoEditingId ? 'Promo berhasil diperbarui.' : 'Promo berhasil ditambahkan.');
+            this.lastSavedPromoAt = this.formatTanggal(new Date());
+            this.tutupPromoEditor();
+            await this.loadPromo();
+        } else {
+            this.promoEndpointSiap = ![404, 405].includes(res.status ?? 0);
+            this.pesan(false, this._mediaError(res));
+        }
+    },
+    async hapusPromo(p) {
+        const id = String(p?.id_cms_promo ?? p?.id ?? '');
+        if (!id) return;
+        if (!confirm('Hapus promo ' + this.promoNama(p) + ' dari beranda? Voucher tetap tersimpan.')) return;
+        const res = await PandansariAPI.admin.deleteCmsPromo(id);
+        if (res.ok) {
+            this.pesan(true, 'Promo dihapus dari beranda.');
+            this.lastSavedPromoAt = this.formatTanggal(new Date());
+            await this.loadPromo();
+        } else {
+            this.pesan(false, this._mediaError(res));
+        }
+    },
+
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; return; }
         const me = await PandansariAPI.me();
@@ -1082,6 +1307,7 @@
         this.loadGaleri();
         this.loadProfilUsaha();
         this.loadFasilitas();
+        this.loadPromo();
     }
 }" class="space-y-6 text-slate-800 font-sans pb-8">
 
@@ -1104,7 +1330,7 @@
             Pengaturan & Profil Atelier
         </h1>
         <p class="text-xs text-slate-500 mt-1">
-            Konfigurasi identitas atelier, alamat titik jemput logistik RajaOngkir, manajemen konten beranda, dan galeri atelier.
+            Konfigurasi identitas atelier, manajemen konten beranda, dan galeri atelier.
         </p>
     </div>
 
@@ -1135,6 +1361,11 @@
                 :class="activeTab === 'galeri' ? 'bg-[#0A192F] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'"
                 class="px-4 py-2.5 rounded-xl transition cursor-pointer">
             Galeri &amp; Alamat Atelier
+        </button>
+        <button @click="activeTab = 'promo'"
+                :class="activeTab === 'promo' ? 'bg-[#0A192F] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'"
+                class="px-4 py-2.5 rounded-xl transition cursor-pointer">
+            Kelola Promo
         </button>
     </div>
 
@@ -2004,6 +2235,293 @@
                     </button>
                 </div>
             </div>
+        </div>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 5: KELOLA PROMO BERANDA                -->
+    <!-- ========================================== -->
+    <div x-show="activeTab === 'promo'" x-transition class="space-y-6">
+
+        <!-- Catatan bila endpoint belum tersedia -->
+        <div x-show="!promoEndpointSiap" class="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl px-4 py-3 text-xs font-semibold flex items-start gap-2">
+            <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+            <span>
+                Backend belum menyediakan <code class="font-mono">GET/POST/PUT/DELETE /admin/cms/promos</code>. Tab ini
+                siap dipakai setelah endpoint multi-promo tersedia (lihat
+                <code class="font-mono">docs/ADENDUM-CMS-PROMO-MULTI.md</code>). Sementara itu voucher tetap bisa
+                dikelola lewat <a href="{{ route('admin.create-promo') }}" class="underline font-bold">Buat Promo</a>.
+            </span>
+        </div>
+
+        <div x-show="promoLoadError && !loadingPromo" class="bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl px-4 py-3 text-xs font-semibold flex items-start gap-2">
+            <i class="fa-solid fa-circle-exclamation mt-0.5"></i>
+            <span x-text="'Gagal memuat daftar promo: ' + promoLoadError"></span>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-5">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 bg-[#0A192F] text-sky-400 rounded-xl flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-bullhorn"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base font-extrabold text-slate-900">Banner Promo Beranda</h2>
+                        <span class="text-[10px] text-slate-400 font-bold">GET/POST /admin/cms/promos • PUT/DELETE /admin/cms/promos/{id}</span>
+                    </div>
+                </div>
+                <button type="button" @click="bukaTambahPromo()" :disabled="loadingPromo || !promoEndpointSiap"
+                        class="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-sky-400 hover:bg-sky-500 text-white text-xs font-extrabold shadow-sm transition cursor-pointer disabled:opacity-60">
+                    <i class="fa-solid fa-plus"></i>
+                    TAMBAH PROMO
+                </button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 text-center">
+                <div class="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                    <span class="block text-[9px] font-black uppercase tracking-wider text-slate-400">Total promo</span>
+                    <span class="text-lg font-extrabold text-slate-900" x-text="promoList.length"></span>
+                </div>
+                <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+                    <span class="block text-[9px] font-black uppercase tracking-wider text-emerald-600">Aktif</span>
+                    <span class="text-lg font-extrabold text-emerald-700"
+                          x-text="promoList.filter(p => promoStatus(p).label === 'Aktif').length"></span>
+                </div>
+                <div class="rounded-xl bg-sky-50 border border-sky-200 p-3">
+                    <span class="block text-[9px] font-black uppercase tracking-wider text-sky-600">Voucher aktif</span>
+                    <span class="text-lg font-extrabold text-sky-700" x-text="promoVouchers.filter(v => voucherAktif(v)).length"></span>
+                </div>
+            </div>
+
+            <p x-show="loadingPromo" class="text-xs text-slate-400 font-semibold py-2">
+                <i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Memuat data promo…
+            </p>
+
+            <div x-show="promoEditorOpen" x-transition class="rounded-2xl border-2 border-sky-200 bg-sky-50/40 p-5 space-y-5">
+                <div class="flex items-start justify-between gap-3 border-b border-sky-100 pb-3">
+                    <div>
+                        <h3 class="text-sm font-extrabold text-slate-900" x-text="promoEditingId ? 'Edit Promo' : 'Tambah Promo'"></h3>
+                        <p class="text-[11px] text-slate-500 font-medium">Satu voucher hanya boleh dipakai satu promo beranda.</p>
+                    </div>
+                    <button type="button" @click="tutupPromoEditor()"
+                            class="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <div class="space-y-4 text-xs font-medium">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black tracking-[0.16em] text-slate-500 uppercase">Voucher</label>
+                            <select x-model="promoForm.id_voucher"
+                                    class="w-full bg-white border border-slate-200 rounded-xl px-3 py-3 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                                <option value="">— Pilih voucher aktif —</option>
+                                <template x-for="v in promoVoucherOptions" :key="v.id_voucher">
+                                    <option :value="String(v.id_voucher)"
+                                            x-text="v.kode_voucher + ' — ' + v.nama_voucher + (voucherAktif(v) ? '' : ' (tidak aktif)')"></option>
+                                </template>
+                            </select>
+                            <p x-show="!promoVoucherOptions.length" class="bg-white border border-dashed border-slate-300 rounded-xl px-4 py-3 text-[11px] text-slate-500 font-semibold">
+                                Tidak ada voucher aktif yang tersedia. Buat voucher baru lewat
+                                <a href="{{ route('admin.create-promo') }}" class="text-sky-600 font-bold hover:underline">Buat Promo</a>.
+                            </p>
+                        </div>
+
+                        <div x-show="promoVoucher" class="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                            <div class="flex flex-wrap items-start justify-between gap-2">
+                                <div class="space-y-1">
+                                    <p class="text-sm font-extrabold text-slate-900" x-text="promoVoucher?.nama_voucher ?? ''"></p>
+                                    <p class="text-[11px] text-slate-500 font-medium" x-text="promoVoucher?.deskripsi || 'Tanpa deskripsi.'"></p>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 font-mono font-black text-[10px] text-slate-700"
+                                      x-text="promoVoucher?.kode_voucher ?? ''"></span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div>
+                                    <span class="block text-[9px] font-black uppercase tracking-wider text-slate-400">Diskon</span>
+                                    <span class="text-slate-900 font-bold" x-text="formatDiskon(promoVoucher)"></span>
+                                </div>
+                                <div>
+                                    <span class="block text-[9px] font-black uppercase tracking-wider text-slate-400">Min. belanja</span>
+                                    <span class="text-slate-900 font-bold" x-text="promoVoucher?.minimal_pembelian ? PandansariAPI.formatRp(promoVoucher.minimal_pembelian) : 'Tanpa minimum'"></span>
+                                </div>
+                                <div>
+                                    <span class="block text-[9px] font-black uppercase tracking-wider text-slate-400">Cakupan</span>
+                                    <span class="text-slate-900 font-bold" x-text="promoVoucher?.id_product_peruntukan ? '1 produk' : 'Semua produk'"></span>
+                                </div>
+                            </div>
+                            <p class="text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2"
+                               x-text="promoJenis(promoVoucher)"></p>
+                            <p x-show="!voucherAktif(promoVoucher)"
+                               class="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                Voucher ini sedang tidak aktif/kedaluwarsa. Promo tidak akan tampil di landing sampai voucher aktif kembali.
+                            </p>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black tracking-[0.16em] text-slate-500 uppercase">Badge banner</label>
+                            <input type="text" x-model="promoForm.badge" maxlength="40"
+                                   placeholder="Contoh: EDISI TERBATAS / DISKON LEBARAN"
+                                   class="w-full bg-white border border-slate-200 rounded-xl px-3 py-3 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                            <p class="text-[11px] text-slate-400 font-medium">Kosongkan untuk memakai label bawaan “EDISI TERBATAS”.</p>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black tracking-[0.16em] text-slate-500 uppercase">Link tujuan CTA</label>
+                            <div class="flex items-center gap-2">
+                                <input type="text" x-model="promoForm.tautan_tujuan"
+                                       placeholder="Contoh: /katalog atau /detail/uuid-produk"
+                                       class="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-3 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                                <button type="button" x-show="promoLinkOtomatis" @click="promoForm.tautan_tujuan = promoLinkOtomatis"
+                                        class="px-3 py-3 rounded-xl bg-white border border-slate-300 text-[10px] font-extrabold text-slate-700 hover:bg-slate-50 transition cursor-pointer shrink-0">
+                                    Isi otomatis
+                                </button>
+                            </div>
+                            <p x-show="promoLinkOtomatis" class="text-[11px] text-sky-700 font-semibold">
+                                <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>
+                                <span x-text="'Kosongkan untuk otomatis ke ' + promoLinkOtomatis + ' (produk terikat voucher).'"></span>
+                            </p>
+                            <p x-show="!promoLinkOtomatis" class="text-[11px] text-slate-400 font-medium">
+                                Voucher berlaku untuk semua produk → isi tujuan seperti <code class="font-mono">/katalog</code>.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                                <h4 class="text-xs font-extrabold text-slate-900">Gambar banner</h4>
+                                <span class="text-[9px] font-black uppercase tracking-wider text-slate-400">JPG/PNG/WebP · maks 2 MB</span>
+                            </div>
+
+                            <div class="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 aspect-[16/9]">
+                                <template x-if="promoGambarPreview || promoGambarUrl">
+                                    <img :src="promoGambarPreview || promoGambarUrl" alt="Pratinjau banner promo"
+                                         class="absolute inset-0 w-full h-full object-cover">
+                                </template>
+                                <div x-show="!promoGambarPreview && !promoGambarUrl"
+                                     class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
+                                    <i class="fa-regular fa-image text-2xl"></i>
+                                    <span class="text-[10px] font-bold">Belum ada gambar</span>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <label class="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-sky-400 hover:bg-sky-500 text-white text-[10px] font-extrabold uppercase tracking-wider cursor-pointer transition">
+                                    <i class="fa-solid fa-arrow-up-from-bracket"></i>
+                                    <span x-text="(promoGambarPreview || promoGambarUrl) ? 'Ganti gambar' : 'Unggah gambar'"></span>
+                                    <input type="file" accept="image/jpeg,image/png,image/webp" class="hidden" @change="pilihGambarPromo($event)">
+                                </label>
+                                <button type="button" x-show="promoGambarPreview" @click="batalkanGambarPromo()"
+                                        class="px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-700 text-[10px] font-extrabold hover:bg-slate-50 transition cursor-pointer">
+                                    Batal
+                                </button>
+                            </div>
+
+                            <p class="text-[11px] text-slate-400 font-medium leading-relaxed">
+                                Gambar ini khusus banner promo di beranda (tidak mengubah gambar voucher). Rasio ideal 16:9.
+                            </p>
+                        </div>
+
+                        <div class="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                            <h4 class="text-xs font-extrabold text-slate-900">Pratinjau banner</h4>
+                            <div class="relative rounded-xl overflow-hidden bg-gradient-to-r from-[#0A192F] via-[#132A46] to-[#1E3A5F] text-white min-h-[190px]">
+                                <template x-if="promoGambarPreview || promoGambarUrl">
+                                    <img :src="promoGambarPreview || promoGambarUrl" alt=""
+                                         class="absolute inset-0 w-full h-full object-cover opacity-45">
+                                </template>
+                                <div class="relative p-5 space-y-2.5">
+                                    <span class="inline-block bg-amber-300 text-[#0A192F] text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full"
+                                          x-text="(promoForm.badge || '').trim() || 'EDISI TERBATAS'"></span>
+                                    <h5 class="text-lg font-extrabold leading-tight"
+                                        x-text="promoVoucher?.nama_voucher || 'Judul mengikuti voucher terpilih'"></h5>
+                                    <p class="text-[11px] text-white/70 leading-relaxed line-clamp-2"
+                                       x-text="promoVoucher?.deskripsi || 'Deskripsi singkat promo akan tampil di sini.'"></p>
+                                    <span class="inline-flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wider text-sky-300">
+                                        <span x-text="'Salin kode ' + (promoVoucher?.kode_voucher || 'VOUCHER')"></span>
+                                        <i class="fa-solid fa-copy"></i>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 border-t border-sky-100 pt-4">
+                    <button type="button" @click="tutupPromoEditor()"
+                            class="px-5 py-3 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-extrabold hover:bg-slate-50 transition cursor-pointer">
+                        Batal
+                    </button>
+                    <button type="button" @click="simpanPromo()" :disabled="savingPromo || !promoEndpointSiap || !promoForm.id_voucher"
+                            class="px-6 py-3 rounded-xl bg-sky-400 hover:bg-sky-500 text-white text-xs font-extrabold shadow-sm transition cursor-pointer disabled:opacity-60 flex items-center gap-2">
+                        <i class="fa-solid" :class="savingPromo ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
+                        <span x-text="savingPromo ? 'Menyimpan…' : (promoEditingId ? 'SIMPAN PERUBAHAN' : 'SIMPAN PROMO')"></span>
+                    </button>
+                </div>
+            </div>
+
+            <div x-show="!loadingPromo && !promoList.length" class="bg-slate-50 border border-dashed border-slate-300 rounded-2xl px-6 py-10 text-center space-y-2">
+                <i class="fa-regular fa-images text-3xl text-slate-300"></i>
+                <p class="text-sm font-bold text-slate-700">Belum ada promo beranda</p>
+                <p class="text-[11px] text-slate-500 font-medium">Tambahkan voucher aktif sebagai promo, atau buat voucher baru terlebih dahulu.</p>
+                <a href="{{ route('admin.create-promo') }}" class="inline-flex items-center gap-2 text-[11px] font-extrabold text-sky-600 hover:underline">
+                    <i class="fa-solid fa-plus"></i> Buat Promo
+                </a>
+            </div>
+
+            <div x-show="!loadingPromo && promoList.length" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <template x-for="(p, index) in promoList" :key="String(p.id_cms_promo ?? p.id ?? p.id_voucher ?? index)">
+                    <article class="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                        <div class="relative aspect-[16/7] bg-slate-100">
+                            <template x-if="promoGambar(p)">
+                                <img :src="promoGambar(p)" alt="" class="absolute inset-0 w-full h-full object-cover">
+                            </template>
+                            <div x-show="!promoGambar(p)" class="absolute inset-0 flex items-center justify-center text-slate-300">
+                                <i class="fa-regular fa-image text-3xl"></i>
+                            </div>
+                            <span class="absolute top-3 left-3 px-3 py-1 rounded-full bg-amber-300 text-[#0A192F] text-[9px] font-black uppercase tracking-[0.16em]"
+                                  x-text="promoBadge(p) || 'EDISI TERBATAS'"></span>
+                            <span class="absolute top-3 right-3 px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider bg-white/90"
+                                  :class="promoStatus(p).kelas"
+                                  x-text="promoStatus(p).label"></span>
+                        </div>
+                        <div class="p-4 space-y-3">
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <h4 class="text-sm font-extrabold text-slate-900" x-text="promoNama(p)"></h4>
+                                    <p class="text-[10px] text-slate-400 font-semibold mt-0.5" x-text="p.voucher?.deskripsi ?? p.deskripsi ?? 'Tanpa deskripsi.'"></p>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 font-mono font-black text-[10px] text-slate-700 shrink-0"
+                                      x-text="promoKode(p) || '—'"></span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-[10px] font-semibold">
+                                <div class="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
+                                    <span class="block text-[9px] font-black uppercase tracking-wider text-slate-400">Diskon</span>
+                                    <span class="text-slate-800" x-text="formatDiskon(p.voucher ?? p)"></span>
+                                </div>
+                                <div class="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
+                                    <span class="block text-[9px] font-black uppercase tracking-wider text-slate-400">Link</span>
+                                    <span class="text-slate-800 truncate block" x-text="promoLink(p)"></span>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-end gap-2 pt-1">
+                                <button type="button" @click="bukaEditPromo(p)"
+                                        class="px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-[10px] font-extrabold text-slate-700 hover:bg-slate-50 transition cursor-pointer">
+                                    <i class="fa-solid fa-pen mr-1"></i> EDIT
+                                </button>
+                                <button type="button" @click="hapusPromo(p)"
+                                        class="px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-[10px] font-extrabold text-rose-600 hover:bg-rose-100 transition cursor-pointer">
+                                    <i class="fa-solid fa-trash mr-1"></i> HAPUS
+                                </button>
+                            </div>
+                        </div>
+                    </article>
+                </template>
+            </div>
+
+            <p class="text-[11px] text-slate-500 font-semibold text-right"
+               x-text="lastSavedPromoAt ? 'Perubahan terakhir disimpan pada ' + lastSavedPromoAt : 'Belum ada perubahan tersimpan.'"></p>
         </div>
 
     </div>

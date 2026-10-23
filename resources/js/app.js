@@ -339,6 +339,10 @@ window.PandansariAPI = {
 
     /** GET /cms/fasilitas — daftar fasilitas aktif (publik). */
     cmsFasilitasPublik() { return this.fetch('/cms/fasilitas'); },
+
+    /** GET /cms/promo — banner promo beranda (publik): voucher unggulan / konfigurasi cms_promo; data: null bila kosong. */
+    cmsPromoPublik() { return this.fetch('/cms/promo'); },
+    cmsPromosPublik() { return this.fetch('/cms/promos'); },
     categories() { return this.fetch('/categories'); },
     category(id) { return this.fetch(`/categories/${id}`); },
     products(params = {}) {
@@ -733,6 +737,34 @@ window.PandansariAPI = {
         /** DELETE /admin/cms/fasilitas/{id}. */
         deleteFasilitas(id) { return PandansariAPI.fetch(`/admin/cms/fasilitas/${id}`, { method: 'DELETE' }); },
 
+        /* -- 3.13b Konfigurasi Banner Promo (cms_promo) -- */
+        /** GET /admin/cms/promo — konfigurasi banner promo + voucher terpilih. */
+        cmsPromoKonfig() { return PandansariAPI.fetch('/admin/cms/promo'); },
+        /**
+         * PUT /admin/cms/promo — multipart (gambar opsional).
+         * PUT multipart tak diparse PHP → dikirim POST + `_method=PUT` (alasan sama dengan updateHero).
+         */
+        cmsPromoKonfigSimpan(payload) {
+            if (payload instanceof FormData) {
+                if (!payload.has('_method')) payload.append('_method', 'PUT');
+                return PandansariAPI.fetch('/admin/cms/promo', { method: 'POST', body: payload });
+            }
+            return PandansariAPI.fetch('/admin/cms/promo', { method: 'PUT', body: payload });
+        },
+        /** DELETE /admin/cms/promo/gambar — kosongkan gambar banner tanpa menghapus konfigurasi. */
+        cmsPromoKonfigHapusGambar() { return PandansariAPI.fetch('/admin/cms/promo/gambar', { method: 'DELETE' }); },
+
+        cmsPromos() { return PandansariAPI.fetch('/admin/cms/promos'); },
+        createCmsPromo(payload) { return PandansariAPI.fetch('/admin/cms/promos', { method: 'POST', body: payload }); },
+        updateCmsPromo(id, payload) {
+            if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+                payload.set('_method', 'PUT');
+                return PandansariAPI.fetch(`/admin/cms/promos/${id}`, { method: 'POST', body: payload });
+            }
+            return PandansariAPI.fetch(`/admin/cms/promos/${id}`, { method: 'PUT', body: payload });
+        },
+        deleteCmsPromo(id) { return PandansariAPI.fetch(`/admin/cms/promos/${id}`, { method: 'DELETE' }); },
+
         /* -- 4.3 Voucher -- */
         vouchers(params = {}) { return PandansariAPI.fetch('/vouchers' + this._qs(params)); },
         voucher(id) { return PandansariAPI.fetch(`/vouchers/${id}`); },
@@ -776,36 +808,7 @@ window.PandansariAPI = {
             });
         },
 
-        /* -- 4.8 Konfigurasi RajaOngkir -- */
-        shippingConfig() { return PandansariAPI.fetch('/admin/shipping/config'); },
-        shippingHealth() { return PandansariAPI.fetch('/admin/shipping/health'); },
-        shippingCouriers() { return PandansariAPI.fetch('/admin/shipping/couriers'); },
-        /** PUT /admin/shipping/couriers/{code} — { aktif: bool }. */
-        setCourier(code, aktif) { return PandansariAPI.fetch(`/admin/shipping/couriers/${code}`, { method: 'PUT', body: { aktif: !!aktif } }); },
-        /** POST /admin/shipping/simulate — { destination, weight, courier? }. Memakai kuota API! */
-        simulateShipping(destination, weight, courier = null) {
-            return PandansariAPI.fetch('/admin/shipping/simulate', {
-                method: 'POST', body: { destination: Number(destination), weight: Number(weight), ...(courier ? { courier } : {}) },
-            });
-        },
-
         /* -- 4.9 Inventaris -- */
-        /** GET /admin/inventory/movements — query: page, per_page, tipe, id_variant, dari, sampai. */
-        inventoryMovements(params = {}) {
-            return PandansariAPI.fetch('/admin/inventory/movements' + this._qs(params))
-                .then(res => {
-                    if (res.ok && res.data) {
-                        res.data = res.data.map(item => ({
-                            ...item,
-                            tipe: this._deriveTipe(item.jenis_pergerakan, item.referensi),
-                            referensi_tipe: this._parseReferensiType(item.referensi),
-                            referensi_id: item.referensi,
-                            tanggal: item.waktu_pergerakan?.split('T')[0] || item.dibuat_pada?.split('T')[0],
-                        }));
-                    }
-                    return res;
-                });
-        },
         /** GET /admin/inventory/low-stock — varian dengan stok <= threshold. */
         inventoryLowStock() { return PandansariAPI.fetch('/admin/inventory/low-stock'); },
         /** GET /admin/inventory/valuation — { total_nilai_modal, total_nilai_jual, margin_potensial }. */
@@ -814,38 +817,6 @@ window.PandansariAPI = {
         inventoryExport() { return PandansariAPI.downloadCsv('/admin/inventory/export', 'inventaris.csv'); },
         /** POST /admin/inventory/adjustments — { id_variant, tipe: 'masuk'|'keluar'|'koreksi', jumlah, catatan? }. */
         inventoryAdjustment(payload) { return PandansariAPI.fetch('/admin/inventory/adjustments', { method: 'POST', body: payload }); },
-
-        _deriveTipe(jenis, referensi) {
-            if ((jenis === 'penyesuaian_masuk' || jenis === 'penyesuaian_keluar') && referensi?.startsWith('OPN-')) {
-                return 'opname';
-            }
-            if (jenis === 'keluar' && referensi?.startsWith('ORD-')) {
-                return 'penjualan';
-            }
-            if (jenis === 'masuk') {
-                return 'masuk';
-            }
-            if (jenis === 'keluar') {
-                if (referensi?.startsWith('RET-')) return 'retur';
-                if (referensi?.startsWith('KOR-')) return 'koreksi';
-                return 'keluar';
-            }
-            if (jenis === 'koreksi') return 'koreksi';
-            if (jenis === 'retur') return 'retur';
-            if (jenis === 'penyesuaian_masuk' || jenis === 'penyesuaian_keluar') return 'opname';
-            return 'lain';
-        },
-
-        _parseReferensiType(ref) {
-            if (!ref) return 'lain';
-            if (ref.startsWith('ORD-')) return 'penjualan';
-            if (ref.startsWith('OPN-')) return 'opname';
-            if (ref.startsWith('RET-')) return 'retur';
-            if (ref.startsWith('KOR-')) return 'koreksi';
-            if (ref.startsWith('PUR-') || ref.startsWith('PO-')) return 'pembelian';
-            if (ref === 'DUMMY-SEED') return 'seed';
-            return 'lain';
-        },
     },
 
     /**
@@ -920,6 +891,20 @@ window.PandansariAPI = {
             if (!filename || filename.includes('/')) return p;
 
             return '/media/cms-galeri/' + encodeURIComponent(filename);
+        }
+
+        if (clean.startsWith('cms/promo/')) {
+            const filename = clean.slice('cms/promo/'.length);
+            if (!filename || filename.includes('/')) return p;
+
+            return '/media/cms-promo/' + encodeURIComponent(filename);
+        }
+
+        if (clean.startsWith('vouchers/')) {
+            const filename = clean.slice('vouchers/'.length);
+            if (!filename || filename.includes('/')) return p;
+
+            return '/media/vouchers/' + encodeURIComponent(filename);
         }
 
         if (!clean.startsWith('products/')) return p;

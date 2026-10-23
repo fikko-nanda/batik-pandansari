@@ -160,10 +160,6 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-3 shrink-0">
-            <a href="/admin/inventory/movements" class="px-4 py-2.5 bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
-                <i class="fa-solid fa-history text-sky-600"></i>
-                <span>Riwayat Stok</span>
-            </a>
             <button type="button" @click="PandansariAPI.admin.inventoryExport()"
                     class="px-4 py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-file-export text-emerald-600"></i>
