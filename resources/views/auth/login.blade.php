@@ -96,6 +96,13 @@
             <span x-show="loadingGoogle" class="inline-flex items-center gap-2"><i class="fa-solid fa-circle-notch fa-spin"></i> MENGHUBUNGKAN…</span>
         </button>
 
+        <!-- Fallback resmi Google: tampil bila One Tap/prompt tidak bisa ditampilkan -->
+        <div x-show="googleFallback" x-cloak class="space-y-2">
+            <p class="text-[11px] text-center text-slate-500 leading-relaxed"
+               x-text="googleHint || 'Google meminta konfirmasi langsung dari Anda. Pilih akun lewat tombol di bawah.'"></p>
+            <div x-ref="googleFallbackButton" class="flex justify-center min-h-[40px]"></div>
+        </div>
+
         <!-- Footer Card -->
         <p class="text-center text-xs text-slate-500 pt-2">
             Belum memiliki akun ?
@@ -115,9 +122,55 @@ function loginForm() {
         loadingGoogle: false,
         errorMessage: '',
 
+        /* --- Status Google Identity Services (GIS) --- */
+        googleSiap: false,       // google.accounts.id sudah diinisialisasi
+        googleFallback: false,   // tampilkan tombol resmi Google bila prompt tidak bisa tampil
+        googleHint: '',          // pesan pendamping pada area fallback
+        googleTimeout: null,
+
         init() {
-            if (window.PandansariAPI && typeof PandansariAPI.siapkanGoogleScript === 'function') {
-                PandansariAPI.siapkanGoogleScript().catch(() => {});
+            // Muat script GSI & inisialisasi lebih awal (tidak memblokir render halaman).
+            this.siapkanGoogle();
+        },
+
+        /* ---------- Google Identity Services (ID Token / JWT) ---------- */
+        googleClientId() {
+            // Prioritas: VITE_GOOGLE_CLIENT_ID via PandansariAPI; konstanta hanya cadangan.
+            const dariEnv = window.PandansariAPI?.googleClientId?.() ?? '';
+            return String(dariEnv || '1066530639857-ghnjm2t78aqqgcpar17ilbc3fjl91vus.apps.googleusercontent.com').trim();
+        },
+
+        /**
+         * Inisialisasi GIS dengan google.accounts.id.initialize.
+         * Callback menerima `response.credential` = ID Token (JWT) yang diverifikasi backend.
+         */
+        async siapkanGoogle() {
+            try {
+                if (!window.PandansariAPI || typeof PandansariAPI.siapkanGoogleScript !== 'function') return false;
+
+                const gsi = await PandansariAPI.siapkanGoogleScript();
+                const clientId = this.googleClientId();
+
+                if (!gsi?.accounts?.id || !clientId) {
+                    this.googleSiap = false;
+                    return false;
+                }
+
+                gsi.accounts.id.initialize({
+                    client_id: clientId,
+                    callback: (response) => this.terimaGoogleCredential(response),
+                    auto_select: false,
+                    cancel_on_tap_outside: true,
+                    ux_mode: 'popup',
+                    use_fedcm_for_prompt: true,
+                });
+
+                this.googleSiap = true;
+                return true;
+            } catch (err) {
+                console.warn('[LoginGoogle] GIS gagal disiapkan:', err?.message || err);
+                this.googleSiap = false;
+                return false;
             }
         },
 
@@ -134,7 +187,7 @@ function loginForm() {
                     if (token) {
                         PandansariAPI.setToken(token);
                         await PandansariAPI.me();
-                        window.location.href = '/';
+                        this.arahkanSetelahLogin();
                     } else {
                         this.errorMessage = 'Login berhasil, tetapi token tidak diterima dari server.';
                     }
@@ -149,65 +202,143 @@ function loginForm() {
             }
         },
 
-        /* ---------- Login via Google (popup Token Client → POST /api/auth/google) ---------- */
+        /** Arahkan ke panel sesuai peran: admin → /admin/dashboard, teknisi → /teknisi, lainnya → /. */
+        arahkanSetelahLogin(user = null) {
+            if (window.PandansariAPI?.arahkanKePanel) {
+                PandansariAPI.arahkanKePanel(user);
+                return;
+            }
+            // Fallback bila app.js versi lama masih ter-cache browser.
+            const u = user ?? window.PandansariAPI?.getUser?.() ?? {};
+            const peran = String(u.peran ?? u.role ?? '').trim().toLowerCase();
+            window.location.href = peran === 'admin'
+                ? '/admin/dashboard'
+                : (peran === 'teknisi' ? '/teknisi' : '/');
+        },
+
+        /* ---------- Login via Google (ID Token → POST /api/auth/google) ---------- */
         async loginViaGoogle() {
+            this.errorMessage = '';
+            this.googleFallback = false;
+            this.googleHint = '';
+
+            if (!this.googleSiap) {
+                const siap = await this.siapkanGoogle();
+                if (!siap) {
+                    this.errorMessage = 'Google Client SDK belum termuat. Periksa koneksi internet Anda, muat ulang halaman, lalu coba lagi.';
+                    return;
+                }
+            }
+
+            this.loadingGoogle = true;
+
+            // Jaring aman: jangan biarkan tombol menggantung bila prompt tak pernah dijawab.
+            clearTimeout(this.googleTimeout);
+            this.googleTimeout = setTimeout(() => {
+                if (!this.loadingGoogle) return;
+                this.lepasLoadingGoogle();
+                this.tampilkanFallbackGoogle('Google tidak merespons. Silakan pilih akun lewat tombol di bawah.');
+            }, 60000);
+
+            try {
+                // Prompt GIS memakai sesi Google di browser → mengembalikan ID Token via callback initialize.
+                window.google.accounts.id.prompt((notifikasi) => {
+                    const alasan = notifikasi.getDismissedReason?.();
+                    // Credential sudah diterima lewat callback initialize — tidak perlu fallback.
+                    if (alasan === 'credential_returned') return;
+
+                    if (notifikasi.isNotDisplayed?.() === true) {
+                        this.lepasLoadingGoogle();
+                        this.tampilkanFallbackGoogle('Google One Tap tidak dapat ditampilkan di browser ini.');
+                    } else if (notifikasi.isSkippedMoment?.() === true) {
+                        this.lepasLoadingGoogle();
+                        this.tampilkanFallbackGoogle('Google meminta konfirmasi langsung dari Anda.');
+                    } else if (notifikasi.isDismissedMoment?.() === true) {
+                        this.lepasLoadingGoogle();
+                        this.tampilkanFallbackGoogle('Prompt Google ditutup sebelum akun dipilih.');
+                    }
+                });
+            } catch (err) {
+                this.lepasLoadingGoogle();
+                console.warn('[LoginGoogle] gagal membuka prompt:', err?.message || err);
+                this.tampilkanFallbackGoogle('Prompt Google gagal dibuka. Silakan pilih akun lewat tombol di bawah.');
+            }
+        },
+
+        /** Callback initialize: `response.credential` berisi ID Token (JWT). */
+        async terimaGoogleCredential(response) {
+            const idToken = response?.credential;
+
+            if (!idToken) {
+                this.lepasLoadingGoogle();
+                this.tampilkanFallbackGoogle('Google tidak mengirimkan ID Token. Silakan pilih akun lewat tombol di bawah.');
+                return;
+            }
+
+            this.googleFallback = false;
+            this.googleHint = '';
+            await this.kirimGoogleIdToken(idToken);
+        },
+
+        /** Kirim ID Token (bukan access token) ke backend. */
+        async kirimGoogleIdToken(idToken) {
             this.loadingGoogle = true;
             this.errorMessage = '';
 
             try {
-                if (typeof google === 'undefined' || !google?.accounts?.oauth2) {
-                    this.errorMessage = 'Google Client SDK belum termuat. Periksa koneksi internet Anda, muat ulang halaman, lalu coba lagi.';
-                    return;
-                }
-
-                const GOOGLE_CLIENT_ID = '1066530639857-ghnjm2t78aqqgcpar17ilbc3fjl91vus.apps.googleusercontent.com';
-
-                const googleToken = await Promise.race([
-                    new Promise((resolve, reject) => {
-                        const client = google.accounts.oauth2.initTokenClient({
-                            client_id: GOOGLE_CLIENT_ID,
-                            scope: 'openid email profile',
-                            callback: (resp) => {
-                                if (resp?.access_token) resolve(resp.access_token);
-                                else reject(new Error('GOOGLE_TOKEN_KOSONG'));
-                            },
-                            error_callback: (err) => {
-                                if (err?.type === 'popup_failed_to_start') reject(new Error('GOOGLE_POPUP_DITUTUP'));
-                                else reject(new Error('GOOGLE_POPUP_TIDAK_TAMPIL'));
-                            },
-                        });
-                        client.requestAccessToken();
-                    }),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('GOOGLE_POPUP_TIMEOUT')), 60000)),
-                ]);
-
-                const res = await PandansariAPI.loginGoogle(googleToken);
+                const res = await PandansariAPI.loginGoogle(idToken);
 
                 if (res.ok) {
                     const token = res.data?.data?.token ?? res.data?.token ?? res.data?.access_token;
                     if (token) {
                         PandansariAPI.setToken(token);
-                        await PandansariAPI.me();
-                        window.location.href = '/';
+                        // Pastikan peran user tersedia sebelum menentukan panel tujuan.
+                        if (!PandansariAPI.getUser()?.peran) {
+                            try { await PandansariAPI.me(); } catch { /* lanjut ke beranda customer */ }
+                        }
+                        this.arahkanSetelahLogin();
                     } else {
                         this.errorMessage = 'Login Google berhasil, tetapi token otentikasi tidak diterima dari server.';
                     }
                 } else {
                     this.errorMessage = res.message || 'Login via Google gagal. Silakan coba lagi.';
                 }
-            } catch (e) {
-                console.warn('[LoginGoogle] gagal:', e.message || e);
-                const pesan = {
-                    GOOGLE_POPUP_DITUTUP: 'Login Google dibatalkan — popup ditutup sebelum akun dipilih.',
-                    GOOGLE_POPUP_TIDAK_TAMPIL: 'Popup Google tidak dapat ditampilkan (kemungkinan diblokir browser). Izinkan popup untuk situs ini.',
-                    GOOGLE_TOKEN_KOSONG: 'Google tidak mengembalikan token akses. Silakan coba lagi.',
-                    GOOGLE_POPUP_TIMEOUT: 'Popup Google tidak merespons selama 60 detik. Periksa koneksi Anda.',
-                }[e.message] || e.message;
-
-                this.errorMessage = pesan;
+            } catch (err) {
+                console.error('Login Google error:', err);
+                this.errorMessage = 'Gagal terhubung ke server. Periksa koneksi Anda.';
             } finally {
-                this.loadingGoogle = false;
+                this.lepasLoadingGoogle();
             }
+        },
+
+        /** Tampilkan area fallback + tombol resmi Google (butuh klik langsung pengguna). */
+        tampilkanFallbackGoogle(pesan) {
+            this.googleHint = pesan || '';
+            this.googleFallback = true;
+            this.$nextTick(() => this.renderTombolGoogle());
+        },
+
+        renderTombolGoogle() {
+            const target = this.$refs.googleFallbackButton;
+            if (!target || !window.google?.accounts?.id) return;
+            if (target.dataset.rendered === '1') return;   // cukup dirender sekali
+
+            window.google.accounts.id.renderButton(target, {
+                type: 'standard',
+                theme: 'outline',
+                size: 'large',
+                text: 'continue_with',
+                shape: 'rectangular',
+                logo_alignment: 'left',
+                width: 320,
+            });
+            target.dataset.rendered = '1';
+        },
+
+        lepasLoadingGoogle() {
+            clearTimeout(this.googleTimeout);
+            this.googleTimeout = null;
+            this.loadingGoogle = false;
         },
     };
 }
