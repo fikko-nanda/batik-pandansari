@@ -15,6 +15,10 @@
             },
             _kategoriPromise: null,
 
+            // Jumlah produk nyata per kategori — diisi dari `meta.total` GET /products.
+            // null = belum diketahui (API belum menjawab / gagal) → label tanpa angka.
+            jumlah: { pria: null, wanita: null, anak: null, kain: null },
+
             /** Ambil sampul aktual dari produk pertama tiap kategori. */
             async init() {
                 const daftar = [
@@ -27,7 +31,10 @@
                 // Resolusi kategori dijalankan paralel dengan percobaan filter slug.
                 this._kategoriPromise = PandansariAPI.categories();
 
-                await Promise.all(daftar.map(k => this.muatSampul(k)));
+                await Promise.all([
+                    ...daftar.map(k => this.muatSampul(k)),
+                    ...daftar.map(k => this.muatJumlah(k)),
+                ]);
             },
 
             async muatSampul(kategori) {
@@ -92,6 +99,35 @@
                 }
             },
 
+            /**
+             * Hitung jumlah produk kategori dari `meta.total` GET /products.
+             * Memakai id_category hasil resolusi agar angkanya sama dengan katalog.
+             */
+            async muatJumlah(kategori) {
+                try {
+                    const id = await this.idKategori(kategori);
+                    if (!id) return;
+
+                    const res = await PandansariAPI.products({ category: id, page: 1, per_page: 1 });
+                    if (!res.ok) return;
+
+                    const total = res.meta?.total;
+                    if (total == null) return;
+
+                    const n = Number(total);
+                    if (Number.isFinite(n)) this.jumlah[kategori.slug] = n;
+                } catch {
+                    // Biarkan label tanpa angka bila data gagal dimuat.
+                }
+            },
+
+            /** Label tombol 'Lihat N Koleksi …' — tanpa angka bila data belum tersedia. */
+            labelKoleksi(slug, akhiran) {
+                const n = this.jumlah[slug];
+                const angka = Number.isFinite(n) ? ' ' + n.toLocaleString('id-ID') : '';
+                return 'Lihat' + angka + (akhiran ? ' ' + akhiran : '');
+            },
+
             /** Utamakan images produk (coverUrl → media proxy), lalu field gambar alternatif. */
             sampulProduk(produk) {
                 if (!produk) return '';
@@ -151,7 +187,7 @@
                         </p>
                     </div>
                     <span class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 group-hover:underline font-['Plus_Jakarta_Sans']">
-                        Lihat 48+ Koleksi Pria <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        <span x-text="labelKoleksi('pria', 'Koleksi Pria')">Lihat Koleksi Pria</span> <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </span>
                 </div>
             </a>
@@ -177,7 +213,7 @@
                         </p>
                     </div>
                     <span class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 group-hover:underline font-['Plus_Jakarta_Sans']">
-                        Lihat 62+ Koleksi Wanita <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        <span x-text="labelKoleksi('wanita', 'Koleksi Wanita')">Lihat Koleksi Wanita</span> <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </span>
                 </div>
             </a>
@@ -203,7 +239,7 @@
                         </p>
                     </div>
                     <span class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 group-hover:underline font-['Plus_Jakarta_Sans']">
-                        Lihat 24+ Koleksi Anak <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        <span x-text="labelKoleksi('anak', 'Koleksi Anak')">Lihat Koleksi Anak</span> <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </span>
                 </div>
             </a>
@@ -229,7 +265,7 @@
                         </p>
                     </div>
                     <span class="mt-4 text-xs font-bold text-[#0369A1] inline-flex items-center gap-1.5 group-hover:underline font-['Plus_Jakarta_Sans']">
-                        Lihat 75+ Kain Tradisional <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        <span x-text="labelKoleksi('kain', 'Kain Tradisional')">Lihat Kain Tradisional</span> <i class="fa-solid fa-arrow-right text-[10px]"></i>
                     </span>
                 </div>
             </a>
