@@ -92,10 +92,11 @@ class SecurityHeaders
 
         // Vite dev server (HMR) hanya diizinkan saat development lokal.
         if ($lokal) {
-            $dev = [
-                'http://localhost:5173', 'http://127.0.0.1:5173', 'http://[::1]:5173',
-                'ws://localhost:5173', 'ws://127.0.0.1:5173', 'ws://[::1]:5173',
-            ];
+            // Chrome menolak host IPv6 ber-bracket (mis. http://[::1]:5173) sebagai
+            // source CSP, jadi pakai loopback IPv4/localhost saja. Vite juga dipaksa
+            // memakai 127.0.0.1 lewat vite.config.js agar public/hot tidak berisi [::1].
+            $devHttp = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+            $devWs = ['ws://localhost:5173', 'ws://127.0.0.1:5173'];
 
             // Akses dev via IP LAN (mis. dari ponsel) memakai host yang sama, port 5173.
             $kandidat = [
@@ -103,19 +104,27 @@ class SecurityHeaders
                 $host,
             ];
 
-            foreach (array_unique(array_filter($kandidat)) as $host) {
-                $ip = filter_var($host, FILTER_VALIDATE_IP);
-                if ($ip === false && ! in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+            foreach (array_unique(array_filter($kandidat)) as $hostDev) {
+                $hostDev = trim((string) $hostDev, '[]');
+                $ipv4 = filter_var($hostDev, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
+                $domainLokal = in_array($hostDev, ['localhost', '127.0.0.1'], true);
+
+                if (! $ipv4 && ! $domainLokal) {
                     continue;
                 }
 
-                $host = str_contains($host, ':') && ! str_starts_with($host, '[') ? '['.$host.']' : $host;
-                $dev[] = 'http://'.$host.':5173';
-                $dev[] = 'ws://'.$host.':5173';
+                $devHttp[] = 'http://'.$hostDev.':5173';
+                $devWs[] = 'ws://'.$hostDev.':5173';
             }
 
-            $script = array_merge($script, $dev);
-            $connect = array_merge($connect, $dev);
+            $devHttp = array_values(array_unique($devHttp));
+            $devWs = array_values(array_unique($devWs));
+
+            $script = array_merge($script, $devHttp, $devWs);
+            $style = array_merge($style, $devHttp);
+            $font = array_merge($font, $devHttp);
+            $img = array_merge($img, $devHttp);
+            $connect = array_merge($connect, $devHttp, $devWs);
         }
 
         // Origin API backend (termasuk domain ngrok yang sedang dipakai).
@@ -134,7 +143,7 @@ class SecurityHeaders
             'style-src '.implode(' ', array_unique($style)),
             'img-src '.implode(' ', array_unique($img)),
             'font-src '.implode(' ', array_unique($font)),
-            'connect-src '.implode(' ', array_values(array_unique($connect))),
+            'connect-src '.implode(' ', array_unique($connect)),
             'frame-src '.implode(' ', array_unique($frame)),
             "object-src 'none'",
             "base-uri 'self'",

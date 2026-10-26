@@ -38,6 +38,32 @@ class SecurityHardeningTest extends TestCase
         $this->assertStringContainsString("object-src 'none'", (string) $response->headers->get('Content-Security-Policy'));
     }
 
+    public function test_csp_allows_vite_dev_assets_without_invalid_ipv6_source(): void
+    {
+        $this->app['env'] = 'local';
+
+        $response = $this->get('http://localhost/');
+        $response->assertOk();
+
+        $csp = (string) $response->headers->get('Content-Security-Policy');
+
+        $this->assertStringNotContainsString('[::1]', $csp);
+        $this->assertStringContainsString('http://127.0.0.1:5173', $csp);
+
+        preg_match('/style-src ([^;]+)/', $csp, $style);
+        $this->assertNotEmpty($style, 'Direktif style-src tidak ditemukan.');
+        $this->assertStringContainsString('http://127.0.0.1:5173', $style[1]);
+
+        preg_match('/script-src ([^;]+)/', $csp, $script);
+        $this->assertNotEmpty($script, 'Direktif script-src tidak ditemukan.');
+        $this->assertStringContainsString('ws://127.0.0.1:5173', $script[1]);
+
+        preg_match('/connect-src ([^;]+)/', $csp, $connect);
+        $this->assertNotEmpty($connect, 'Direktif connect-src tidak ditemukan.');
+        $this->assertStringContainsString('http://127.0.0.1:5173', $connect[1]);
+        $this->assertStringContainsString('ws://127.0.0.1:5173', $connect[1]);
+    }
+
     public function test_admin_pages_redirect_to_login_without_panel_cookie(): void
     {
         $this->get('/admin/dashboard')->assertRedirect('/login');
