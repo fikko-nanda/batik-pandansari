@@ -22,7 +22,8 @@
                 this.promos = data.map((p, index) => {
                     const v = p.voucher ?? p;
                     const gambar = p.url_gambar ?? p.gambar ?? v.url_gambar ?? '';
-                    const tautan = p.tautan_tujuan ?? p.link ?? v.tautan_tujuan ?? (v.id_product_peruntukan ? '/detail/' + v.id_product_peruntukan : '/katalog');
+                    const productId = v.id_product_peruntukan ?? p.id_product_peruntukan;
+                    const tautan = productId ? '/detail/' + productId : '/katalog';
                     return {
                         id: p.id_cms_promo ?? p.id ?? v.id_voucher ?? index,
                         gambar: PandansariAPI.imgUrl(gambar),

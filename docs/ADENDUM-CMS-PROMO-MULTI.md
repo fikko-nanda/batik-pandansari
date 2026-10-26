@@ -21,9 +21,11 @@ halaman **Buat Promo**.
 2. Promo yang tampil di landing adalah voucher yang aktif dan berada dalam periode berlaku.
 3. Nama dan deskripsi promo mengikuti voucher.
 4. Badge dan gambar banner dapat diatur per promo.
-5. Link tujuan CTA:
-   - voucher khusus satu produk dan link kosong → `/detail/{id_product_peruntukan}`;
-   - voucher semua produk dan link kosong → `/katalog`.
+5. Link tujuan CTA dihitung otomatis dari cakupan voucher, tanpa input manual:
+   - voucher khusus satu produk → `/detail/{id_product_peruntukan}`;
+   - voucher semua produk → `/katalog`.
+   FE admin selalu mengirim link hasil hitungan ini, dan landing juga menurunkannya dari
+   `id_product_peruntukan`.
 6. **Tidak memakai `urutan_tampilan`.** Urutan promo mengikuti urutan respons backend.
 7. Menghapus promo hanya menghapus dari beranda; voucher tidak dihapus.
 8. Jika tidak ada promo aktif, landing memakai banner statis.
@@ -82,7 +84,7 @@ Payload `POST`/`PUT` menggunakan `multipart/form-data`:
 |---|---|---|
 | `id_voucher` | Ya | UUID voucher |
 | `badge` | Tidak | Maksimal 40 karakter |
-| `tautan_tujuan` | Tidak | Relatif atau absolut |
+| `tautan_tujuan` | Tidak | Diisi otomatis oleh FE dari cakupan voucher; bukan input admin |
 | `gambar` | Tidak | JPG/PNG/WebP, maksimal 2 MB |
 | `_method` | PUT | Diisi FE saat update multipart |
 

@@ -39,7 +39,10 @@
 
     // === Tab 3: Banner Hero (GET/POST/PUT/DELETE /admin/cms/hero) ===
     heroes: [],
+    heroProducts: [],
     loadingHero: true,
+    loadingHeroProducts: true,
+    heroProductsError: '',
     savingHero: false,
     heroDragging: false,
     pendingDeletes: [],
@@ -99,7 +102,6 @@
     promoForm: {
         id_voucher: '',
         badge: '',
-        tautan_tujuan: '',
     },
     promoGambarPending: null,
     promoGambarPreview: '',
@@ -217,10 +219,76 @@
     // === Banner Hero ===
     get heroesAktif() { return this.heroes.filter(h => !h._deleted); },
 
+    heroKategoriOpsi() {
+        const seen = new Set();
+        const out = [];
+        for (const c of this.cats) {
+            const slug = String(c.slug ?? '').trim();
+            if (!slug || seen.has(slug)) continue;
+            seen.add(slug);
+            out.push({
+                slug,
+                nama_kategori: String(c.nama_kategori ?? slug).trim() || slug,
+                status_aktif: c.status_aktif,
+            });
+        }
+        return out.sort((a, b) => a.nama_kategori.localeCompare(b.nama_kategori, 'id'));
+    },
+
+    heroProdukOpsi() {
+        return this.heroProducts;
+    },
+
+    parseHeroLink(link) {
+        const tautan = String(link ?? '').trim();
+        if (!tautan) return { tipe: '', target: '' };
+        if (tautan.startsWith('/detail/')) {
+            return { tipe: 'produk', target: tautan.slice('/detail/'.length).split(/[?#]/)[0] };
+        }
+        if (tautan === '/katalog') return { tipe: 'katalog', target: '' };
+        try {
+            const url = new URL(tautan, window.location.origin);
+            if (url.pathname === '/katalog') {
+                const slug = String(url.searchParams.get('category') ?? '').trim();
+                if (slug) return { tipe: 'kategori', target: slug };
+            }
+        } catch {}
+        return { tipe: '', target: '' };
+    },
+
+    heroLinkOtomatis(h) {
+        if (!h) return '';
+        if (h._linkTipe === 'katalog') return '/katalog';
+        if (h._linkTipe === 'kategori') {
+            const slug = String(h._linkTarget ?? '').trim();
+            return slug ? '/katalog?category=' + encodeURIComponent(slug) : '';
+        }
+        if (h._linkTipe === 'produk') {
+            const id = String(h._linkTarget ?? '').trim();
+            return id ? '/detail/' + encodeURIComponent(id) : '';
+        }
+        return '';
+    },
+
+    ubahTipeLinkHero(h, event) {
+        h._linkTipe = String(event?.target?.value ?? '');
+        h._linkTarget = '';
+        h.tautan_tombol = this.heroLinkOtomatis(h);
+        h._dirty = true;
+    },
+
+    ubahTargetLinkHero(h, event) {
+        h._linkTarget = String(event?.target?.value ?? '');
+        h.tautan_tombol = this.heroLinkOtomatis(h);
+        h._dirty = true;
+    },
+
     gambarUrl(h) { return PandansariAPI.imgUrl(h.url_gambar ?? h.gambar ?? ''); },
 
     normalizeHero(h) {
         const aktif = h.status_aktif === true || h.status_aktif === 1 || h.status_aktif === '1';
+        const tautan = String(h.tautan_tombol ?? '').trim();
+        const parsed = this.parseHeroLink(tautan);
         return {
             ...h,
             id_hero: h.id_slide_hero ?? h.id_hero ?? h.id ?? h.id_banner ?? '',
@@ -228,10 +296,12 @@
             subjudul: h.subjudul ?? '',
             label_badge: h.label_badge ?? '',
             teks_tombol: h.teks_tombol ?? '',
-            tautan_tombol: h.tautan_tombol ?? '',
+            tautan_tombol: tautan,
             urutan_tampilan: Number(h.urutan_tampilan ?? 0),
             status_aktif: aktif ? 1 : 0,
             url_gambar: h.url_gambar ?? h.gambar ?? '',
+            _linkTipe: parsed.tipe,
+            _linkTarget: parsed.target,
             _isNew: false,
             _dirty: false,
             _deleted: false,
@@ -264,6 +334,31 @@
         }
     },
 
+    async loadHeroProducts() {
+        this.loadingHeroProducts = true;
+        this.heroProductsError = '';
+        const produk = [];
+        let page = 1;
+        let lastPage = 1;
+        do {
+            const res = await PandansariAPI.products({ page, per_page: 100 });
+            if (!res.ok) {
+                this.heroProductsError = this._mediaError(res);
+                break;
+            }
+            const data = res.data;
+            const list = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+            produk.push(...list);
+            lastPage = Number(res.meta?.last_page ?? data?.meta?.last_page ?? 1) || 1;
+            page++;
+        } while (page <= lastPage);
+
+        this.heroProducts = produk
+            .filter(p => String(p.status_produk ?? 'aktif').toLowerCase() === 'aktif')
+            .sort((a, b) => String(a.nama_produk ?? '').localeCompare(String(b.nama_produk ?? ''), 'id'));
+        this.loadingHeroProducts = false;
+    },
+
     nextUrutan() {
         return this.heroesAktif.reduce((max, h) => Math.max(max, Number(h.urutan_tampilan) || 0), 0) + 1;
     },
@@ -279,6 +374,8 @@
             urutan_tampilan: this.nextUrutan(),
             status_aktif: 1,
             url_gambar: '',
+            _linkTipe: '',
+            _linkTarget: '',
             _isNew: true,
             _dirty: true,
             _deleted: false,
@@ -353,10 +450,14 @@
 
     heroFormData(h) {
         const fd = new FormData();
-        ['judul', 'subjudul', 'label_badge', 'teks_tombol', 'tautan_tombol'].forEach(k => {
+        ['judul', 'subjudul', 'label_badge', 'teks_tombol'].forEach(k => {
             const v = String(h[k] ?? '').trim();
             if (v !== '') fd.append(k, v);
         });
+        const tautan = this.heroLinkOtomatis(h);
+        const tautanLama = String(h.tautan_tombol ?? '').trim();
+        if (tautan !== '') fd.append('tautan_tombol', tautan);
+        else if (tautanLama !== '') fd.append('tautan_tombol', tautanLama);
         fd.append('urutan_tampilan', String(Number(h.urutan_tampilan) || 0));
         fd.append('status_aktif', h.status_aktif ? '1' : '0');
         if (h._file) fd.append('gambar', h._file);
@@ -377,10 +478,20 @@
                 this.pesan(false, 'HEADLINE wajib diisi pada setiap banner.');
                 return;
             }
+            const tautanLama = String(h.tautan_tombol ?? '').trim();
+            if (!h._linkTipe && !tautanLama) {
+                this.pesan(false, 'Pilih tipe link pada banner ' + (h.judul || 'tanpa judul') + '.');
+                return;
+            }
+            if (h._linkTipe && !this.heroLinkOtomatis(h)) {
+                const target = h._linkTipe === 'produk' ? 'produk' : 'kategori';
+                this.pesan(false, 'Pilih ' + target + ' pada banner ' + (h.judul || 'tanpa judul') + '.');
+                return;
+            }
         }
         for (const h of baru) {
-            if (!String(h.teks_tombol ?? '').trim() || !String(h.tautan_tombol ?? '').trim()) {
-                this.pesan(false, 'LABEL TOMBOL dan LINK BUTTON wajib diisi pada banner baru.');
+            if (!String(h.teks_tombol ?? '').trim()) {
+                this.pesan(false, 'LABEL TOMBOL wajib diisi pada banner baru.');
                 return;
             }
             if (!h._file) {
@@ -432,10 +543,21 @@
             const nama = String(c.nama_kategori ?? '').trim();
             if (nama && !seen.has(nama.toLowerCase())) {
                 seen.add(nama.toLowerCase());
-                out.push({ id_category: c.id_category, nama_kategori: nama });
+                out.push({ id_category: c.id_category, nama_kategori: nama, slug: c.slug ?? '' });
             }
         }
         return out;
+    },
+
+    tautanKategori(nama) {
+        const target = String(nama ?? '').trim().toLowerCase();
+        if (!target) return '';
+        const c = this.katOpsi().find(x => x.nama_kategori.trim().toLowerCase() === target);
+        if (!c) return '';
+        const slug = String(c.slug ?? '').trim();
+        return slug
+            ? '/katalog?category=' + encodeURIComponent(slug)
+            : '/katalog?category_id=' + encodeURIComponent(String(c.id_category ?? '').trim());
     },
 
     normalizeKat(k) {
@@ -511,8 +633,9 @@
     },
 
     pilihNamaKat(k, event) {
-        k.nama_kategori = event.target.value;
+        k.nama_kategori = String(event.target.value ?? '').trim();
         k.judul = k.nama_kategori;
+        k.tautan_tujuan = this.tautanKategori(k.nama_kategori);
         k._dirty = true;
     },
 
@@ -544,10 +667,12 @@
 
     katFormData(k) {
         const fd = new FormData();
-        ['nama_kategori', 'judul', 'deskripsi', 'tautan_tujuan'].forEach(f => {
+        ['nama_kategori', 'judul', 'deskripsi'].forEach(f => {
             const v = String(k[f] ?? '').trim();
             if (v !== '') fd.append(f, v);
         });
+        const tautan = this.tautanKategori(k.nama_kategori);
+        if (tautan !== '') fd.append('tautan_tujuan', tautan);
         fd.append('urutan_tampilan', String(Number(k.urutan_tampilan) || 0));
         fd.append('status_aktif', k.status_aktif ? '1' : '0');
         if (k._file) fd.append('gambar', k._file);
@@ -558,13 +683,18 @@
         const aktif = this.cmsKatsAktif;
         const baru = aktif.filter(k => k._isNew);
 
+        if (!this.cats.length) {
+            this.pesan(false, 'Daftar kategori produk belum termuat. Klik Muat ulang lalu coba lagi.');
+            return;
+        }
+
         for (const k of aktif) {
             if (!String(k.nama_kategori ?? '').trim()) {
                 this.pesan(false, 'Pilih kategori (JUDUL) pada setiap kartu kategori.');
                 return;
             }
-            if (!String(k.tautan_tujuan ?? '').trim()) {
-                this.pesan(false, 'LINK TUJUAN wajib diisi pada kartu ' + (k.nama_kategori || 'tanpa nama') + '.');
+            if (!this.tautanKategori(k.nama_kategori)) {
+                this.pesan(false, 'Kategori ' + (k.nama_kategori || 'tanpa nama') + ' tidak ditemukan di daftar kategori produk. Pilih ulang kategorinya.');
                 return;
             }
         }
@@ -598,7 +728,7 @@
             if (!res.ok) gagal.push(this._mediaError(res));
         }
 
-        for (const k of aktif.filter(x => !x._isNew && x._dirty)) {
+        for (const k of aktif.filter(x => !x._isNew && (x._dirty || x.tautan_tujuan !== this.tautanKategori(x.nama_kategori)))) {
             const id = String(k.id_kategori_cms ?? '').trim();
             if (!id) {
                 console.warn('[cms-kategori] item tanpa ID dari backend:', k);
@@ -1100,7 +1230,8 @@
     },
     get promoLinkOtomatis() {
         const v = this.promoVoucher;
-        return (v && v.id_product_peruntukan) ? '/detail/' + v.id_product_peruntukan : '';
+        if (!v) return '';
+        return v.id_product_peruntukan ? '/detail/' + v.id_product_peruntukan : '/katalog';
     },
     get promoVoucherOptions() {
         const terpilih = String(this.promoForm?.id_voucher ?? '');
@@ -1167,7 +1298,8 @@
     },
     promoLink(p) {
         const v = p?.voucher ?? p ?? {};
-        return p?.tautan_tujuan ?? p?.link ?? (v.id_product_peruntukan ? '/detail/' + v.id_product_peruntukan : '/katalog');
+        const productId = v.id_product_peruntukan ?? p?.id_product_peruntukan;
+        return productId ? '/detail/' + productId : '/katalog';
     },
     promoJenis(v) {
         if (!v) return '';
@@ -1210,7 +1342,7 @@
         this._lepasGambarPromo();
         this.promoEditingId = null;
         this.promoEditingVoucher = null;
-        this.promoForm = { id_voucher: '', badge: '', tautan_tujuan: '' };
+        this.promoForm = { id_voucher: '', badge: '' };
         this.promoGambarPending = null;
         this.promoGambarPreview = '';
         this.promoGambarUrl = '';
@@ -1224,7 +1356,6 @@
         this.promoForm = {
             id_voucher: String(p?.id_voucher ?? v?.id_voucher ?? ''),
             badge: p?.badge ?? v?.badge ?? '',
-            tautan_tujuan: p?.tautan_tujuan ?? p?.link ?? '',
         };
         this.promoGambarPending = null;
         this.promoGambarPreview = '';
@@ -1236,7 +1367,7 @@
         this.promoEditorOpen = false;
         this.promoEditingId = null;
         this.promoEditingVoucher = null;
-        this.promoForm = { id_voucher: '', badge: '', tautan_tujuan: '' };
+        this.promoForm = { id_voucher: '', badge: '' };
         this.promoGambarPending = null;
         this.promoGambarPreview = '';
         this.promoGambarUrl = '';
@@ -1259,12 +1390,14 @@
         const voucherId = String(this.promoForm?.id_voucher ?? '').trim();
         if (!voucherId) { this.pesan(false, 'Pilih voucher promo terlebih dahulu.'); return; }
         if (this.voucherDipakai(voucherId)) { this.pesan(false, 'Voucher ini sudah dipakai promo lain.'); return; }
+        const tautan = this.promoLinkOtomatis;
+        if (!tautan) { this.pesan(false, 'Voucher promo tidak ditemukan. Pilih ulang voucher.'); return; }
 
         this.savingPromo = true;
         const fd = new FormData();
         fd.append('id_voucher', voucherId);
         fd.append('badge', String(this.promoForm?.badge ?? '').trim());
-        fd.append('tautan_tujuan', String(this.promoForm?.tautan_tujuan ?? '').trim());
+        fd.append('tautan_tujuan', tautan);
         if (this.promoGambarPending) fd.append('gambar', this.promoGambarPending);
 
         const res = this.promoEditingId
@@ -1303,6 +1436,7 @@
         this.loadMe();
         this.loadKategori();
         this.loadHeroes();
+        this.loadHeroProducts();
         this.loadCmsKats();
         this.loadGaleri();
         this.loadProfilUsaha();
@@ -1586,11 +1720,10 @@
                                    placeholder="Contoh: Koleksi batik tulis tangan dengan motif klasik"
                                    class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
                         </div>
-                        <div class="md:col-span-2">
-                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Link Tujuan</label>
-                            <input type="text" x-model="k.tautan_tujuan" @input="k._dirty = true"
-                                   placeholder="/kategori/batik-tulis"
-                                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                        <div class="md:col-span-2 flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2.5 text-[11px] text-slate-600">
+                            <span class="font-semibold shrink-0"><i class="fa-solid fa-link text-sky-500 mr-1"></i> Link tujuan otomatis:</span>
+                            <span class="font-mono font-bold text-slate-800 break-all"
+                                  x-text="tautanKategori(k.nama_kategori) || 'Pilih kategori terlebih dahulu'"></span>
                         </div>
                     </div>
                 </div>
@@ -1722,9 +1855,9 @@
                     Atur gambar dan teks slide yang tampil di beranda toko. Perubahan diterapkan setelah menekan Simpan Semua.
                 </p>
             </div>
-            <button type="button" @click="loadHeroes()" :disabled="loadingHero"
+            <button type="button" @click="loadHeroes(); loadHeroProducts(); loadKategori()" :disabled="loadingHero || loadingHeroProducts"
                     class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-60 w-fit">
-                <i class="fa-solid fa-rotate" :class="loadingHero ? 'fa-spin' : ''"></i>
+                <i class="fa-solid fa-rotate" :class="(loadingHero || loadingHeroProducts) ? 'fa-spin' : ''"></i>
                 <span>Muat ulang</span>
             </button>
         </div>
@@ -1844,11 +1977,65 @@
                                    placeholder="Isi label tombol"
                                    class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
                         </div>
-                        <div class="md:col-span-2">
-                            <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Link Button</label>
-                            <input type="text" x-model="h.tautan_tombol" @input="h._dirty = true"
-                                   placeholder="/koleksi"
-                                   class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                        <div class="md:col-span-2 space-y-3">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Tipe Link</label>
+                                    <select :value="h._linkTipe" @change="ubahTipeLinkHero(h, $event)"
+                                            class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                                        <option value="">Pilih tipe link</option>
+                                        <option value="kategori">Kategori</option>
+                                        <option value="produk">Produk</option>
+                                        <option value="katalog">Katalog (semua produk)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1"
+                                           x-text="h._linkTipe === 'produk' ? 'Pilih Produk' : (h._linkTipe === 'kategori' ? 'Pilih Kategori' : 'Target Link')">Target Link</label>
+                                    <select x-show="h._linkTipe === 'kategori'" :value="h._linkTarget" @change="ubahTargetLinkHero(h, $event)"
+                                            class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                                        <option value="">Pilih kategori</option>
+                                        <template x-for="c in heroKategoriOpsi()" :key="c.slug">
+                                            <option :value="c.slug" x-text="c.nama_kategori + (c.status_aktif === false ? ' (nonaktif)' : '')"></option>
+                                        </template>
+                                    </select>
+                                    <select x-show="h._linkTipe === 'produk'" :value="h._linkTarget" @change="ubahTargetLinkHero(h, $event)"
+                                            class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                                        <option value="">Pilih produk</option>
+                                        <template x-for="p in heroProdukOpsi()" :key="p.id_product">
+                                            <option :value="p.id_product" x-text="p.nama_produk + (p.sku ? ' — ' + p.sku : '')"></option>
+                                        </template>
+                                    </select>
+                                    <div x-show="h._linkTipe === 'katalog'"
+                                         class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-500">
+                                        Semua produk (/katalog)
+                                    </div>
+                                    <div x-show="!h._linkTipe"
+                                         class="w-full bg-slate-50 border border-dashed border-slate-200 rounded-xl p-3 font-semibold text-slate-400">
+                                        Pilih tipe link terlebih dahulu.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2.5 text-[11px] text-slate-600">
+                                <span class="font-semibold shrink-0"><i class="fa-solid fa-link text-sky-500 mr-1"></i> Link otomatis:</span>
+                                <span class="font-mono font-bold text-slate-800 break-all"
+                                      x-text="heroLinkOtomatis(h) || 'Belum dipilih'"></span>
+                            </div>
+                            <p x-show="h._linkTipe === 'kategori' && !heroKategoriOpsi().length"
+                               class="text-[11px] text-amber-700 font-semibold">
+                                Belum ada kategori dari database. Muat ulang data kategori terlebih dahulu.
+                            </p>
+                            <p x-show="h._linkTipe === 'produk' && loadingHeroProducts"
+                               class="text-[11px] text-slate-500 font-semibold">
+                                <i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Memuat produk aktif…
+                            </p>
+                            <p x-show="h._linkTipe === 'produk' && !loadingHeroProducts && !heroProdukOpsi().length"
+                               class="text-[11px] text-amber-700 font-semibold"
+                               x-text="heroProductsError || 'Belum ada produk aktif yang bisa dipilih.'"></p>
+                            <p x-show="!h._linkTipe && h.tautan_tombol"
+                               class="text-[11px] text-amber-700 font-semibold">
+                                Link lama belum dikenali otomatis. Pilih tipe link untuk memperbarui.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -2367,24 +2554,10 @@
                             <p class="text-[11px] text-slate-400 font-medium">Kosongkan untuk memakai label bawaan “EDISI TERBATAS”.</p>
                         </div>
 
-                        <div class="space-y-2">
-                            <label class="text-[10px] font-black tracking-[0.16em] text-slate-500 uppercase">Link tujuan CTA</label>
-                            <div class="flex items-center gap-2">
-                                <input type="text" x-model="promoForm.tautan_tujuan"
-                                       placeholder="Contoh: /katalog atau /detail/uuid-produk"
-                                       class="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-3 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
-                                <button type="button" x-show="promoLinkOtomatis" @click="promoForm.tautan_tujuan = promoLinkOtomatis"
-                                        class="px-3 py-3 rounded-xl bg-white border border-slate-300 text-[10px] font-extrabold text-slate-700 hover:bg-slate-50 transition cursor-pointer shrink-0">
-                                    Isi otomatis
-                                </button>
-                            </div>
-                            <p x-show="promoLinkOtomatis" class="text-[11px] text-sky-700 font-semibold">
-                                <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>
-                                <span x-text="'Kosongkan untuk otomatis ke ' + promoLinkOtomatis + ' (produk terikat voucher).'"></span>
-                            </p>
-                            <p x-show="!promoLinkOtomatis" class="text-[11px] text-slate-400 font-medium">
-                                Voucher berlaku untuk semua produk → isi tujuan seperti <code class="font-mono">/katalog</code>.
-                            </p>
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2.5 text-[11px] text-slate-600">
+                            <span class="font-semibold shrink-0"><i class="fa-solid fa-link text-sky-500 mr-1"></i> Link tujuan otomatis:</span>
+                            <span class="font-mono font-bold text-slate-800 break-all"
+                                  x-text="promoLinkOtomatis || 'Pilih voucher terlebih dahulu'"></span>
                         </div>
                     </div>
 

@@ -169,6 +169,12 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 
 > Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), fasilitas, dan **multi promo beranda** (`GET /cms/promos` + CRUD `/admin/cms/promos`, lihat `docs/ADENDUM-CMS-PROMO-MULTI.md`) sudah terhubung. Landing fallback ke `GET /cms/promo` lalu banner statis. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri|cms-promo/{filename}`.
 
+> Tab **Kelola 3 Kategori Utama** tidak lagi meminta link manual. `tautan_tujuan` dihitung otomatis dari slug kategori terpilih (`/katalog?category=<slug>`), lalu disimpan lewat API yang sama. Saat Simpan Semua, link kartu lama yang berbeda ikut diperbaiki. Katalog mendukung slug dari API sekaligus alias lama (`tulis`, `cap`, `handprint`, dst.).
+>
+> Tab **Kelola Promo Beranda** juga tidak meminta link manual. Link CTA dihitung otomatis: voucher khusus satu produk ke `/detail/{id_product_peruntukan}`, voucher semua produk ke `/katalog`. Nilai ini dikirim saat simpan dan dipakai langsung oleh banner landing, termasuk untuk promo lama.
+>
+> Tab **Kelola Banner Hero** memakai link otomatis berdasarkan tipe **Kategori**, **Produk**, atau **Katalog**. Kategori berasal dari `GET /categories` (`/katalog?category=<slug>`), produk dari daftar produk aktif `GET /products` (`/detail/<id_product>`), dan Katalog menghasilkan `/katalog`. Tipe/target dipulihkan dari `tautan_tombol` saat halaman dimuat, sehingga tidak perlu kolom backend baru.
+
 ### 🔜 Belum (butuh backend)
 
 - Ongkir otomatis saat checkout — `POST /shipping/cost` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis. Halaman admin Integrasi RajaOngkir sudah dihapus; endpoint `/admin/shipping/*` tidak dipakai UI.
