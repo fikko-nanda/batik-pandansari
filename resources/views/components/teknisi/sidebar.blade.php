@@ -77,8 +77,18 @@
 
     <!-- BOTTOM SECTION: SYSTEM NODE FOOTER -->
     <div class="p-3 border-t border-slate-800/80 bg-[#070D18]">
-        <div class="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400">      
-            <i class="fa-solid fa-lock text-slate-500 text-[10px]"></i>
+        <div class="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400">
+            <div class="flex items-center gap-1.5">
+                <i class="fa-solid fa-lock text-slate-500 text-[10px]"></i>
+                <span>TLS 1.3</span>
+            </div>
+            <button type="button"
+                    onclick="PandansariAPI.keluarPanel()"
+                    title="Keluar panel"
+                    class="flex items-center gap-1.5 px-2 py-1 rounded-md text-rose-300 hover:text-white hover:bg-rose-500/20 transition cursor-pointer">
+                <i class="fa-solid fa-arrow-right-from-bracket text-[10px]"></i>
+                <span>Keluar</span>
+            </button>
         </div>
         <div class="text-[9px] font-mono text-slate-400 mt-0.5">TLS 1.3 Active • 12ms</div>
     </div>

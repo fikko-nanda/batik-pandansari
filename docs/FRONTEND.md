@@ -185,6 +185,14 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 - Lupa password 3 langkah: `POST /forgot-password` (minta OTP) → `POST /forgot-password/verify-otp` → `POST /forgot-password/reset` (`{email, otp, kata_sandi, kata_sandi_confirmation}`) → kirim-ulang via `POST /forgot-password/resend-otp`.
 - Fallback register: bila alur OTP gagal 404, halaman `auth/register` jatuh ke `POST /register` langsung → aktif role `pelanggan` → auto-login. 401 → redirect `/login` otomatis di halaman keranjang/checkout/wishlist.
 
+### Keamanan & sesi panel
+
+- Middleware global `App\Http\Middleware\SecurityHeaders` memasang CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, dan `COOP`; HSTS hanya dikirim saat request HTTPS.
+- Halaman `/admin/*` dan `/teknisi/*` dijaga `panel:admin` / `panel:teknisi` (`EnsurePanelRole`). Cookie `pandansari_panel` bersifat HttpOnly + terenkripsi dan hanya dipasang setelah `POST /session/panel` memverifikasi token ke `GET /api/me` backend.
+- Login admin/teknisi memanggil `PandansariAPI.sinkronPanel()` sebelum redirect. Logout panel memakai `PandansariAPI.keluarPanel()`; logout customer juga membersihkan cookie panel lewat `sendBeacon`.
+- Di balik ngrok, pastikan `TRUSTED_PROXIES` mencakup loopback (`127.0.0.1,::1`) agar deteksi HTTPS/cookie Secure benar. Untuk PHP Windows yang belum punya CA bundle, isi `MEDIA_PROXY_CA_BUNDLE` (lihat `.env.example`).
+- Kartu kategori beranda (`components/categories.blade.php`) mengambil sampel produk pertama lewat `GET /products?category={slug}&per_page=1` untuk `pria`, `wanita`, `anak`, dan `kain`. Karena backend saat ini memfilter dengan `id_category`, slug ramah di-resolve dari `GET /categories`; jika produk pertama belum punya gambar, dicari sampel berikutnya, lalu memakai gambar fallback lokal bila tetap kosong/gagal dimuat.
+
 ## 6. Checklist Sebelum Merge
 
 - [ ] `npm run build` sukses

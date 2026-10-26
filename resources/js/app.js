@@ -96,8 +96,13 @@ window.PandansariAPI = {
     getUser() {
         try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; }
     },
-    /** Hapus token + profil user sekaligus (lencana di-nol-kan). */
-    clearSession() {
+    /**
+     * Hapus token + profil user sekaligus (lencana di-nol-kan).
+     * Cookie panel juga dibersihkan best-effort lewat sendBeacon agar tetap
+     * terkirim saat halaman langsung dialihkan ke /login.
+     */
+    clearSession(beaconPanel = true) {
+        if (beaconPanel) this.hapusPanel(true);
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
         this.setLencana(0, 0);
@@ -264,6 +269,98 @@ window.PandansariAPI = {
     /** Arahkan pengguna ke panel sesuai peran (admin/teknisi) atau beranda customer. */
     arahkanKePanel(user = null) {
         window.location.href = this.berandaPeran(user);
+    },
+
+    /* ---------- Sesi panel (cookie HttpOnly, diverifikasi backend) ---------- */
+    /** Token CSRF dari <meta name="csrf-token"> di layout. */
+    csrfToken() {
+        return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
+    },
+
+    /**
+     * Hapus cookie panel di server.
+     * `beacon` dipakai saat logout/navigasi agar request tetap terkirim.
+     */
+    hapusPanel(beacon = false) {
+        const csrf = this.csrfToken();
+        if (!csrf) return Promise.resolve();
+
+        if (beacon && typeof navigator.sendBeacon === 'function') {
+            const data = new FormData();
+            data.append('_token', csrf);
+            navigator.sendBeacon('/session/logout', data);
+            return Promise.resolve();
+        }
+
+        return fetch('/session/logout', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                'X-CSRF-TOKEN': csrf,
+                'ngrok-skip-browser-warning': 'true',
+            },
+            body: new URLSearchParams({ _token: csrf }),
+            credentials: 'same-origin',
+        }).catch(() => {});
+    },
+
+    /**
+     * Verifikasi token login ke backend lewat POST /session/panel.
+     * Backend mengembalikan peran; server lalu memasang cookie panel HttpOnly.
+     */
+    async sinkronPanel() {
+        const token = this.getToken();
+        if (!token) {
+            await this.hapusPanel();
+            return { ok: false, status: 0, role: 'pelanggan', message: '' };
+        }
+
+        const csrf = this.csrfToken();
+        if (!csrf) {
+            return {
+                ok: false,
+                status: 0,
+                role: 'pelanggan',
+                message: 'Token CSRF tidak tersedia. Muat ulang halaman lalu coba lagi.',
+            };
+        }
+
+        try {
+            const res = await fetch('/session/panel', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'ngrok-skip-browser-warning': 'true',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ token }),
+            });
+            const payload = await res.json().catch(() => ({}));
+
+            return {
+                ok: res.ok && payload.success === true,
+                status: res.status,
+                role: payload.role ?? 'pelanggan',
+                message: payload.message ?? '',
+            };
+        } catch {
+            return {
+                ok: false,
+                status: 0,
+                role: 'pelanggan',
+                message: 'Tidak dapat menghubungi server. Periksa koneksi lalu coba lagi.',
+            };
+        }
+    },
+
+    /** Logout panel: hapus cookie HttpOnly + sesi lokal, lalu kembali ke login. */
+    async keluarPanel() {
+        await this.hapusPanel();
+        this.clearSession(false);
+        window.location.href = '/login';
     },
 
     /* ---------- Google OAuth (Google Identity Services) ---------- */

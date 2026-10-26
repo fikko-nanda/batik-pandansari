@@ -120,6 +120,12 @@
                 <h4 class="text-xs font-bold text-white truncate">K. R. H. Danureja</h4>
                 <p class="text-[10px] text-slate-400 truncate">Kurator Utama</p>
             </div>
+            <button type="button"
+                    onclick="PandansariAPI.keluarPanel()"
+                    title="Keluar panel"
+                    class="ml-auto p-2 rounded-lg text-slate-400 hover:text-white hover:bg-rose-500/20 transition cursor-pointer">
+                <i class="fa-solid fa-arrow-right-from-bracket text-xs"></i>
+            </button>
         </div>
     </div>
 

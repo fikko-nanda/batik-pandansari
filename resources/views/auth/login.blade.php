@@ -187,7 +187,7 @@ function loginForm() {
                     if (token) {
                         PandansariAPI.setToken(token);
                         await PandansariAPI.me();
-                        this.arahkanSetelahLogin();
+                        await this.arahkanSetelahLogin();
                     } else {
                         this.errorMessage = 'Login berhasil, tetapi token tidak diterima dari server.';
                     }
@@ -202,18 +202,31 @@ function loginForm() {
             }
         },
 
-        /** Arahkan ke panel sesuai peran: admin → /admin/dashboard, teknisi → /teknisi, lainnya → /. */
-        arahkanSetelahLogin(user = null) {
-            if (window.PandansariAPI?.arahkanKePanel) {
-                PandansariAPI.arahkanKePanel(user);
+        /**
+         * Arahkan ke panel sesuai peran: admin → /admin/dashboard, teknisi → /teknisi, lainnya → /.
+         * Sebelum redirect, sinkronkan cookie panel HttpOnly agar route /admin & /teknisi lolos.
+         */
+        async arahkanSetelahLogin(user = null) {
+            const api = window.PandansariAPI;
+            const u = user ?? api?.getUser?.() ?? {};
+            const peran = api?.peranUser?.(u) ?? 'pelanggan';
+
+            if (peran === 'admin' || peran === 'teknisi') {
+                if (typeof api?.sinkronPanel === 'function') {
+                    const sesi = await api.sinkronPanel();
+                    if (!sesi.ok) {
+                        this.errorMessage = sesi.message || 'Gagal membuka sesi panel. Silakan login ulang.';
+                        return;
+                    }
+                }
+                window.location.href = api?.berandaPeran?.(u)
+                    ?? (peran === 'admin' ? '/admin/dashboard' : '/teknisi');
                 return;
             }
-            // Fallback bila app.js versi lama masih ter-cache browser.
-            const u = user ?? window.PandansariAPI?.getUser?.() ?? {};
-            const peran = String(u.peran ?? u.role ?? '').trim().toLowerCase();
-            window.location.href = peran === 'admin'
-                ? '/admin/dashboard'
-                : (peran === 'teknisi' ? '/teknisi' : '/');
+
+            // Customer: pastikan cookie panel lama (jika ada) tidak tertinggal.
+            if (typeof api?.hapusPanel === 'function') await api.hapusPanel();
+            window.location.href = api?.berandaPeran?.(u) ?? '/';
         },
 
         /* ---------- Login via Google (ID Token → POST /api/auth/google) ---------- */
@@ -296,7 +309,7 @@ function loginForm() {
                         if (!PandansariAPI.getUser()?.peran) {
                             try { await PandansariAPI.me(); } catch { /* lanjut ke beranda customer */ }
                         }
-                        this.arahkanSetelahLogin();
+                        await this.arahkanSetelahLogin();
                     } else {
                         this.errorMessage = 'Login Google berhasil, tetapi token otentikasi tidak diterima dari server.';
                     }
