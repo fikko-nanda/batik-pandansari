@@ -88,6 +88,18 @@
                 </div>
             </div>
 
+            <!-- PINTASAN: pratinjau sisi customer (berguna saat maintenance) -->
+            <div>
+                <span class="px-3 text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-2">PINTASAN</span>
+                <a href="{{ route('home') }}"
+                   title="Lihat tampilan customer / toko (berguna saat maintenance)"
+                   class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-400/30 hover:bg-emerald-500/20 hover:text-emerald-200 transition">
+                    <i class="fa-solid fa-store text-sm"></i>
+                    <span>Dashboard Customer</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square ml-auto text-[10px] opacity-70"></i>
+                </a>
+            </div>
+
         </div>
     </div>
 

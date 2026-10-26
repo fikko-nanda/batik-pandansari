@@ -26,10 +26,9 @@
                     <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span> KOLEKSI WASTRA
                 </h5>
                 <ul class="space-y-2.5 text-slate-600">
-                    <li class="flex justify-between items-center"><span>Kemeja & Hem Pria</span><span class="text-[10px] font-semibold text-[#0369A1] bg-sky-50 border border-sky-100 px-2 py-0.5 rounded">48+ Model</span></li>
-                    <li class="flex justify-between items-center"><span>Dress & Tunik Wanita</span><span class="text-[10px] font-semibold text-[#0369A1] bg-sky-50 border border-sky-100 px-2 py-0.5 rounded">62+ Model</span></li>
-                    <li class="flex justify-between items-center"><span>Batik Anak-Anak & Remaja</span><span class="text-[10px] font-semibold text-[#0369A1] bg-sky-50 border border-sky-100 px-2 py-0.5 rounded">24+ Model</span></li>
-                    <li class="flex justify-between items-center"><span>Kain Tradisional Lembaran</span><span class="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">75+ Motif</span></li>
+                    <li class="flex justify-between items-center"><span>Kemeja & Hem Pria</span></li>
+                    <li class="flex justify-between items-center"><span>Dress & Tunik Wanita</span></li>
+                    <li class="flex justify-between items-center"><span>Batik Anak-Anak & Remaja</span></li>
                 </ul>
             </div>
 

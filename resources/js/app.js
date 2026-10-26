@@ -232,6 +232,40 @@ window.PandansariAPI = {
     /** Alias sesuai spesifikasi: GET /api/me. */
     getProfile() { return this.me(); },
 
+    /* ---------- Peran pengguna & redirect panel ---------- */
+    /**
+     * Kumpulan nilai peran mentah dari objek user → array string huruf kecil.
+     * Mendukung `peran` (backend), `role`, `roles[]`, serta objek peran ({slug|nama|name}).
+     */
+    _peranMentah(user = null) {
+        const u = user ?? this.getUser() ?? {};
+        return [u.peran, u.role, u.roles, u.peran_akses, u.hak_akses]
+            .flatMap((v) => Array.isArray(v) ? v : (v == null ? [] : [v]))
+            .map((v) => String(
+                v && typeof v === 'object'
+                    ? (v.slug ?? v.nama ?? v.name ?? '')
+                    : v
+            ).trim().toLowerCase());
+    },
+    /** Peran efektif: 'admin' | 'teknisi' | 'pelanggan'. */
+    peranUser(user = null) {
+        const peran = this._peranMentah(user);
+        if (peran.some((p) => ['admin', 'administrator', 'super_admin', 'superadmin', 'owner'].includes(p))) return 'admin';
+        if (peran.some((p) => ['teknisi', 'technician', 'engineer', 'engineering'].includes(p))) return 'teknisi';
+        return 'pelanggan';
+    },
+    /** Halaman awal sesuai peran — dipakai setelah login berhasil. */
+    berandaPeran(user = null) {
+        const peran = this.peranUser(user);
+        if (peran === 'admin') return '/admin/dashboard';
+        if (peran === 'teknisi') return '/teknisi';
+        return '/';
+    },
+    /** Arahkan pengguna ke panel sesuai peran (admin/teknisi) atau beranda customer. */
+    arahkanKePanel(user = null) {
+        window.location.href = this.berandaPeran(user);
+    },
+
     /* ---------- Google OAuth (Google Identity Services) ---------- */
     /** Client ID Google dari .env → VITE_GOOGLE_CLIENT_ID (kosong = fitur belum dikonfigurasi). */
     googleClientId() {
@@ -289,13 +323,15 @@ window.PandansariAPI = {
     mintaGoogleCredential() { return this.mintaGoogleToken(); },
     /**
      * POST /auth/google — login/daftar via Google.
-     * Kontrak payload: { token } (access token hasil popup Token Client GSI).
+     * Kontrak payload: ID Token (JWT) dari `google.accounts.id` — `response.credential`.
+     * Backend memverifikasi ID Token (bukan access token OAuth).
      * Sukses → { data: { token, user? } } → sesi disimpan otomatis (setToken + setUser + me()).
      */
-    async loginGoogle(token) {
+    async loginGoogle(idToken) {
         const res = await this.fetch('/auth/google', {
             method: 'POST',
-            body: { access_token: token, token: token },  // kirim kedua kunci agar lulus validasi backend
+            // `id_token` = kunci utama; `credential` & `token` dikirim sebagai alias kompatibilitas.
+            body: { id_token: idToken, credential: idToken, token: idToken },
         });
         if (res.ok) {
             const sesi = res.data?.token ?? res.data?.data?.token ?? res.data?.access_token;
