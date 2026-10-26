@@ -47,12 +47,12 @@ resources/views/
 
 File di `views/components/` **otomatis** terdaftar sebagai atribut Blade (anonymous component):
 
-| Lokasi file | Cara panggil |
-|---|---|
-| `components/navbar.blade.php` | `<x-navbar />` |
-| `components/admin/sidebar.blade.php` | `<x-admin.sidebar />` |
-| `components/teknisi/sidebar.blade.php` | `<x-teknisi.sidebar />` |
-| `components/product-card.blade.php` | `<x-product-card badge="PROMO" title="..." :image="$product->photo_url" />` |
+| Lokasi file                            | Cara panggil                                                                |
+| -------------------------------------- | --------------------------------------------------------------------------- |
+| `components/navbar.blade.php`          | `<x-navbar />`                                                              |
+| `components/admin/sidebar.blade.php`   | `<x-admin.sidebar />`                                                       |
+| `components/teknisi/sidebar.blade.php` | `<x-teknisi.sidebar />`                                                     |
+| `components/product-card.blade.php`    | `<x-product-card badge="PROMO" title="..." :image="$product->photo_url" />` |
 
 Contoh komponen dengan props (`product-card`):
 
@@ -105,15 +105,15 @@ Karena frontend sudah dikanoniskan, backend nantinya cukup mengganti data dummy 
 2. **Jangan mengubah file di `resources/views/components/`** — backend bekerja di `app/`, `routes/`, `database/`.
 3. **Model Produk** yang diharapkan frontend (`shop/katalog`, `shop/product-detail`, komponen `product-card`):
 
-   | Field dibutuhkan view | Kolom yang disarankan | Catatan |
-   |---|---|---|
-   | `title` | `nama_produk` | sudah ada |
-   | `description` | `deskripsi` | sudah ada |
-   | `price` | `harga` | belum ada — format `Rp 1.280.000` di frontend, kirim angka & format backend |
-   | `image` | `foto` / relasi `product_photos` | belum ada — `asset('images/...')` |
-   | badge / label promosi | `status_produk` / tabel promo | sudah ada enum `draft/aktif/nonaktif` |
-   | kategori | relasi `category` | sudah ada (`categories.nama`) |
-   | stok & material | `stok`, `material` | belum ada |
+    | Field dibutuhkan view | Kolom yang disarankan            | Catatan                                                                     |
+    | --------------------- | -------------------------------- | --------------------------------------------------------------------------- |
+    | `title`               | `nama_produk`                    | sudah ada                                                                   |
+    | `description`         | `deskripsi`                      | sudah ada                                                                   |
+    | `price`               | `harga`                          | belum ada — format `Rp 1.280.000` di frontend, kirim angka & format backend |
+    | `image`               | `foto` / relasi `product_photos` | belum ada — `asset('images/...')`                                           |
+    | badge / label promosi | `status_produk` / tabel promo    | sudah ada enum `draft/aktif/nonaktif`                                       |
+    | kategori              | relasi `category`                | sudah ada (`categories.nama`)                                               |
+    | stok & material       | `stok`, `material`               | belum ada                                                                   |
 
 4. **Tabel yang belum ada** (dipakai UI dummy): orders, cart_items, addresses, wishlist, payments, promos, settings, audit_log/webhook_log.
 5. Layout `admin`/`teknisi` saat ini **tanpa middleware** — backend tinggal add middleware ke route group `admin` & `teknisi` di `routes/web.php`.
@@ -121,70 +121,57 @@ Karena frontend sudah dikanoniskan, backend nantinya cukup mengganti data dummy 
 ## 5b. Status Integrasi API
 
 ### ✅ Terpusat di `resources/js/app.js` — Layer `PandansariAPI`
+
 Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success, message, data, errors, meta}`). Spesifikasi lengkap backend: [`docs/BACKEND-API.md`](docs/BACKEND-API.md).
 
 ### ✅ Badge Keranjang & Wishlist di Navbar (sinkron API)
+
 - Alpine store global `$store.lencana` (`{ cart, wishlist }`) diregistrasi saat `alpine:init` di `app.js`.
 - `PandansariAPI.muatLencana()` menarik `GET /cart` + `GET /wishlist` paralel — dipanggil navbar saat halaman dibuka bila user login.
 - Semua helper mutasi (`addCartItem`, `updateCartItem`, `removeCartItem`, `clearCart`, `addWishlist`, `removeWishlist`) otomatis menjadwalkan refresh badge (debounce 300 ms) via `jadwalLencana()` — badge selalu sinkron tanpa perlu memodifikasi tiap halaman.
 - Badge disembunyikan saat jumlah 0. Logout / token usang → badge di-nol-kan (`clearSession()`).
 
 ### ✅ Terhubung
-| Modul | Endpoint | File |
-|---|---|---|
-| Login | `POST /login` → `data.token` + `data.user` | `auth/login.blade.php` |
-| Login via Google | `POST /auth/google` *(GIS wajib client ID sama seperti backend)* | belum — tersedia helper |
-| Register | `POST /register` | `auth/register.blade.php` |
-| Profil/Keluar | `GET /me`, `POST /logout` | `components/navbar.blade.php` |
-| Katalog | `GET /categories`, `GET /products?search&category&page&per_page` — menu navbar kirim `?category=<slug>` (tulis/cap/handprint/wanita/pria/anak/sarimbit) → dipetakan ke `id_category` di `shop/katalog.blade.php` | `shop/katalog.blade.php` + `components/shop/product-item.blade.php` |
-| Detail produk | `GET /products/{id}`, `GET /products/{id}/variants` | `shop/product-detail.blade.php` |
-| Tambah keranjang | `POST /cart/items { id_variant, jumlah }` | `shop/product-detail.blade.php` |
-| Wishlist | `POST /wishlist { id_product }` | katalog + detail |
-| Keranjang | `GET /cart`, `PUT/DELETE /cart/items/{id}`, `DELETE /cart`, voucher validate | `shop/cart.blade.php` |
-| Checkout | `GET /addresses`, **`GET /vouchers/available` (chips voucher yang bisa dipakai)**, `POST /vouchers/validate`, `POST /checkout` (`is_manual_shipping: true`) → **buka WhatsApp admin** untuk konfirmasi ongkir & pembayaran | `shop/checkout.blade.php` |
-| Riwayat pesanan | `GET /orders?page&per_page`, **cek transaksi tertunda `GET /orders/{id}/payment`**, bayar ulang via `POST /orders/{id}/payment`, beli-lagi via `POST /cart/items` | `customer/orders.blade.php` |
-| Buku alamat | CRUD `/addresses` (tambah/ubah/hapus via modal) | `customer/address.blade.php` |
-| Wishlist user | `GET /wishlist` (relasi `product.category/variants/images`), `DELETE /wishlist/{id}` | `customer/wishlist.blade.php` |
-| Profil | `GET /me` (sinkron), `PUT /me { nama_pengguna, email, nomor_telepon }` | `customer/profile.blade.php` |
-| Keamanan | `PUT /me/password { kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation }` | `customer/security.blade.php` |
-| Voucher saya | `GET /voucher-usages/me` | `customer/orders.blade.php` dan kartu **Riwayat Pemakaian Voucher** di `customer/profile.blade.php` |
-| Sidebar akun | `GET /me` + logout di 3 halaman customer | orders/address/wishlist |
+
+| Modul            | Endpoint                                                                                                                                                                                                                   | File                                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Login            | `POST /login` → `data.token` + `data.user`                                                                                                                                                                                 | `auth/login.blade.php`                                                                              |
+| Login via Google | `POST /auth/google` _(GIS wajib client ID sama seperti backend)_                                                                                                                                                           | belum — tersedia helper                                                                             |
+| Register         | `POST /register`                                                                                                                                                                                                           | `auth/register.blade.php`                                                                           |
+| Profil/Keluar    | `GET /me`, `POST /logout`                                                                                                                                                                                                  | `components/navbar.blade.php`                                                                       |
+| Katalog          | `GET /categories`, `GET /products?search&category&page&per_page` — menu navbar kirim `?category=<slug>` (tulis/cap/handprint/wanita/pria/anak/sarimbit) → dipetakan ke `id_category` di `shop/katalog.blade.php`           | `shop/katalog.blade.php` + `components/shop/product-item.blade.php`                                 |
+| Detail produk    | `GET /products/{id}`, `GET /products/{id}/variants`                                                                                                                                                                        | `shop/product-detail.blade.php`                                                                     |
+| Tambah keranjang | `POST /cart/items { id_variant, jumlah }`                                                                                                                                                                                  | `shop/product-detail.blade.php`                                                                     |
+| Wishlist         | `POST /wishlist { id_product }`                                                                                                                                                                                            | katalog + detail                                                                                    |
+| Keranjang        | `GET /cart`, `PUT/DELETE /cart/items/{id}`, `DELETE /cart`, voucher validate                                                                                                                                               | `shop/cart.blade.php`                                                                               |
+| Checkout         | `GET /addresses`, **`GET /vouchers/available` (chips voucher yang bisa dipakai)**, `POST /vouchers/validate`, `POST /checkout` (`is_manual_shipping: true`) → **buka WhatsApp admin** untuk konfirmasi ongkir & pembayaran | `shop/checkout.blade.php`                                                                           |
+| Riwayat pesanan  | `GET /orders?page&per_page`, **cek transaksi tertunda `GET /orders/{id}/payment`**, bayar ulang via `POST /orders/{id}/payment`, beli-lagi via `POST /cart/items`                                                          | `customer/orders.blade.php`                                                                         |
+| Buku alamat      | CRUD `/addresses` (tambah/ubah/hapus via modal)                                                                                                                                                                            | `customer/address.blade.php`                                                                        |
+| Wishlist user    | `GET /wishlist` (relasi `product.category/variants/images`), `DELETE /wishlist/{id}`                                                                                                                                       | `customer/wishlist.blade.php`                                                                       |
+| Profil           | `GET /me` (sinkron), `PUT /me { nama_pengguna, email, nomor_telepon }`                                                                                                                                                     | `customer/profile.blade.php`                                                                        |
+| Keamanan         | `PUT /me/password { kata_sandi_saat_ini, kata_sandi, kata_sandi_confirmation }`                                                                                                                                            | `customer/security.blade.php`                                                                       |
+| Voucher saya     | `GET /voucher-usages/me`                                                                                                                                                                                                   | `customer/orders.blade.php` dan kartu **Riwayat Pemakaian Voucher** di `customer/profile.blade.php` |
+| Sidebar akun     | `GET /me` + logout di 3 halaman customer                                                                                                                                                                                   | orders/address/wishlist                                                                             |
 
 ### ✅ Terhubung — Modul Admin (semua gate: cek token + `peran === 'admin'`)
-| Halaman | Endpoint | File |
-|---|---|---|
-| Dashboard | `GET /admin/{orders,payments,users}/summary`, list `GET /admin/orders` | `admin/dashboard.blade.php` |
-| Produk | `GET /admin/products` (list+search+filter), `PUT /products/{id}`, `DELETE /products/{id}`, `POST /products` (+ varian + gambar via modal), CSV `/admin/products/export` | `admin/products.blade.php` + `components/admin/modal-add-product.blade.php` |
-| Stok | `GET /admin/products` (variants), stepper stok → `PUT /variants/{id}`, toggle toko → `PUT /products/{id}` | `admin/stock.blade.php` |
-| Pesanan | `GET /admin/orders` (filter status), `GET /admin/orders/{id}` (detail), `PUT /admin/orders/{id}/status`, `POST /admin/orders/{id}/fulfillments`, `GET /admin/order-fulfillments` | `admin/orders.blade.php` |
-| Userlist | `GET /users` (dinormalisasi helper), `GET /admin/users/summary`, `POST /users`, CSV `/users/export` | `admin/userlist.blade.php` |
-| Promo/Voucher | `GET /vouchers`, `POST /vouchers`, `GET /vouchers/summary`, `PUT /vouchers/{id}/publish|unpublish`, `DELETE /vouchers/{id}` | `admin/create-promo.blade.php` |
-| Midtrans | `GET /admin/payments` (filter status/provider), `GET /admin/payments/summary` | `admin/midtrans.blade.php` |
-| RajaOngkir | `GET /admin/shipping/{config,health,couriers}`, `PUT /admin/shipping/couriers/{code}`, `GET /shipping/destinations`, `POST /admin/shipping/simulate` | `admin/rajaongkir.blade.php` |
-| Laporan | `GET /admin/{orders,payments}/summary`, buku kas `GET /admin/payments` | `admin/sales-report.blade.php` |
-| Pengaturan | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories`, CRUD `/admin/cms/hero` + `/admin/cms/kategori`, `GET/PUT /admin/cms/galeri` + `POST/PUT/DELETE /admin/cms/galeri/gambar(/{id})`, `GET/PUT /admin/cms/profil-usaha`, CRUD `/admin/cms/fasilitas` | `admin/settings.blade.php` |
 
-> Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), dan fasilitas sudah terhubung. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri/{filename}`.
+| Halaman       | Endpoint                                                                                                                                                                                                                                                                                                                                | File                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------ |
+| Dashboard     | `GET /admin/{orders,payments,users}/summary`, list `GET /admin/orders`                                                                                                                                                                                                                                                                  | `admin/dashboard.blade.php`                                                 |
+| Produk        | `GET /admin/products` (list+search+filter), `PUT /products/{id}`, `DELETE /products/{id}`, `POST /products` (+ varian + gambar via modal), CSV `/admin/products/export`                                                                                                                                                                 | `admin/products.blade.php` + `components/admin/modal-add-product.blade.php` |
+| Stok          | `GET /admin/products` (variants), stepper stok → `PUT /variants/{id}`, toggle toko → `PUT /products/{id}`                                                                                                                                                                                                                               | `admin/stock.blade.php`                                                     |
+| Pesanan       | `GET /admin/orders` (filter status), `GET /admin/orders/{id}` (detail), `PUT /admin/orders/{id}/status`, `POST /admin/orders/{id}/fulfillments`, `GET /admin/order-fulfillments`                                                                                                                                                        | `admin/orders.blade.php`                                                    |
+| Userlist      | `GET /users` (dinormalisasi helper), `GET /admin/users/summary`, `POST /users`, CSV `/users/export`                                                                                                                                                                                                                                     | `admin/userlist.blade.php`                                                  |
+| Promo/Voucher | `GET /vouchers`, `POST /vouchers` (judul 2 jenis: semua produk / `id_product_peruntukan` khusus 1 produk — BE sudah enforce server-side), `GET /vouchers/summary`, `PUT /vouchers/{id}/publish                                                                                                                                          | unpublish`, `DELETE /vouchers/{id}`                                         | `admin/create-promo.blade.php` |
+| Midtrans      | `GET /admin/payments` (filter status/provider), `GET /admin/payments/summary`                                                                                                                                                                                                                                                           | `admin/midtrans.blade.php`                                                  |
+| Laporan       | `GET /admin/{orders,payments}/summary`, buku kas `GET /admin/payments`                                                                                                                                                                                                                                                                  | `admin/sales-report.blade.php`                                              |
+| Pengaturan    | `GET/PUT /me`, `PUT /me/password`, `GET /categories`, `POST/PUT/DELETE /admin/categories`, CRUD `/admin/cms/hero` + `/admin/cms/kategori`, `GET/PUT /admin/cms/galeri` + `POST/PUT/DELETE /admin/cms/galeri/gambar(/{id})`, `GET/PUT /admin/cms/profil-usaha`, CRUD `/admin/cms/fasilitas`, CRUD `/admin/cms/promos` (tab Kelola Promo) | `admin/settings.blade.php`                                                  |
 
-### ✅ Terhubung — Modul Teknisi (Engineering Console)
-Endpoint dipusatkan di `PandansariAPI.teknisi` (`resources/js/app.js`). Semua request otomatis memakai header `Authorization: Bearer <token>` + `ngrok-skip-browser-warning: true`.
-
-| Halaman | Endpoint | File |
-|---|---|---|
-| Dashboard | `GET /teknisi/dashboard`, `GET /teknisi/health` | `teknisi/index.blade.php` + `components/teknisi/dashboard-widgets.blade.php` |
-| Audit Logs | `GET /teknisi/audit-logs`, detail `GET /teknisi/audit-logs/{id}` | `teknisi/audit-log.blade.php` |
-| Webhook Logs | `GET /teknisi/webhook-logs`, detail `GET /teknisi/webhook-logs/{id}` | `teknisi/webhook-logs.blade.php` |
-| Notification Logs | `GET /teknisi/notification-logs`, detail `GET /teknisi/notification-logs/{id}` | `teknisi/notification-logs.blade.php` |
-| Failed Jobs | `GET /teknisi/failed-jobs`, detail `GET /teknisi/failed-jobs/{id}` | `teknisi/failed-jobs.blade.php` |
-
-- Tabel + paginasi + pencarian (`search`, `page`, `per_page`) dirender oleh komponen reusable `<x-teknisi.log-explorer kind="...">`; state Alpine-nya ada di `resources/js/teknisi.js` (`teknisiLogExplorer`).
-- Klik baris → `GET .../{id}` → modal JSON viewer `<pre><code>` dengan tab **Payload / Response / Data Lengkap** (`JSON.stringify(data, null, 2)`).
-- Spinner tampil saat halaman/tab dimuat, saat refresh, dan saat detail modal mengambil data. Toggle **Auto-refresh aktif** (interval 15 detik) aktif secara default.
-- Navigasi antar modul teknisi hanya lewat sidebar kiri (`components/teknisi/sidebar.blade.php`); sub-navbar horizontal sudah dihapus.
-- Profil di top navbar dinamis dari user terotentikasi (`name` / `nama` / `nama_pengguna`) dengan avatar inisial (`getInitials`).
+> Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), fasilitas, dan **multi promo beranda** (`GET /cms/promos` + CRUD `/admin/cms/promos`, lihat `docs/ADENDUM-CMS-PROMO-MULTI.md`) sudah terhubung. Landing fallback ke `GET /cms/promo` lalu banner statis. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri|cms-promo/{filename}`.
 
 ### 🔜 Belum (butuh backend)
-- **Pembayaran manual via WhatsApp** — checkout tidak lagi menghitung ongkir otomatis (RajaOngkir) dan tidak membuka Midtrans Snap. Pesanan dibuat dengan total **belum termasuk ongkir**, lalu pelanggan diarahkan ke WhatsApp admin (`6282210516993`) berisi nomor pesanan, alamat, nomor HP, daftar barang, dan total. Tombol **Bayar via WhatsApp** di halaman Pesanan Saya memakai alur yang sama. Halaman admin RajaOngkir/Midtrans tetap ada.
+
+- Ongkir otomatis saat checkout — `POST /shipping/cost` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis. Halaman admin Integrasi RajaOngkir sudah dihapus; endpoint `/admin/shipping/*` tidak dipakai UI.
 - CRUD user admin (ubah/hapus) — `GET /users` hanya punya list/detail + `POST /users`.
 - Galeri atelier — belum ada endpoint.
 - Login Google GIS — menyusul client ID disepakati.
