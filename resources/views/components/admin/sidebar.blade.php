@@ -112,19 +112,23 @@
         </div>
 
         <!-- Footer Profile Admin -->
-        <div class="p-4 border-t border-slate-800/80 flex items-center gap-3 bg-[#0A192F]">
-            <div class="w-9 h-9 bg-emerald-700/80 text-white rounded-xl flex items-center justify-center font-bold text-xs shrink-0">
-                <i class="fa-solid fa-user-tie"></i>
+        <div class="p-4 border-t border-slate-800/80 bg-[#0A192F] space-y-2">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-emerald-700/80 text-white rounded-xl flex items-center justify-center font-bold text-xs shrink-0">
+                    <i class="fa-solid fa-user-tie"></i>
+                </div>
+                <div class="overflow-hidden">
+                    <h4 class="text-xs font-bold text-white truncate">K. R. H. Danureja</h4>
+                    <p class="text-[10px] text-slate-400 truncate">Kurator Utama</p>
+                </div>
             </div>
-            <div class="overflow-hidden">
-                <h4 class="text-xs font-bold text-white truncate">K. R. H. Danureja</h4>
-                <p class="text-[10px] text-slate-400 truncate">Kurator Utama</p>
-            </div>
+
+            <!-- Tombol Logout -->
             <button type="button"
-                    onclick="PandansariAPI.keluarPanel()"
-                    title="Keluar panel"
-                    class="ml-auto p-2 rounded-lg text-slate-400 hover:text-white hover:bg-rose-500/20 transition cursor-pointer">
-                <i class="fa-solid fa-arrow-right-from-bracket text-xs"></i>
+                    onclick="window.PandansariAPI ? PandansariAPI.keluarPanel() : (window.location.href = '/login')"
+                    class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold text-rose-300 bg-rose-500/10 border border-rose-400/30 hover:bg-rose-500/20 hover:text-rose-200 transition cursor-pointer">
+                <i class="fa-solid fa-arrow-right-from-bracket text-[11px]"></i>
+                <span>Keluar dari Panel</span>
             </button>
         </div>
     </div>

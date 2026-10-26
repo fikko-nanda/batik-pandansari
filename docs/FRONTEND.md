@@ -169,6 +169,8 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 
 > Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), fasilitas, dan **multi promo beranda** (`GET /cms/promos` + CRUD `/admin/cms/promos`, lihat `docs/ADENDUM-CMS-PROMO-MULTI.md`) sudah terhubung. Landing fallback ke `GET /cms/promo` lalu banner statis. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri|cms-promo/{filename}`.
 
+> **Lonceng notifikasi admin** (`components/admin/navbar.blade.php`) aktif di semua halaman: menarik `GET /admin/orders/summary`, `GET /admin/payments/summary`, dan 3 pesanan terbaru. Badge menghitung notifikasi belum dibaca (kunci dibaca di `localStorage` `pandansari_admin_notif_dibaca`); klik item membuka `/admin/orders?status=…` / `?detail=…` atau `/admin/midtrans`. **Tombol logout** tersedia di navbar (kanan atas) dan footer sidebar → `PandansariAPI.keluarPanel()`.
+
 ### 🔜 Belum (butuh backend)
 
 - Ongkir otomatis saat checkout — `POST /shipping/cost` selalu 422 `RAJAONGKIR_DESTINATION_NOT_FOUND` (bug backend, lihat `docs/BACKEND-API.md` §15). Checkout fallback tarif manual statis. Halaman admin Integrasi RajaOngkir sudah dihapus; endpoint `/admin/shipping/*` tidak dipakai UI.
@@ -193,6 +195,7 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 - Login admin/teknisi memanggil `PandansariAPI.sinkronPanel()` sebelum redirect. Logout panel memakai `PandansariAPI.keluarPanel()`; logout customer juga membersihkan cookie panel lewat `sendBeacon`.
 - Di balik ngrok, pastikan `TRUSTED_PROXIES` mencakup loopback (`127.0.0.1,::1`) agar deteksi HTTPS/cookie Secure benar. Untuk PHP Windows yang belum punya CA bundle, isi `MEDIA_PROXY_CA_BUNDLE` (lihat `.env.example`).
 - Kartu kategori beranda (`components/categories.blade.php`) mengambil sampel produk pertama lewat `GET /products?category={slug}&per_page=1` untuk `pria`, `wanita`, `anak`, dan `kain`. Karena backend saat ini memfilter dengan `id_category`, slug ramah di-resolve dari `GET /categories`; jika produk pertama belum punya gambar, dicari sampel berikutnya, lalu memakai gambar fallback lokal bila tetap kosong/gagal dimuat.
+- Label **"Lihat N Koleksi …"** pada kartu kategori yang sama memakai `meta.total` dari `GET /products?category=<id_category>&per_page=1` — angkanya sama dengan jumlah barang di katalog (`/katalog?category=…`). Bila API belum menjawab/gagal, label tampil tanpa angka (bukan angka statis).
 
 ## 6. Checklist Sebelum Merge
 
