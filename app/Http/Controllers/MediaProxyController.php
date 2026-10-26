@@ -63,8 +63,13 @@ class MediaProxyController extends Controller
         $origin = rtrim((string) $origin, '/');
         $url = $origin.'/storage/'.$folder.'/'.$filename;
 
+        $caBundle = config('services.api.ca_bundle');
+
         try {
-            $response = Http::withHeaders([
+            $response = Http::withOptions([
+                // Gunakan CA bundle kustom bila dikonfigurasi (mis. PHP Windows tanpa curl.cainfo).
+                'verify' => $caBundle ?: true,
+            ])->withHeaders([
                 'ngrok-skip-browser-warning' => 'true',
                 'Accept' => 'image/*',
             ])->connectTimeout(10)->timeout(30)->get($url);

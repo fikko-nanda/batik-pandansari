@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\MediaProxyController;
+use App\Http\Controllers\PanelSessionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -94,13 +95,22 @@ Route::get('/register', function () {
     return view('auth.register');
 })->name('register');
 
+// Sesi panel: token diverifikasi backend, lalu disimpan sebagai cookie HttpOnly.
+Route::post('/session/panel', [PanelSessionController::class, 'store'])
+    ->middleware('throttle:30,1')
+    ->name('session.panel');
+
+Route::post('/session/logout', [PanelSessionController::class, 'destroy'])
+    ->middleware('throttle:30,1')
+    ->name('session.logout');
+
 // 3b. Lupa Password (3 langkah: email → OTP → sandi baru)
 Route::get('/forgot-password', function () {
     return view('auth.forgot-password');
 })->name('forgot-password');
 
-// 4. Modul Admin Dashboard
-Route::prefix('admin')->group(function () {
+// 4. Modul Admin Dashboard (wajib cookie panel admin)
+Route::prefix('admin')->middleware('panel:admin')->group(function () {
     Route::get('/dashboard', function () {
         return view('admin.dashboard');
     })->name('admin.dashboard');
@@ -139,7 +149,7 @@ Route::prefix('admin')->group(function () {
 });
 
 // 5. Modul Teknisi (Engineering Console) - DIPISAH AGAR URL STANDALONE
-Route::prefix('teknisi')->group(function () {
+Route::prefix('teknisi')->middleware('panel:teknisi')->group(function () {
     Route::get('/', function () {
         return view('teknisi.index');
     })->name('teknisi.dashboard');
