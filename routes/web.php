@@ -43,6 +43,14 @@ Route::get('/media/cms-galeri/{filename}', [MediaProxyController::class, 'cmsGal
     ->where('filename', '[A-Za-z0-9._-]+')
     ->name('media.cms-galeri');
 
+Route::get('/media/cms-promo/{filename}', [MediaProxyController::class, 'cmsPromo'])
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('media.cms-promo');
+
+Route::get('/media/vouchers/{filename}', [MediaProxyController::class, 'vouchers'])
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('media.vouchers');
+
 Route::get('/cart', function () {
     return view('shop.cart');
 })->name('cart');
@@ -105,17 +113,9 @@ Route::prefix('admin')->group(function () {
         return view('admin.stock');
     })->name('admin.stock');
 
-    Route::get('/inventory/movements', function () {
-        return view('admin.inventory-movements');
-    })->name('admin.inventory-movements');
-
     Route::get('/orders', function () {
         return view('admin.orders');
     })->name('admin.orders');
-
-    Route::get('/rajaongkir', function () {
-        return view('admin.rajaongkir');
-    })->name('admin.rajaongkir');
 
     Route::get('/midtrans', function () {
         return view('admin.midtrans');

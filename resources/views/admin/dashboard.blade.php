@@ -109,7 +109,7 @@
                 Sugeng Rawuh, <span class="italic font-normal" x-text="user?.nama_pengguna ?? 'Admin'"></span>
             </h1>
             <p class="text-xs text-slate-300 leading-relaxed font-normal">
-                Ikhtisar perputaran wastra, status gerbang bayar Midtrans, serta logistik RajaOngkir — data langsung dari API backend.
+                Ikhtisar perputaran wastra, status gerbang bayar Midtrans, serta data langsung dari API backend.
             </p>
         </div>
 
