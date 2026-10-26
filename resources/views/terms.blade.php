@@ -45,10 +45,11 @@
             </div>
 
             <div>
-                <h2 class="text-base font-bold text-[#0F1A24] mb-2">4. Gratis Ongkir &amp; Tarif Manual</h2>
-                <p>Ongkos kirim dihitung otomatis via RajaOngkir. Jika layanan ongkir tidak tersedia (limit / gangguan),
-                    kami menyediakan <strong>Tarif Manual</strong> (mis. JNE / POS / TIKI) untuk tetap menyelesaikan
-                    pesanan Anda. Tarif manual sah dan akan dikelola kami sebagaimana tatacara ekspedisi yang dipilih.</p>
+                <h2 class="text-base font-bold text-[#0F1A24] mb-2">4. Ongkos Kirim &amp; Konfirmasi Manual</h2>
+                <p>Ongkos kirim <strong>tidak dihitung otomatis</strong> dan <strong>belum termasuk</strong> dalam total
+                    pembayaran di halaman checkout. Setelah pesanan dibuat, tim kami akan mengonfirmasi ongkos kirim
+                    berdasarkan alamat dan berat paket melalui <strong>WhatsApp</strong>, beserta total pembayaran dan
+                    rekening yang digunakan. Pesanan diproses setelah konfirmasi dan pembayaran diterima.</p>
             </div>
 
             <div>

@@ -87,7 +87,7 @@
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
         const me = await PandansariAPI.me();
-        if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
+        if (!me.ok || me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
         await Promise.all([this.loadPayments(), this.loadSummary()]);
         this.loading = false;
     }

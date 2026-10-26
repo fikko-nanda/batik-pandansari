@@ -53,7 +53,7 @@ class MediaProxyController extends Controller
             abort(404);
         }
 
-        $apiUrl = (string) env('VITE_API_URL', '');
+        $apiUrl = (string) config('services.api.url', '');
 
         if ($apiUrl === '') {
             abort(500, 'VITE_API_URL belum dikonfigurasi.');

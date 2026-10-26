@@ -210,7 +210,7 @@
 
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loadingList = false; return; }
         const me = await PandansariAPI.me();
-        if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loadingList = false; return; }
+        if (!me.ok || me.data?.peran !== 'admin') { this.notAdmin = true; this.loadingList = false; return; }
         this.muatSemua();
     }
 }" class="space-y-6 text-slate-800 font-sans pb-10">
