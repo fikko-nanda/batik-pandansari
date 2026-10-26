@@ -888,7 +888,7 @@ window.PandansariAPI = {
         /* -- 19.9 Kategori CMS (kartu kategori beranda) -- */
         /** GET /admin/cms/kategori — semua kartu kategori CMS. */
         cmsKategori() { return PandansariAPI.fetch('/admin/cms/kategori'); },
-        /** POST /admin/cms/kategori — multipart: nama_kategori (unik), judul, tautan_tujuan, gambar. */
+        /** POST /admin/cms/kategori — multipart: nama_kategori (unik), judul, gambar; tautan_tujuan dihitung FE dari slug kategori. */
         createCmsKategori(formData) { return PandansariAPI.fetch('/admin/cms/kategori', { method: 'POST', body: formData }); },
         /** PUT /admin/cms/kategori/{id} — multipart via POST + `_method=PUT` (alasan sama dengan updateHero). */
         updateCmsKategori(id, payload) {

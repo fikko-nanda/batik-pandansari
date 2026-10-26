@@ -98,7 +98,7 @@
             // Samakan URL dengan kategori terpilih (mendukung highlight menu navbar & refresh)
             sinkronURL() {
                 const c = this.categories.find(x => x.id_category === this.selectedCategory);
-                const slug = this.namaKeSlug(c?.nama_kategori ?? '');
+                const slug = String(c?.slug ?? '').trim() || this.namaKeSlug(c?.nama_kategori ?? '');
                 window.history.replaceState({}, '', slug ? '/katalog?category=' + encodeURIComponent(slug) : '/katalog');
             },
             // Slug menu navbar → nama kategori (contoh: 'pria' → 'Pakaian Pria')
@@ -146,9 +146,13 @@
                 if (cid) {
                     this.selectedCategory = cid;
                 } else if (slug) {
-                    const nama = this.slugKeNama(slug);
-                    const c = this.categories.find(x => String(x.nama_kategori ?? '').toLowerCase() === nama.toLowerCase())
-                        ?? this.categories.find(x => nama && String(x.nama_kategori ?? '').toLowerCase().includes(nama.toLowerCase()));
+                    const key = String(slug).toLowerCase();
+                    let c = this.categories.find(x => String(x.slug ?? '').toLowerCase() === key);
+                    if (!c) {
+                        const nama = this.slugKeNama(slug);
+                        c = this.categories.find(x => String(x.nama_kategori ?? '').toLowerCase() === nama.toLowerCase())
+                            ?? this.categories.find(x => nama && String(x.nama_kategori ?? '').toLowerCase().includes(nama.toLowerCase()));
+                    }
                     this.selectedCategory = c ? c.id_category : '';
                 }
                 // Kata kunci dari pencarian navbar: /katalog?q=...
