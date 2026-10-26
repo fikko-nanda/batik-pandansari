@@ -169,11 +169,7 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 
 > Kontak banner hero, kategori CMS, galeri atelier, alamat/jam operasional (profil usaha), fasilitas, dan **multi promo beranda** (`GET /cms/promos` + CRUD `/admin/cms/promos`, lihat `docs/ADENDUM-CMS-PROMO-MULTI.md`) sudah terhubung. Landing fallback ke `GET /cms/promo` lalu banner statis. Proxy gambar: `/media/cms-hero|cms-kategori|cms-galeri|cms-promo/{filename}`.
 
-> Tab **Kelola 3 Kategori Utama** tidak lagi meminta link manual. `tautan_tujuan` dihitung otomatis dari slug kategori terpilih (`/katalog?category=<slug>`), lalu disimpan lewat API yang sama. Saat Simpan Semua, link kartu lama yang berbeda ikut diperbaiki. Katalog mendukung slug dari API sekaligus alias lama (`tulis`, `cap`, `handprint`, dst.).
->
-> Tab **Kelola Promo Beranda** juga tidak meminta link manual. Link CTA dihitung otomatis: voucher khusus satu produk ke `/detail/{id_product_peruntukan}`, voucher semua produk ke `/katalog`. Nilai ini dikirim saat simpan dan dipakai langsung oleh banner landing, termasuk untuk promo lama.
->
-> Tab **Kelola Banner Hero** memakai link otomatis berdasarkan tipe **Kategori**, **Produk**, atau **Katalog**. Kategori berasal dari `GET /categories` (`/katalog?category=<slug>`), produk dari daftar produk aktif `GET /products` (`/detail/<id_product>`), dan Katalog menghasilkan `/katalog`. Tipe/target dipulihkan dari `tautan_tombol` saat halaman dimuat, sehingga tidak perlu kolom backend baru.
+> **Lonceng notifikasi admin** (`components/admin/navbar.blade.php`) aktif di semua halaman: menarik `GET /admin/orders/summary`, `GET /admin/payments/summary`, dan 3 pesanan terbaru. Badge menghitung notifikasi belum dibaca (kunci dibaca di `localStorage` `pandansari_admin_notif_dibaca`); klik item membuka `/admin/orders?status=…` / `?detail=…` atau `/admin/midtrans`. **Tombol logout** tersedia di navbar (kanan atas) dan footer sidebar → `PandansariAPI.keluarPanel()`.
 
 ### 🔜 Belum (butuh backend)
 
@@ -199,6 +195,7 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 - Login admin/teknisi memanggil `PandansariAPI.sinkronPanel()` sebelum redirect. Logout panel memakai `PandansariAPI.keluarPanel()`; logout customer juga membersihkan cookie panel lewat `sendBeacon`.
 - Di balik ngrok, pastikan `TRUSTED_PROXIES` mencakup loopback (`127.0.0.1,::1`) agar deteksi HTTPS/cookie Secure benar. Untuk PHP Windows yang belum punya CA bundle, isi `MEDIA_PROXY_CA_BUNDLE` (lihat `.env.example`).
 - Kartu kategori beranda (`components/categories.blade.php`) mengambil sampel produk pertama lewat `GET /products?category={slug}&per_page=1` untuk `pria`, `wanita`, `anak`, dan `kain`. Karena backend saat ini memfilter dengan `id_category`, slug ramah di-resolve dari `GET /categories`; jika produk pertama belum punya gambar, dicari sampel berikutnya, lalu memakai gambar fallback lokal bila tetap kosong/gagal dimuat.
+- Label **"Lihat N Koleksi …"** pada kartu kategori yang sama memakai `meta.total` dari `GET /products?category=<id_category>&per_page=1` — angkanya sama dengan jumlah barang di katalog (`/katalog?category=…`). Bila API belum menjawab/gagal, label tampil tanpa angka (bukan angka statis).
 
 ## 6. Checklist Sebelum Merge
 
