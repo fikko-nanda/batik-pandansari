@@ -188,6 +188,7 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 ### Keamanan & sesi panel
 
 - Middleware global `App\Http\Middleware\SecurityHeaders` memasang CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, dan `COOP`; HSTS hanya dikirim saat request HTTPS.
+- Vite dev server dipaksa memakai `127.0.0.1:5173` (lihat `vite.config.js`) karena Chrome menolak `http://[::1]:5173` sebagai source CSP. Origin Vite otomatis diizinkan di `script-src`, `style-src`, `font-src`, `img-src`, dan `connect-src` hanya saat environment lokal. Jika `public/hot` tertinggal dari sesi `npm run dev`, CSS/JS dev akan gagal dimuat: hentikan dev server, hapus `public/hot`, lalu `npm run build`.
 - Halaman `/admin/*` dan `/teknisi/*` dijaga `panel:admin` / `panel:teknisi` (`EnsurePanelRole`). Cookie `pandansari_panel` bersifat HttpOnly + terenkripsi dan hanya dipasang setelah `POST /session/panel` memverifikasi token ke `GET /api/me` backend.
 - Login admin/teknisi memanggil `PandansariAPI.sinkronPanel()` sebelum redirect. Logout panel memakai `PandansariAPI.keluarPanel()`; logout customer juga membersihkan cookie panel lewat `sendBeacon`.
 - Di balik ngrok, pastikan `TRUSTED_PROXIES` mencakup loopback (`127.0.0.1,::1`) agar deteksi HTTPS/cookie Secure benar. Untuk PHP Windows yang belum punya CA bundle, isi `MEDIA_PROXY_CA_BUNDLE` (lihat `.env.example`).
@@ -196,6 +197,7 @@ Semua pemanggilan API harus lewat helper ini (Bearer token + envelope `{success,
 ## 6. Checklist Sebelum Merge
 
 - [ ] `npm run build` sukses
+- [ ] Tidak ada `public/hot` tertinggal saat commit/demo (build memakai `public/build`)
 - [ ] `php artisan view:cache` compile semua Blade tanpa error
 - [ ] Tidak mengubah `routes/web.php` dan `app/`
 - [ ] Komponen reusable baru ditaruh di `components/`, bukan inline duplikat
