@@ -86,15 +86,109 @@
                                            class="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono uppercase"
                                            placeholder="Contoh: BP-KWG-015">
                                 </div>
-                                <div>
-                                    <label class="block font-bold text-slate-700 mb-1">Kategori <span class="text-sky-500">*</span></label>
-                                    <select x-model="form.id_category" required
-                                            class="w-full border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium">
-                                        <option value="">Pilih kategori...</option>
-                                        <template x-for="c in categories" :key="c.id_category">
-                                            <option :value="c.id_category" x-text="c.nama_kategori"></option>
+                                <div class="relative" x-data="{ catDropdownOpen: false, catSearch: '' }" @click.outside="catDropdownOpen = false" @keydown.escape.window="catDropdownOpen = false">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <label class="block font-bold text-slate-700">Kategori <span class="text-sky-500">*</span></label>
+                                        <span class="text-[10px] text-slate-400 font-normal">Bisa pilih &gt; 1</span>
+                                    </div>
+
+                                    <!-- Trigger Button -->
+                                    <button type="button"
+                                            @click="catDropdownOpen = !catDropdownOpen"
+                                            class="w-full border rounded-xl p-2.5 text-xs font-medium text-left bg-white flex items-center justify-between transition cursor-pointer min-h-[38px]"
+                                            :class="catDropdownOpen ? 'border-sky-500 ring-2 ring-sky-500/20' : (form.category_ids && form.category_ids.length ? 'border-sky-300 bg-sky-50/20' : 'border-slate-200 hover:border-slate-300')">
+                                        <div class="flex-1 truncate pr-2">
+                                            <template x-if="!form.category_ids || !form.category_ids.length">
+                                                <span class="text-slate-400">Pilih kategori...</span>
+                                            </template>
+                                            <template x-if="form.category_ids && form.category_ids.length === 1">
+                                                <span class="text-slate-800 font-semibold" x-text="getCategoryName(form.category_ids[0])"></span>
+                                            </template>
+                                            <template x-if="form.category_ids && form.category_ids.length > 1">
+                                                <div class="flex items-center gap-1.5">
+                                                    <span class="bg-sky-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                                          x-text="form.category_ids.length + ' dipilih'"></span>
+                                                    <span class="text-slate-700 font-medium truncate"
+                                                          x-text="form.category_ids.map(id => getCategoryName(id)).join(', ')"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <i class="fa-solid fa-chevron-down text-slate-400 text-[10px] transition-transform duration-200 shrink-0"
+                                           :class="catDropdownOpen ? 'rotate-180 text-sky-500' : ''"></i>
+                                    </button>
+
+                                    <!-- Dropdown Popover -->
+                                    <div x-show="catDropdownOpen"
+                                         x-cloak
+                                         x-transition:enter="transition ease-out duration-150"
+                                         x-transition:enter-start="opacity-0 translate-y-1 scale-95"
+                                         x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+                                         x-transition:leave="transition ease-in duration-100"
+                                         x-transition:leave-start="opacity-100 translate-y-0 scale-100"
+                                         x-transition:leave-end="opacity-0 translate-y-1 scale-95"
+                                         class="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden text-xs">
+                                        
+                                        <!-- Search input inside dropdown -->
+                                        <div class="p-2 border-b border-slate-100 bg-slate-50/70">
+                                            <div class="relative">
+                                                <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]"></i>
+                                                <input type="text"
+                                                       x-model="catSearch"
+                                                       @click.stop
+                                                       placeholder="Cari kategori..."
+                                                       class="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 placeholder-slate-400">
+                                                <button type="button"
+                                                        x-show="catSearch"
+                                                        @click.stop="catSearch = ''"
+                                                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                                    <i class="fa-solid fa-xmark text-[10px]"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Select/Clear quick action bar -->
+                                        <div class="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-500">
+                                            <span>
+                                                <span class="text-sky-600 font-extrabold" x-text="(form.category_ids || []).length"></span> dari <span x-text="categories.length"></span> dipilih
+                                            </span>
+                                            <div class="flex items-center gap-2">
+                                                <button type="button" @click.stop="selectAllCategories()" class="text-sky-600 hover:text-sky-800 transition cursor-pointer">Pilih Semua</button>
+                                                <span class="text-slate-300">|</span>
+                                                <button type="button" @click.stop="clearCategories()" class="text-rose-500 hover:text-rose-700 transition cursor-pointer">Reset</button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Options list -->
+                                        <div class="max-h-52 overflow-y-auto p-1.5 divide-y divide-slate-50">
+                                            <template x-for="c in filteredCategories(catSearch)" :key="c.id_category">
+                                                <label class="flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-sky-50/80 cursor-pointer transition select-none group"
+                                                       :class="isCategorySelected(c.id_category) ? 'bg-sky-50/70 text-sky-950 font-bold' : 'text-slate-700 font-medium'">
+                                                    <input type="checkbox"
+                                                           :value="c.id_category"
+                                                           :checked="isCategorySelected(c.id_category)"
+                                                           @change="toggleCategory(c.id_category)"
+                                                           class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 h-4 w-4 cursor-pointer">
+                                                    <span class="flex-1 text-xs" x-text="c.nama_kategori"></span>
+                                                    <i x-show="isCategorySelected(c.id_category)" class="fa-solid fa-check text-sky-600 text-xs"></i>
+                                                </label>
+                                            </template>
+                                            <div x-show="filteredCategories(catSearch).length === 0" class="p-4 text-center text-slate-400 text-xs">
+                                                Kategori tidak ditemukan.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Badges of selected categories with (x) remove button -->
+                                    <div class="flex flex-wrap gap-1.5 mt-2" x-show="form.category_ids && form.category_ids.length > 0">
+                                        <template x-for="id in form.category_ids" :key="id">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-sky-50 text-sky-800 border border-sky-200/80 rounded-lg text-[11px] font-semibold transition hover:bg-sky-100/70">
+                                                <span x-text="getCategoryName(id)"></span>
+                                                <button type="button" @click.stop="toggleCategory(id)" class="text-sky-500 hover:text-rose-600 transition cursor-pointer" title="Hapus kategori">
+                                                    <i class="fa-solid fa-xmark text-[10px]"></i>
+                                                </button>
+                                            </span>
                                         </template>
-                                    </select>
+                                    </div>
                                 </div>
                             </div>
 
