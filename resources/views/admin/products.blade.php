@@ -37,6 +37,7 @@
         sku: '',
         deskripsi: '',
         id_category: '',
+        category_ids: [],
         berat_produk: '',
         bahan_kain: '',
         status_produk: 'draft',
@@ -67,6 +68,49 @@
     hargaMinOf(p) {
         const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);
         return v.length ? Math.min(...v.map(x => Number(x.harga))) : null;
+    },
+    // Multi-kategori helper
+    toggleCategory(id) {
+        if (!Array.isArray(this.form.category_ids)) this.form.category_ids = [];
+        const idx = this.form.category_ids.indexOf(id);
+        if (idx > -1) {
+            this.form.category_ids.splice(idx, 1);
+        } else {
+            this.form.category_ids.push(id);
+        }
+        this.form.id_category = this.form.category_ids[0] ?? '';
+    },
+    isCategorySelected(id) {
+        return Array.isArray(this.form.category_ids) && this.form.category_ids.includes(id);
+    },
+    getCategoryName(id) {
+        const found = this.categories.find(c => String(c.id_category) === String(id));
+        return found ? found.nama_kategori : id;
+    },
+    filteredCategories(keyword) {
+        if (!keyword || !keyword.trim()) return this.categories;
+        const q = keyword.trim().toLowerCase();
+        return this.categories.filter(c => (c.nama_kategori ?? '').toLowerCase().includes(q));
+    },
+    selectAllCategories() {
+        this.form.category_ids = this.categories.map(c => c.id_category);
+        this.form.id_category = this.form.category_ids[0] ?? '';
+    },
+    clearCategories() {
+        this.form.category_ids = [];
+        this.form.id_category = '';
+    },
+    categoriesOf(p) {
+        if (Array.isArray(p.categories) && p.categories.length) {
+            return p.categories.map(c => typeof c === 'object' ? c.nama_kategori : this.getCategoryName(c)).filter(Boolean);
+        }
+        if (Array.isArray(p.category_ids) && p.category_ids.length) {
+            return p.category_ids.map(id => this.getCategoryName(id)).filter(Boolean);
+        }
+        if (p.category?.nama_kategori) {
+            return [p.category.nama_kategori];
+        }
+        return [];
     },
     pesan(ok, msg) {
         this.noticeOk = ok;
@@ -129,7 +173,22 @@
         this.form.nama_produk = p.nama_produk ?? '';
         this.form.sku = p.sku ?? '';
         this.form.deskripsi = p.deskripsi ?? '';
-        this.form.id_category = p.id_category ?? p.category?.id_category ?? '';
+
+        const parseCatIds = (item) => {
+            const ids = [];
+            if (Array.isArray(item.categories)) {
+                ids.push(...item.categories.map(c => typeof c === 'object' ? c.id_category : c).filter(Boolean));
+            } else if (Array.isArray(item.category_ids)) {
+                ids.push(...item.category_ids.filter(Boolean));
+            }
+            if (!ids.length && (item.id_category || item.category?.id_category)) {
+                ids.push(item.id_category || item.category?.id_category);
+            }
+            return [...new Set(ids)];
+        };
+
+        this.form.category_ids = parseCatIds(p);
+        this.form.id_category = this.form.category_ids[0] ?? '';
         this.form.berat_produk = p.berat_produk ?? '';
         this.form.bahan_kain = p.bahan_kain ?? '';
         this.showModalTambah = true;
@@ -147,7 +206,8 @@
         this.form.nama_produk = prod.nama_produk ?? '';
         this.form.sku = prod.sku ?? '';
         this.form.deskripsi = prod.deskripsi ?? '';
-        this.form.id_category = prod.id_category ?? prod.category?.id_category ?? '';
+        this.form.category_ids = parseCatIds(prod);
+        this.form.id_category = this.form.category_ids[0] ?? '';
         this.form.berat_produk = prod.berat_produk ?? '';
         this.form.bahan_kain = prod.bahan_kain ?? '';
 
@@ -205,6 +265,7 @@
             sku: '',
             deskripsi: '',
             id_category: '',
+            category_ids: [],
             berat_produk: '',
             bahan_kain: '',
             status_produk: 'draft',
@@ -234,7 +295,7 @@
     },
     nextStep() {
         if (this.formStep === 'identitas') {
-            if (!this.form.nama_produk.trim() || !this.form.sku.trim() || !this.form.id_category || !Number(this.form.berat_produk)) {
+            if (!this.form.nama_produk.trim() || !this.form.sku.trim() || !(this.form.category_ids?.length || this.form.id_category) || !Number(this.form.berat_produk)) {
                 this.pesan(false, 'Lengkapi nama produk, SKU, kategori, dan berat produk.');
                 return;
             }
@@ -425,7 +486,7 @@
     validateForm() {
         if (!this.form.nama_produk?.trim()) { this.formStep = 'identitas'; this.pesan(false, 'Nama produk wajib diisi.'); return false; }
         if (!this.form.sku?.trim()) { this.formStep = 'identitas'; this.pesan(false, 'SKU produk wajib diisi.'); return false; }
-        if (!this.form.id_category) { this.formStep = 'identitas'; this.pesan(false, 'Kategori produk wajib dipilih.'); return false; }
+        if (!this.form.category_ids?.length && !this.form.id_category) { this.formStep = 'identitas'; this.pesan(false, 'Kategori produk wajib dipilih minimal 1.'); return false; }
         const berat = Number(this.form.berat_produk);
         if (!Number.isInteger(berat) || berat < 1 || berat > 1000000) { this.formStep = 'identitas'; this.pesan(false, 'Berat produk wajib berupa angka bulat 1-1.000.000 gram.'); return false; }
         if (this.photoTotal() < 1) { this.formStep = 'identitas'; this.pesan(false, 'Unggah minimal 1 foto produk.'); return false; }
@@ -456,7 +517,10 @@
     },
     productPayload() {
         return {
-            id_category: this.form.id_category,
+            id_category: this.form.category_ids?.[0] || this.form.id_category || '',
+            category_ids: this.form.category_ids || [],
+            categories: this.form.category_ids || [],
+            id_categories: this.form.category_ids || [],
             nama_produk: this.form.nama_produk.trim(),
             sku: this.form.sku.trim().toUpperCase(),
             deskripsi: this.form.deskripsi?.trim() || null,
@@ -797,8 +861,13 @@
                                                 </span>
                                             </button>
                                             <div class="space-y-0.5">
-                                                <div class="flex items-center gap-2">
-                                                    <span class="bg-[#0A192F] text-white text-[9px] font-bold px-1.5 py-0.5 rounded" x-text="(p.category?.nama_kategori ?? 'TANPA').toUpperCase()"></span>
+                                                <div class="flex flex-wrap items-center gap-1.5">
+                                                    <template x-for="catName in categoriesOf(p)" :key="catName">
+                                                        <span class="bg-[#0A192F] text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase" x-text="catName"></span>
+                                                    </template>
+                                                    <template x-if="!categoriesOf(p).length">
+                                                        <span class="bg-[#0A192F] text-white text-[9px] font-bold px-1.5 py-0.5 rounded">TANPA</span>
+                                                    </template>
                                                     <strong class="text-slate-800 text-sm" x-text="p.nama_produk"></strong>
                                                 </div>
                                                 <p class="text-[10px] text-slate-400 line-clamp-1 max-w-xs truncate" x-text="p.deskripsi ?? '-'"></p>
