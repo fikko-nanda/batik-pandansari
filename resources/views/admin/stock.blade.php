@@ -15,15 +15,20 @@
     searchQuery: '',
     loading: true,
     notice: '', noticeOk: true,
-    savingKey: '',           // key produk yang sedang disimpan
 
     // === Inventory summary ===
     lowStockCount: 0,
     valuation: null,
     loadingSummary: true,
 
-    // === Edit stok sementara per varian: { id_variant: angka } ===
-    draft: {},
+    // === Popup atur stok per produk ===
+    stockModalOpen: false,
+    stockProduct: null,
+    stockSelectedId: '',
+    stockDraft: 0,
+    savingStock: false,
+    stockError: '',
+    stockSuccess: '',
 
     fmt(n) { return PandansariAPI.formatRp(n); },
     num(n) { return Number(n ?? 0).toLocaleString('id-ID'); },
@@ -42,13 +47,13 @@
     },
 
     activeVariants(p) {
-        return (p.variants ?? []).filter(v => v.status_varian !== 'nonaktif');
+        return (p?.variants ?? []).filter(v => v.status_varian !== 'nonaktif');
     },
     totalStok(p) {
         return this.activeVariants(p).reduce((s, v) => s + Number(v.stok ?? 0), 0);
     },
     coverOf(p) {
-        return PandansariAPI.coverUrl(p.images) || '{{ asset('images/katalog1.webp') }}';
+        return PandansariAPI.coverUrl(p?.images) || '{{ asset('images/katalog1.webp') }}';
     },
     statusInfo(p) {
         const t = this.totalStok(p);
@@ -57,45 +62,110 @@
         if (t <= 3) return { label: 'Stok Menipis', style: 'bg-sky-200 text-sky-900 border border-sky-300 font-bold', row: 'bg-sky-50/30 hover:bg-sky-50/60' };
         return { label: 'Aman', style: 'bg-emerald-50 text-emerald-800 border border-emerald-200', row: 'hover:bg-slate-50/80' };
     },
-    /** nilai draft varian (jika ada) atau nilai API */
-    valOf(v) {
-        return this.draft[v.id_variant] ?? Number(v.stok ?? 0);
+    variantLabel(v) {
+        const nama = String(v?.nama_varian ?? '').trim();
+        if (nama) return nama;
+        const kombinasi = [v?.ukuran, v?.warna]
+            .map(x => String(x ?? '').trim())
+            .filter(Boolean)
+            .join('-');
+        if (kombinasi) return kombinasi;
+        return String(v?.sku ?? '').trim() || 'Varian';
     },
-    setDraft(v, e) {
-        const n = Math.max(0, parseInt(e.target.value || 0, 10));
-        this.draft[v.id_variant] = n;
+    stockLevelInfo(n) {
+        const stok = Number(n ?? 0);
+        if (stok <= 0) return { label: 'Habis', style: 'bg-rose-100 text-rose-700 border border-rose-200' };
+        if (stok <= 3) return { label: 'Menipis', style: 'bg-amber-100 text-amber-800 border border-amber-200' };
+        return { label: 'Aman', style: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
     },
-    resetDraft(v) {
-        delete this.draft[v.id_variant];
+    selectedStockVariant() {
+        if (!this.stockProduct) return null;
+        return this.activeVariants(this.stockProduct).find(v => String(v.id_variant) === String(this.stockSelectedId)) ?? null;
     },
-
-    // === Simpan stok varian → PUT /variants/{id} ===
-    async simpanStok(v) {
-        const next = this.draft[v.id_variant];
-        if (next === undefined || next === Number(v.stok ?? 0)) { this.pesan(false, 'Tidak ada perubahan stok untuk varian ini.'); return; }
-        this.savingKey = v.id_variant;
+    stockDraftValue() {
+        if (this.stockDraft === '' || this.stockDraft === null || this.stockDraft === undefined) return NaN;
+        const n = Number(this.stockDraft);
+        return Number.isInteger(n) ? n : NaN;
+    },
+    stockDraftValid() {
+        const n = this.stockDraftValue();
+        return Number.isInteger(n) && n >= 0;
+    },
+    stockDraftDiff() {
+        const v = this.selectedStockVariant();
+        if (!v || !this.stockDraftValid()) return 0;
+        return this.stockDraftValue() - Number(v.stok ?? 0);
+    },
+    stockDraftPreviewTotal() {
+        const p = this.stockProduct;
+        const selected = this.selectedStockVariant();
+        if (!p) return 0;
+        const next = selected && this.stockDraftValid() ? this.stockDraftValue() : Number(selected?.stok ?? 0);
+        return this.activeVariants(p).reduce((sum, v) => {
+            const stok = selected && String(v.id_variant) === String(selected.id_variant) ? next : Number(v.stok ?? 0);
+            return sum + stok;
+        }, 0);
+    },
+    canSaveStock() {
+        const v = this.selectedStockVariant();
+        return !!v && this.stockDraftValid() && this.stockDraftValue() !== Number(v.stok ?? 0) && !this.savingStock;
+    },
+    clearStockFeedback() {
+        this.stockError = '';
+        this.stockSuccess = '';
+    },
+    openStockModal(p) {
+        const variants = this.activeVariants(p);
+        if (!variants.length) {
+            this.pesan(false, 'Produk ini belum memiliki varian aktif.');
+            return;
+        }
+        this.stockProduct = p;
+        this.stockSelectedId = variants[0].id_variant;
+        this.stockDraft = Number(variants[0].stok ?? 0);
+        this.savingStock = false;
+        this.clearStockFeedback();
+        this.stockModalOpen = true;
+    },
+    closeStockModal() {
+        if (this.savingStock) return;
+        this.stockModalOpen = false;
+        this.clearStockFeedback();
+    },
+    selectStockVariant(v) {
+        if (this.savingStock) return;
+        this.stockSelectedId = v.id_variant;
+        this.stockDraft = Number(v.stok ?? 0);
+        this.clearStockFeedback();
+    },
+    async saveStockVariant() {
+        if (this.savingStock) return;
+        const v = this.selectedStockVariant();
+        if (!v) return;
+        if (!this.stockDraftValid()) {
+            this.stockError = 'Stok baru harus berupa angka bulat minimal 0.';
+            return;
+        }
+        const next = this.stockDraftValue();
+        if (next === Number(v.stok ?? 0)) {
+            this.stockError = 'Stok belum berubah.';
+            return;
+        }
+        this.savingStock = true;
+        this.clearStockFeedback();
         const res = await PandansariAPI.admin.updateVariant(v.id_variant, { stok: next });
-        this.savingKey = '';
-        if (res.ok) {
-            v.stok = next;
-            delete this.draft[v.id_variant];
-            this.pesan(true, 'Stok ' + (v.sku ?? v.nama_varian) + ' → ' + next + ' tersimpan.');
-        } else {
+        this.savingStock = false;
+        if (!res.ok) {
             const errs = Object.values(res.errors ?? {}).flat();
-            this.pesan(false, errs[0] ?? res.message);
+            this.stockError = errs[0] ?? this._mediaError(res);
+            return;
         }
-    },
-    async simpanSemuaProduk(p) {
-        const ubahan = this.activeVariants(p).filter(v => this.draft[v.id_variant] !== undefined && this.draft[v.id_variant] !== Number(v.stok ?? 0));
-        if (!ubahan.length) { this.pesan(false, 'Tidak ada perubahan stok pada produk ini.'); return; }
-        this.savingKey = p.id_product;
-        let okCount = 0;
-        for (const v of ubahan) {
-            const res = await PandansariAPI.admin.updateVariant(v.id_variant, { stok: this.draft[v.id_variant] });
-            if (res.ok) { v.stok = this.draft[v.id_variant]; delete this.draft[v.id_variant]; okCount++; }
-        }
-        this.savingKey = '';
-        this.pesan(okCount === ubahan.length, okCount + '/' + ubahan.length + ' varian stok tersimpan.');
+        const saved = Number(res.data?.stok ?? next);
+        v.stok = Number.isInteger(saved) && saved >= 0 ? saved : next;
+        this.stockDraft = Number(v.stok);
+        this.stockSuccess = 'Stok ' + this.variantLabel(v) + ' tersimpan: ' + this.num(v.stok) + ' unit.';
+        this.pesan(true, this.stockSuccess);
+        await this.loadInventorySummary();
     },
 
     // === Toggle status toko → PUT /products/{id} ===
@@ -120,8 +190,6 @@
             this.products = res.data ?? [];
             this.meta = res.meta;
             this.page = res.meta?.current_page ?? this.page;
-            // siapkan draft kosong
-            this.draft = {};
         } else this.pesan(false, res.message);
     },
     goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadProduk(); },
@@ -155,7 +223,7 @@
                 Kurasi Stok & Varian Cepat
             </h1>
             <p class="text-xs text-slate-500 mt-1">
-                Saldo stok per varian disimpan nyata via PUT /variants/{id}; status toko via PUT /products/{id}.
+                Klik Atur Stok untuk membuka popup per produk; saldo varian disimpan via PUT /variants/{id} dan status toko via PUT /products/{id}.
             </p>
         </div>
 
@@ -302,10 +370,10 @@
                     <tr class="bg-sky-50/80 text-slate-700 text-[10px] font-extrabold uppercase tracking-wider border-b border-slate-200">
                         <th class="py-3.5 px-4 w-28">SLUG</th>
                         <th class="py-3.5 px-4">KARYA & VARIAN STOK</th>
-                        <th class="py-3.5 px-4 text-center">PENYESUAIAN STOK VARIAN</th>
+                        <th class="py-3.5 px-4">RINGKASAN STOK VARIAN</th>
                         <th class="py-3.5 px-4">STATUS & REKOMENDASI</th>
                         <th class="py-3.5 px-4 text-center">STATUS TOKO</th>
-                        <th class="py-3.5 px-4 text-center">AKSI CEPAT</th>
+                        <th class="py-3.5 px-4 text-center">AKSI</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-xs">
@@ -334,26 +402,21 @@
                                 </div>
                             </td>
 
-                            <!-- Penyesuaian stok per varian -->
+                            <!-- Ringkasan stok per varian (read-only) -->
                             <td class="py-4 px-4">
                                 <template x-if="!activeVariants(item).length">
                                     <span class="text-[10px] text-slate-400 font-semibold">Belum ada varian aktif</span>
                                 </template>
-                                <div x-show="activeVariants(item).length" class="flex flex-wrap items-center gap-2">
+                                <div x-show="activeVariants(item).length" class="flex flex-wrap items-center gap-1.5">
                                     <template x-for="v in activeVariants(item)" :key="v.id_variant">
-                                        <div class="bg-slate-100/80 px-1.5 py-1 rounded-xl border border-slate-200/60 flex items-center gap-1.5">
-                                            <div class="text-center min-w-[26px]">
-                                                <span class="text-[9px] font-bold text-slate-400 block leading-tight" x-text="(v.ukuran || v.sku || '?').toUpperCase()"></span>
-                                                <input type="number" min="0"
-                                                       :value="valOf(v)"
-                                                       @change="setDraft(v, $event)"
-                                                       class="w-9 h-7 text-center font-black text-xs bg-white rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400"
-                                                       :class="valOf(v) === 0 ? 'text-rose-600' : 'text-slate-800'">
-                                            </div>
-                                        </div>
+                                        <span class="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1"
+                                              :class="Number(v.stok ?? 0) <= 0 ? 'bg-rose-50 border-rose-200 text-rose-700' : (Number(v.stok ?? 0) <= 3 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-100/80 border-slate-200 text-slate-700')">
+                                            <span class="text-[10px] font-bold" x-text="variantLabel(v)"></span>
+                                            <span class="text-[11px] font-black" x-text="num(v.stok)"></span>
+                                        </span>
                                     </template>
                                     <span class="bg-amber-100/80 text-amber-900 border border-amber-200 text-[11px] font-extrabold px-3 py-1.5 rounded-xl shrink-0"
-                                          x-text="activeVariants(item).reduce((s, v) => s + valOf(v), 0) + ' unit'"></span>
+                                          x-text="totalStok(item) + ' unit'"></span>
                                 </div>
                             </td>
 
@@ -374,15 +437,14 @@
                                 <span class="block text-[9px] font-bold mt-1" :class="item.status_produk === 'aktif' ? 'text-sky-700' : 'text-slate-400'" x-text="item.status_produk"></span>
                             </td>
 
-                            <!-- Aksi Cepat (Simpan varian, Reset draft, Kelola Varian) -->
+                            <!-- Aksi: atur stok lewat popup & kelola varian -->
                             <td class="py-4 px-4 text-center">
                                 <div class="flex items-center justify-center gap-1.5">
-                                    <button type="button" @click="simpanSemuaProduk(item)" :disabled="savingKey === item.id_product"
-                                            class="w-8 h-8 rounded-xl bg-sky-100 text-sky-800 hover:bg-sky-200 transition flex items-center justify-center cursor-pointer disabled:opacity-50" title="Simpan semua perubahan stok produk ini">
-                                        <i class="fa-solid fa-floppy-disk text-xs" :class="savingKey === item.id_product ? 'fa-spin' : ''"></i>
-                                    </button>
-                                    <button type="button" @click="draft = {}" class="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 transition flex items-center justify-center cursor-pointer" title="Buang semua draft">
-                                        <i class="fa-solid fa-rotate-left text-xs"></i>
+                                    <button type="button" @click="openStockModal(item)" :disabled="!activeVariants(item).length"
+                                            class="h-8 px-3 rounded-xl bg-sky-100 text-sky-800 hover:bg-sky-200 transition inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                            :title="activeVariants(item).length ? 'Atur stok varian produk ini' : 'Belum ada varian aktif'">
+                                        <i class="fa-solid fa-boxes-stacked text-xs"></i>
+                                        <span class="text-[10px] font-extrabold">Atur Stok</span>
                                     </button>
                                     <a :href="'/admin/products?varian=' + item.id_product" class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 hover:bg-amber-200 transition flex items-center justify-center cursor-pointer" title="Kelola Varian">
                                         <i class="fa-solid fa-boxes-packing text-xs"></i>
@@ -400,7 +462,7 @@
         <div class="p-4 bg-slate-50/80 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs font-medium text-slate-500">
             <div class="flex items-center gap-2">
                 <i class="fa-solid fa-rotate text-sky-500"></i>
-                <span>Perubahan stok tersimpan per varian ke database (bukan lokal lagi).</span>
+                <span>Stok diatur lewat popup per produk; setiap varian langsung tersimpan ke database.</span>
             </div>
 
             <div class="flex items-center gap-1 self-end sm:self-auto font-bold">
@@ -414,6 +476,8 @@
     </div>
 
     </div>
+
+    <x-admin.modal-stock />
 
 </div>
 
