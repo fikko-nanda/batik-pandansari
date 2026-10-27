@@ -26,7 +26,7 @@
         busyVoucher: false,
 
         // Nomor WhatsApp admin untuk konfirmasi
-        waNumber: '6281327236314',
+        waNumber: '6282210516993',
 
         get selectedAddress() {
             return this.addresses.find(a => (a.id_user_address || a.id) === this.selectedAddressId) ?? null;

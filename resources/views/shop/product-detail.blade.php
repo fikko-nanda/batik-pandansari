@@ -10,6 +10,7 @@
             product: null,
             variants: [],
             images: [],
+            sizeChart: null,
             loading: true,
             errorMsg: '',
 
@@ -27,6 +28,14 @@
             // Varian terpilih = kombinasi warna + ukuran
             get selectedVariant() {
                 return this.variantFor(this.selectedWarna, this.selectedUkuran);
+            },
+
+            get activeImageItem() {
+                return this.images.find(i => i.src === this.activeImage) ?? null;
+            },
+
+            get activeImageIsChart() {
+                return !!this.activeImageItem?.isChart;
             },
 
             // Daftar warna unik dari varian aktif
@@ -67,19 +76,60 @@
                 this.qty = 1;
             },
 
+            isSizeChartImage(img) {
+                return String(img?.type ?? '').toLowerCase() === 'size_chart';
+            },
+
             async load() {
                 this.loading = true;
-                const [p, v] = await Promise.all([
+                const [p, v, imgRes] = await Promise.all([
                     PandansariAPI.product(this.productId),
                     PandansariAPI.productVariants(this.productId),
+                    PandansariAPI.productImages(this.productId),
                 ]);
                 if (!p.ok) { this.loading = false; this.errorMsg = p.message; return; }
                 this.product = p.data;
                 this.loading = false;
 
-                // Galeri: gambar utama dulu, lalu sisanya (URL dari path_gambar backend)
-                const imgs = (this.product.images ?? []).filter(i => i.path_gambar || i.url);
-                this.images = imgs.map(i => ({ src: PandansariAPI.imgUrl(i.path_gambar ?? i.url), fallback: this.fallbackImage, label: i.alt_text ?? 'Foto Produk' }));
+                // Gabungkan gambar dari detail produk + endpoint gambar publik, lalu deduplikasi per path.
+                const rawImgs = [
+                    ...(Array.isArray(this.product.images) ? this.product.images : []),
+                    ...(imgRes.ok && Array.isArray(imgRes.data) ? imgRes.data : []),
+                ].filter(i => i && (i.path_gambar || i.url));
+                const seen = new Set();
+                const imgs = rawImgs.filter(img => {
+                    const key = String(img.path_gambar ?? img.url ?? img.id_image ?? '');
+                    if (!key || seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+
+                // Size chart bisa datang dari relasi size_chart atau item gambar bertipe size_chart.
+                const rawChart = Array.isArray(this.product.size_chart) ? (this.product.size_chart[0] ?? null) : this.product.size_chart;
+                const chartFromProduct = rawChart && (typeof rawChart === 'string' || rawChart.path_gambar || rawChart.url) ? rawChart : null;
+                const chartFromImages = rawImgs.find(i => this.isSizeChartImage(i)) ?? null;
+                const chart = chartFromProduct ?? chartFromImages;
+
+                const chartId = chart && typeof chart === 'object' ? chart.id_image : null;
+                const chartPath = typeof chart === 'string' ? chart : (chart?.path_gambar ?? chart?.url ?? null);
+                const isChart = (img) => this.isSizeChartImage(img)
+                    || (chartId && String(img.id_image) === String(chartId))
+                    || (chartPath && (img.path_gambar === chartPath || img.url === chartPath));
+
+                // Galeri: foto produk dulu, size chart selalu menjadi slide terakhir.
+                this.images = imgs
+                    .filter(img => !isChart(img))
+                    .map(img => ({ src: PandansariAPI.imgUrl(img.path_gambar ?? img.url), fallback: this.fallbackImage, label: img.alt_text ?? 'Foto Produk' }));
+
+                const chartSrc = typeof chart === 'string'
+                    ? PandansariAPI.imgUrl(chart)
+                    : PandansariAPI.imgUrl(chart?.path_gambar ?? chart?.url ?? '');
+                this.sizeChart = chartSrc
+                    ? { src: chartSrc, fallback: this.fallbackImage, label: chart?.alt_text ?? 'Panduan Ukuran' }
+                    : null;
+                if (this.sizeChart) {
+                    this.images.push({ ...this.sizeChart, isChart: true });
+                }
                 this.activeImage = this.images[0]?.src ?? this.fallbackImage;
 
                 // Varian aktif hanya; default = warna pertama + ukuran pertama yang tersedia
@@ -173,8 +223,9 @@
                     <!-- 1. GAMBAR UTAMA (MEMANJANG KE BAWAH / PORTRAIT) -->
                     <div class="w-full h-[480px] sm:h-[580px] bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm relative shrink-0">
                         <img :src="activeImage" 
-                             alt="Kemeja Pria Parang Seling Indigo" 
-                             class="w-full h-full object-cover block transition-all duration-300"
+                             :alt="activeImageItem?.label ?? 'Foto Produk'" 
+                             class="w-full h-full block transition-all duration-300"
+                             :class="activeImageIsChart ? 'object-contain p-4 bg-white' : 'object-cover'"
                              onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=800&auto=format&fit=crop'">
                     </div>
 
@@ -188,7 +239,8 @@
                                     :aria-label="img.label">
                                 <img :src="img.src" 
                                      :alt="img.label" 
-                                     class="w-full h-full object-cover block group-hover:scale-105 transition-transform duration-300"
+                                     class="w-full h-full block group-hover:scale-105 transition-transform duration-300"
+                                     :class="img.isChart ? 'object-contain p-1.5 bg-white' : 'object-cover'"
                                      :onerror="`this.src='${img.fallback}'; if(activeImage === img.src) activeImage='${img.fallback}';`">
                             </button>
                         </template>
@@ -359,6 +411,16 @@
                     <p x-text="product?.deskripsi ?? 'Memuat deskripsi produk…'">
                         <strong class="text-[#0F1A24]"></strong>
                     </p>
+                </div>
+
+                <div x-show="sizeChart" class="pt-4 border-t border-slate-100">
+                    <h3 class="text-xs sm:text-sm font-bold text-[#0F1A24] uppercase tracking-wider mb-3">Panduan Ukuran</h3>
+                    <a :href="sizeChart?.src ?? '#'" target="_blank" rel="noopener noreferrer"
+                       class="block max-w-2xl mx-auto bg-slate-50 border border-slate-200 rounded-xl overflow-hidden"
+                       :title="'Buka ' + (sizeChart?.label ?? 'Panduan Ukuran')">
+                        <img :src="sizeChart?.src ?? ''" :alt="sizeChart?.label ?? 'Panduan Ukuran'"
+                             class="w-full max-h-[640px] object-contain">
+                    </a>
                 </div>
             </div>
 
