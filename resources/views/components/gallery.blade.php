@@ -93,9 +93,10 @@
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 min-h-[380px]">
-                <div class="lg:col-span-7 relative min-h-[280px] bg-[#0F1A24]">
-                    <img x-show="fotoUtama" :src="fotoUtama" :alt="galeriFotos[fotoIdx]?.alt || 'Galeri Butik Pandansari'" class="w-full h-full object-cover">
-                    <img x-show="!fotoUtama" src="{{ asset('images/hero-bg.jpg') }}" alt="Galeri Butik Pandansari" class="w-full h-full object-cover">
+                <div class="lg:col-span-7 relative">
+                    <div class="relative w-full aspect-[4/3]">
+                    <img x-show="fotoUtama" :src="fotoUtama" :alt="galeriFotos[fotoIdx]?.alt || 'Galeri Butik Pandansari'" class="absolute inset-0 w-full h-full object-cover">
+                    <img x-show="!fotoUtama" src="{{ asset('images/hero-bg.jpg') }}" alt="Galeri Butik Pandansari" class="absolute inset-0 w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-[#0F1A24]/90 via-transparent to-transparent flex items-end p-6">
                         <div>
                             <span class="text-[11px] font-semibold text-sky-300 uppercase tracking-wider block font-['Plus_Jakarta_Sans']"
@@ -114,6 +115,7 @@
                         <span class="w-16 h-12 rounded-lg bg-[#0F1A24]/70 border border-white/40 text-white text-[10px] font-bold flex items-center justify-center"
                               x-show="galeriFotos.length > 5"
                               x-text="'+' + (galeriFotos.length - 5)"></span>
+                    </div>
                     </div>
                 </div>
 
