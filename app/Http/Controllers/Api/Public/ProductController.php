@@ -14,7 +14,7 @@ class ProductController extends Controller
     {
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:150'],
-            'category' => ['nullable', 'string', 'max:36'],
+            'category' => ['nullable', 'string', 'max:50'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -40,13 +40,14 @@ class ProductController extends Controller
             )
             ->when(
                 ! empty($validated['category']),
-                fn ($query) => $query->whereHas(
-                    'categories',
-                    fn ($categoryQuery) => $categoryQuery->where(
-                        'categories.id_category',
-                        $validated['category']
-                    )
-                )
+                function ($query) use ($validated) {
+                    $val = $validated['category'];
+                    $query->where(function ($inner) use ($val) {
+                        $inner->where('id_category', $val)
+                            ->orWhereHas('categories', fn ($q) => $q->where('categories.id_category', $val)->orWhere('categories.slug', $val))
+                            ->orWhereHas('category', fn ($q) => $q->where('id_category', $val)->orWhere('slug', $val));
+                    });
+                }
             )
             ->where('status_produk', 'aktif')
             ->orderByDesc('dibuat_pada')

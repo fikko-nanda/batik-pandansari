@@ -284,11 +284,11 @@
                     </template>
                 </div>
 
-                <!-- Sorting Dropdown & View Mode Switcher -->
+                <!-- Sorting Dropdown -->
                 <div class="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-slate-500 font-medium whitespace-nowrap">Urutkan:</span>
-                        <select x-model="sortBy" 
+                        <select x-model="sortBy"
                                 class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 focus:outline-none cursor-pointer">
                             <option value="terpopuler">Katalog Terpopuler</option>
                             <option value="harga-rendah">Harga: Rendah ke Tinggi</option>
@@ -296,22 +296,12 @@
                             <option value="terbaru">Terbaru</option>
                         </select>
                     </div>
-                    
-                    <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50 shrink-0">
-    
-                            <i class="fa-solid fa-table-cells-large text-xs"></i>
-                        </button>
-
-                            <i class="fa-solid fa-list text-xs"></i>
-                        </button>
-                    </div>
                 </div>
 
             </div>
 
             <!-- 5. Grid Produk (2 Kolom di HP / Smartphone, 4 Kolom di Desktop) -->
-            <div class="grid gap-3 sm:gap-6 mb-10"
-class="grid-cols-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-10">
 
             <!-- State API: Skeleton / Error / Kosong -->
             <template x-if="loading">

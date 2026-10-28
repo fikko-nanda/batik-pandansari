@@ -53,14 +53,38 @@ class MediaProxyController extends Controller
             abort(404);
         }
 
+        // 1. Cek langsung storage disk lokal
+        $localPath = storage_path('app/public/'.$folder.'/'.$filename);
+        if (file_exists($localPath)) {
+            $mime = match ($extension) {
+                'jpg', 'jpeg' => 'image/jpeg',
+                'png' => 'image/png',
+                'webp' => 'image/webp',
+                default => 'application/octet-stream',
+            };
+
+            return response()->file($localPath, [
+                'Content-Type' => $mime,
+                'Cache-Control' => 'public, max-age=86400, immutable',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        }
+
         $apiUrl = (string) config('services.api.url', '');
 
         if ($apiUrl === '') {
-            abort(500, 'VITE_API_URL belum dikonfigurasi.');
+            abort(404);
         }
 
         $origin = preg_replace('#/api/?$#i', '', $apiUrl);
         $origin = rtrim((string) $origin, '/');
+
+        // Cegah deadlock: jangan lakukan HTTP request ke diri sendiri bila origin adalah localhost
+        $originHost = parse_url($origin, PHP_URL_HOST);
+        if (in_array($originHost, ['localhost', '127.0.0.1', '0.0.0.0', '::1'], true)) {
+            abort(404);
+        }
+
         $url = $origin.'/storage/'.$folder.'/'.$filename;
 
         $caBundle = config('services.api.ca_bundle');
@@ -72,7 +96,7 @@ class MediaProxyController extends Controller
             ])->withHeaders([
                 'ngrok-skip-browser-warning' => 'true',
                 'Accept' => 'image/*',
-            ])->connectTimeout(10)->timeout(30)->get($url);
+            ])->connectTimeout(5)->timeout(10)->get($url);
         } catch (Throwable) {
             abort(502);
         }

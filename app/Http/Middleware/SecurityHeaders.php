@@ -51,11 +51,11 @@ class SecurityHeaders
      */
     private function webContentSecurityPolicy(): string
     {
-        $script = "'self'";
-        $style = "'self' 'unsafe-inline'";
-        $connect = "'self'";
-        $img = "'self' data: https:";
-        $font = "'self' data:";
+        $script = "'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://accounts.google.com https://cdn.tailwindcss.com";
+        $style = "'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com";
+        $connect = "'self' https: http:";
+        $img = "'self' data: https: http: blob:";
+        $font = "'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com";
 
         if (! app()->environment('production')) {
             $dev = 'http://localhost:5173 http://127.0.0.1:5173';

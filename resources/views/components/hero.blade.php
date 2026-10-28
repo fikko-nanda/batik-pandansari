@@ -32,9 +32,9 @@
                     const mapped = res.data
                         .map(h => ({
                             badge: String(h.label_badge ?? '').trim() || fallback.badge,
-                            title: String(h.judul ?? '').trim(),
+                            title: String(h.judul ?? '').trim() || fallback.title,
                             description: String(h.subjudul ?? '').trim() || fallback.description,
-                            image: PandansariAPI.imgUrl(h.url_gambar ?? h.gambar ?? ''),
+                            image: PandansariAPI.imgUrl(h.url_gambar ?? h.gambar ?? '') || fallback.image,
                             cta: String(h.tautan_tombol ?? '').trim() || '/katalog',
                             ctaText: String(h.teks_tombol ?? '').trim() || fallback.ctaText,
                         }))
@@ -63,7 +63,10 @@
                  x-transition:leave-start="opacity-100"
                  x-transition:leave-end="opacity-0"
                  class="absolute inset-0 w-full h-full">
-                <img :src="slide.image" alt="Batik Pandansari Hero" class="w-full h-full object-cover object-center">
+                <img :src="slide.image"
+                     x-on:error="$event.target.src = '{{ asset('images/hero-bg.jpg') }}'"
+                     alt="Batik Pandansari Hero"
+                     class="w-full h-full object-cover object-center">
                 <!-- Dark Gradient Overlay -->
                 <div class="absolute inset-0 bg-gradient-to-r from-[#0F1A24]/95 via-[#0F1A24]/80 to-transparent"></div>
             </div>

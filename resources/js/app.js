@@ -43,12 +43,9 @@
  *   - Tail 'api' diakhir '/api' → semua panggilan jadi '.../api/me', dll.
  *   - Ubah .env → WAJIB restart Vite (composer dev) atau build ulang (npm run build).
  */
-const API_URL = String(import.meta.env?.VITE_API_URL ?? '').trim().replace(/\/+$/, '');
+const API_URL = String(import.meta.env?.VITE_API_URL || '/api').trim().replace(/\/+$/, '');
 if (!API_URL) {
-    console.error(
-        '[PandansariAPI] VITE_API_URL belum diset di .env — semua request API akan gagal. ' +
-        'Isi seperti: VITE_API_URL=https://<subdomain>.ngrok-free.dev/api lalu restart Vite.'
-    );
+    console.debug('[PandansariAPI] Default API URL aktif: /api');
 }
 
 const TOKEN_KEY = 'pandansari_token';

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsurePanelRole;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\EnsureUserIsTeknisi;
 use App\Http\Middleware\RecordApiAuditLog;
@@ -40,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => EnsureUserIsAdmin::class,
             'teknisi' => EnsureUserIsTeknisi::class,
+            'panel' => EnsurePanelRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
