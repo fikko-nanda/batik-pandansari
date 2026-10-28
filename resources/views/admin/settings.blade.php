@@ -1533,7 +1533,13 @@
                 </div>
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">NOMOR TELEPON</label>
-                    <input type="text" x-model="form.nomor_telepon"
+                    <input type="tel"
+                           inputmode="numeric"
+                           pattern="[0-9]*"
+                           maxlength="13"
+                           x-model="form.nomor_telepon"
+                           @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
+                           @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                            class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
                            placeholder="08xxxxxxxxxx">
                 </div>
@@ -2304,13 +2310,25 @@
                 </div>
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Nomor WhatsApp <span class="text-slate-300 font-bold normal-case tracking-normal">(opsional)</span></label>
-                    <input type="text" x-model="pu.nomor_whatsapp" @input="puDirty = true"
+                    <input type="tel"
+                           inputmode="numeric"
+                           pattern="[0-9]*"
+                           maxlength="15"
+                           x-model="pu.nomor_whatsapp"
+                           @input="pu.nomor_whatsapp = $event.target.value.replace(/\D/g, ''); $event.target.value = pu.nomor_whatsapp; puDirty = true"
+                           @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                            placeholder="Contoh: 6281234567890"
                            class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
                 </div>
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Nomor Telepon <span class="text-slate-300 font-bold normal-case tracking-normal">(opsional)</span></label>
-                    <input type="text" x-model="pu.nomor_telepon" @input="puDirty = true"
+                    <input type="tel"
+                           inputmode="numeric"
+                           pattern="[0-9]*"
+                           maxlength="13"
+                           x-model="pu.nomor_telepon"
+                           @input="pu.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = pu.nomor_telepon; puDirty = true"
+                           @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                            placeholder="Contoh: 08123456789"
                            class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400">
                 </div>

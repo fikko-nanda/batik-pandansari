@@ -89,10 +89,15 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1.5">No. WhatsApp</label>
                     <div class="relative">
-                        <input type="text"
+                        <input type="tel"
+                               inputmode="numeric"
+                               pattern="[0-9]*"
+                               maxlength="13"
                                x-model="form.nomor_telepon"
-                               placeholder="+62 812-3456-7890"
+                               placeholder="08123456789"
                                :class="pesanError('nomor_telepon') ? 'border-rose-300 bg-rose-50/40' : ''"
+                               @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
+                               @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                class="w-full text-xs font-medium border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                         <i class="fa-solid fa-mobile-screen absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                     </div>

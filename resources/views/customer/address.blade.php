@@ -355,7 +355,14 @@
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-semibold text-slate-600 mb-1">Nomor Telepon <span class="text-rose-500">*</span></label>
-                                    <input type="text" x-model="form.nomor_telepon" required
+                                    <input type="tel"
+                                           inputmode="numeric"
+                                           pattern="[0-9]*"
+                                           maxlength="13"
+                                           x-model="form.nomor_telepon"
+                                           required
+                                           @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
+                                           @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                             </div>

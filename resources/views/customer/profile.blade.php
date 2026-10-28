@@ -285,9 +285,14 @@
                                 </label>
                             </div>
                             <div class="relative">
-                                <input type="text"
+                                <input type="tel"
+                                       inputmode="numeric"
+                                       pattern="[0-9]*"
+                                       maxlength="13"
                                        x-model="form.nomor_telepon"
                                        :disabled="saving"
+                                       @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
+                                       @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                        class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60">
                                 <i class="fa-solid fa-mobile-screen absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                             </div>

@@ -192,7 +192,21 @@
             },
 
             async init() {
-                // Panggil loadCatalogImages dengan aman (pengecekan method + try/catch agar tidak unhandled error)
+                // Safely invoke loadCatalogImages if available
+                try {
+                    if (window.PandansariAPI && typeof window.PandansariAPI.loadCatalogImages === 'function') {
+                        const result = window.PandansariAPI.loadCatalogImages();
+                        if (result && typeof result.then === 'function') {
+                            await result;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Cart] Error invoking loadCatalogImages:', e);
+                }
+
+                await this.load();
+            }
+                // Duplicate init block removed
                 try {
                     if (typeof PandansariAPI?.loadCatalogImages === 'function') {
                         const p = PandansariAPI.loadCatalogImages();
