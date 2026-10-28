@@ -42,9 +42,12 @@
                 this.images = imgs.map(i => ({ src: PandansariAPI.imgUrl(i.path_gambar ?? i.url), fallback: this.fallbackImage, label: i.alt_text ?? 'Foto Produk' }));
                 this.activeImage = this.images[0]?.src ?? this.fallbackImage;
 
-                // Varian aktif hanya; pilih default = varian pertama
+                // Varian aktif hanya; pilih default = varian pertama yang memiliki stok
                 this.variants = (v.data ?? []).filter(x => x.status_varian !== 'nonaktif');
-                if (this.variants.length) this.selectedVariantId = this.variants[0].id_variant;
+                if (this.variants.length) {
+                    const firstStock = this.variants.find(x => x.stok == null || Number(x.stok) > 0) ?? this.variants[0];
+                    this.selectedVariantId = firstStock.id_variant;
+                }
             },
 
             changeImage(img) { this.activeImage = img.src; },
@@ -75,12 +78,21 @@
             async tambahKeKeranjang(buyNow = false) {
                 if (!await this.requireLogin()) return;
                 if (!this.selectedVariant) { this.tampilkanNotice('Pilih ukuran/varian terlebih dahulu.', false); return; }
+                const currentStock = this.selectedVariant.stok != null ? Number(this.selectedVariant.stok) : 99;
+                if (currentStock <= 0) {
+                    this.tampilkanNotice('Stok produk telah habis.', false);
+                    return;
+                }
+                if (Number(this.qty) > currentStock) {
+                    this.tampilkanNotice('Stok tidak mencukupi. Stok tersedia: ' + currentStock + '.', false);
+                    return;
+                }
                 this.cartBusy = true;
                 const res = await PandansariAPI.addCartItem(this.selectedVariant.id_variant, this.qty);
                 this.cartBusy = false;
                 if (res.ok) {
                     if (buyNow) window.location.href = '/cart';
-                    else this.tampilkanNotice('Produk berhasil ditambahkan ke keranjang. ' + res.message, true);
+                    else this.tampilkanNotice('Produk berhasil ditambahkan ke keranjang.', true);
                 } else {
                     this.tampilkanNotice(res.message, false); // mis. 422 stok / varian nonaktif
                 }
@@ -202,14 +214,14 @@
 
                         <div class="flex flex-wrap gap-2">
                             <template x-for="v in variants" :key="v.id_variant">
-                                <button @click="if (v.stok > 0) { selectedVariantId = v.id_variant; qty = 1; }"
+                                <button @click="if (v.stok == null || Number(v.stok) > 0) { selectedVariantId = v.id_variant; qty = 1; }"
                                         type="button"
-                                        :disabled="v.stok <= 0"
+                                        :disabled="v.stok != null && Number(v.stok) <= 0"
                                         class="px-3 h-10 sm:w-auto sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed"
                                         :class="selectedVariantId === v.id_variant ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
                                     <span x-text="v.ukuran ? v.ukuran : (v.nama_varian ?? 'Varian')"></span>
                                     <span class="block text-[9px] font-medium" :class="selectedVariantId === v.id_variant ? 'text-slate-300' : 'text-slate-400'"
-                                          x-text="v.stok > 0 ? PandansariAPI.formatRp(v.harga) : 'HABIS'"></span>
+                                          x-text="(v.stok == null || Number(v.stok) > 0) ? PandansariAPI.formatRp(v.harga) : 'HABIS'"></span>
                                 </button>
                             </template>
                             <p class="text-xs text-slate-400 italic w-full" x-show="!loading && !variants.length">Varian tidak tersedia.</p>
@@ -238,27 +250,29 @@
                         </div>
                     </div>
 
-                    <!-- Quantity Selector -->
+                    <!-- Quantity Selector (kondisi boundary: qty > stock) -->
                     <div class="flex items-center gap-4">
                         <span class="text-xs font-bold text-[#0F1A24]">Kuantitas:</span>
                         <div class="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                            <button @click="if(qty > 1) qty--" type="button" class="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 font-bold transition cursor-pointer">-</button>
+                            <button @click="if(qty > 1) qty--" type="button" :disabled="qty <= 1" class="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">-</button>
                             <span class="w-10 text-center text-xs font-bold text-[#0F1A24]" x-text="qty"></span>
-                            <button @click="if (selectedVariant && qty < selectedVariant.stok) qty++" type="button" class="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 font-bold transition cursor-pointer">+</button>
+                            <button @click="if (selectedVariant && (selectedVariant.stok == null || Number(qty) < Number(selectedVariant.stok))) qty++" type="button"
+                                    :disabled="!selectedVariant || (selectedVariant.stok != null && Number(qty) >= Number(selectedVariant.stok))"
+                                    class="w-9 h-9 flex items-center justify-center text-slate-700 hover:bg-slate-100 font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
                         </div>
                         <span class="text-xs text-slate-400" x-show="selectedVariant" x-text="'Tersedia ' + (selectedVariant?.stok ?? 0) + ' buah'"></span>
                     </div>
 
-                    <!-- CTA Buttons -->
+                    <!-- CTA Buttons (bisa diorder saat stok === 1 & qty === 1) -->
                     <div class="space-y-2 pt-2">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <button type="button" :disabled="cartBusy" @click="tambahKeKeranjang(false)"
-                                    class="bg-white hover:bg-slate-50 text-[#0F1A24] border border-slate-300 text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60">
+                            <button type="button" :disabled="cartBusy || !selectedVariant || (selectedVariant.stok != null && Number(selectedVariant.stok) <= 0)" @click="tambahKeKeranjang(false)"
+                                    class="bg-white hover:bg-slate-50 text-[#0F1A24] border border-slate-300 text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
                                 <i class="fa-solid" :class="cartBusy ? 'fa-circle-notch fa-spin' : 'fa-cart-plus'" style="font-size:12px"></i>
                                 <span x-text="cartBusy ? 'MEMPROSES…' : '+ KERANJANG'"></span>
                             </button>
-                            <button type="button" :disabled="cartBusy" @click="tambahKeKeranjang(true)"
-                                    class="bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60">
+                            <button type="button" :disabled="cartBusy || !selectedVariant || (selectedVariant.stok != null && Number(selectedVariant.stok) <= 0)" @click="tambahKeKeranjang(true)"
+                                    class="bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
                                 <span>Beli Sekarang →</span>
                             </button>
                         </div>

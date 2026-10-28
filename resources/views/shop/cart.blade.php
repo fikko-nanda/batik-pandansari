@@ -24,6 +24,9 @@
             get selectedCount() {
                 return this.items.reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
             },
+            get hasOverStock() {
+                return this.items.some(i => i.variant?.stok != null && Number(i.jumlah) > Number(i.variant.stok));
+            },
             get subtotal() {
                 return this.items.reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
             },
@@ -73,12 +76,18 @@
 
             // === Aksi item ===
             async ubahQty(item, delta) {
-                const next = Math.min(Math.max(1, Number(item.jumlah || 1) + delta), item.variant?.stok ?? 99);
-                if (next === item.jumlah) {
-                    if (delta > 0) this.tampil('Stok tidak mencukupi. Stok tersedia: ' + (item.variant?.stok ?? 0) + '.', false);
+                const stock = item.variant?.stok != null ? Number(item.variant.stok) : 99;
+                const current = Number(item.jumlah || 1);
+                const next = current + delta;
+
+                if (next < 1) return;
+                if (delta > 0 && next > stock) {
+                    this.tampil('Stok tidak mencukupi. Stok tersedia: ' + stock + '.', false);
                     return;
                 }
+                this.busy = true;
                 const res = await PandansariAPI.updateCartItem(item.id_cart_item, next);
+                this.busy = false;
                 if (res.ok) item.jumlah = next;
                 else this.tampil(res.message, false); // mis. 422 stok / varian nonaktif
             },
@@ -230,26 +239,34 @@
                     </template>
 
                     <template x-for="(item, index) in items" :key="item.id_cart_item">
-                        <div class="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm transition hover:border-slate-300">
+                        <div class="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm transition hover:border-slate-300"
+                             x-data="{ isExpanded: false }">
                             <div class="flex items-start gap-3 sm:gap-4">
-                                <!-- Product Image -->
-                                <div class="w-20 h-24 sm:w-28 sm:h-32 bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-100">
-                                    <img :src="imageOf(item)" :alt="productTitle(item)" class="w-full h-full object-cover" :onerror="`this.src='${fallbackImage}'`">
-                                </div>
+                                <!-- Product Image (klik menuju detail produk) -->
+                                <a :href="'/detail/' + (item.variant?.product?.id_product ?? '')"
+                                   class="w-20 h-24 sm:w-28 sm:h-32 bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-100 block group"
+                                   title="Lihat detail produk">
+                                    <img :src="imageOf(item)" :alt="productTitle(item)" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" :onerror="`this.src='${fallbackImage}'`">
+                                </a>
 
                                 <!-- Product Details -->
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-start justify-between gap-2">
-                                        <div>
+                                        <div class="min-w-0 flex-1">
                                             <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5" x-text="productCat(item)"></span>
-                                            <a :href="'/detail/' + (item.variant?.product?.id_product ?? '')" class="hover:underline">
-                                                <h3 class="font-bold text-[#0F1A24] text-xs sm:text-base leading-snug truncate" x-text="productTitle(item)"></h3>
-                                            </a>
+                                            <!-- Interaktif Truncate & Auto-Layout Teks Nama Produk -->
+                                            <div class="cursor-pointer select-none group"
+                                                 @click="isExpanded = !isExpanded"
+                                                 :title="isExpanded ? 'Klik untuk menciutkan nama produk' : 'Klik untuk melihat nama lengkap produk'">
+                                                <h3 class="font-bold text-[#0F1A24] text-xs sm:text-base leading-snug transition-all duration-200 group-hover:text-[#0369A1]"
+                                                    :class="isExpanded ? 'whitespace-normal break-words' : 'truncate line-clamp-1 overflow-hidden text-ellipsis whitespace-nowrap'"
+                                                    x-text="productTitle(item)"></h3>
+                                            </div>
                                             <p class="text-[10px] sm:text-xs text-slate-500 mt-1 leading-relaxed line-clamp-2" x-text="specLine(item)"></p>
                                         </div>
 
                                         <!-- Delete Single Item -->
-                                        <button @click="hapusItem(index)" type="button" class="text-slate-400 hover:text-rose-500 p-1 transition shrink-0 cursor-pointer">
+                                        <button @click="hapusItem(index)" type="button" class="text-slate-400 hover:text-rose-500 p-1 transition shrink-0 cursor-pointer" title="Hapus item dari keranjang">
                                             <i class="fa-regular fa-trash-can text-xs sm:text-sm"></i>
                                         </button>
                                     </div>
@@ -263,13 +280,17 @@
                                             <span class="text-xs font-bold text-[#0369A1]" x-show="Number(item.jumlah ?? 1) > 1" x-text="formatRupiah(Number(item.variant?.harga ?? 0) * Number(item.jumlah ?? 1))"></span>
                                         </div>
 
-                                        <!-- Qty Selector (dibatasi stok via API) -->
+                                        <!-- Qty Selector (dibatasi stok via API & boundary quantity > stock) -->
                                         <div class="flex items-center gap-2">
                                             <span class="text-[10px] sm:text-xs text-slate-500 font-medium hidden sm:inline">Kuantitas:</span>
                                             <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
-                                                <button @click="ubahQty(item, -1)" type="button" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition text-xs font-bold cursor-pointer">-</button>
+                                                <button @click="ubahQty(item, -1)" type="button"
+                                                        :disabled="busy || Number(item.jumlah || 1) <= 1"
+                                                        class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">-</button>
                                                 <span class="w-8 sm:w-10 text-center text-xs font-bold text-[#0F1A24]" x-text="item.jumlah ?? 1"></span>
-                                                <button @click="ubahQty(item, +1)" type="button" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition text-xs font-bold cursor-pointer">+</button>
+                                                <button @click="ubahQty(item, +1)" type="button"
+                                                        :disabled="busy || (item.variant?.stok != null && Number(item.jumlah || 1) >= Number(item.variant.stok))"
+                                                        class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
                                             </div>
                                             <span class="text-[10px] text-slate-400" x-show="item.variant?.stok != null" x-text="'Stok ' + item.variant?.stok"></span>
                                         </div>
@@ -366,7 +387,9 @@
                         </div>
 
                         <!-- Checkout Button -->
-                        <a href="/checkout" class="w-full inline-flex items-center justify-center gap-2 bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold py-3.5 px-4 rounded-xl transition shadow-sm">
+                        <a href="/checkout"
+                           :class="items.length === 0 || hasOverStock ? 'pointer-events-none opacity-50' : ''"
+                           class="w-full inline-flex items-center justify-center gap-2 bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold py-3.5 px-4 rounded-xl transition shadow-sm">
                             <span>LANJUT KE PENGIRIMAN</span>
                             <i class="fa-solid fa-arrow-right text-xs"></i>
                         </a>

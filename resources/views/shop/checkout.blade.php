@@ -267,6 +267,18 @@
             if (!this.selectedAddressId) { this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.'; return; }
             if (!this.items.length) { this.submitMsg = 'Keranjang Anda kosong.'; return; }
 
+            // Validasi stok: hanya blokir jika kuantitas melebihi stok yang ada (quantity > stock)
+            const overStock = this.items.find(i => i.variant?.stok != null && Number(i.jumlah) > Number(i.variant.stok));
+            if (overStock) {
+                this.submitMsg = 'Jumlah pesanan untuk "' + this.titleOf(overStock) + '" melebihi stok yang tersedia (' + overStock.variant.stok + '). Mohon sesuaikan kuantitas di keranjang.';
+                return;
+            }
+            const zeroStock = this.items.find(i => i.variant?.stok != null && Number(i.variant.stok) <= 0);
+            if (zeroStock) {
+                this.submitMsg = 'Produk "' + this.titleOf(zeroStock) + '" telah habis. Silakan hapus item tersebut dari keranjang sebelum memesan.';
+                return;
+            }
+
             // Validasi: alamat harus terhubung tujuan RajaOngkir — DILEWATI bila Tarif Manual aktif,
             // karena ongkir nyata dari RajaOngkir tidak diperlukan untuk tarif manual.
             const alamatPilih = this.alamatAktif;

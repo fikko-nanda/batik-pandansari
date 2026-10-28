@@ -269,8 +269,9 @@
                     </template>
                 </div>
 
-                <!-- Sorting Dropdown & View Mode Switcher -->
-                <div class="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                <!-- View Mode Switcher (Dropdown filter Urutkan disembunyikan sementara) -->
+                <div class="flex items-center justify-end gap-3 w-full sm:w-auto">
+                    {{-- Dropdown Urutkan disembunyikan sementara waktu sesuai permintaan
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-slate-500 font-medium whitespace-nowrap">Urutkan:</span>
                         <select x-model="sortBy" 
@@ -281,6 +282,7 @@
                             <option value="terbaru">Terbaru</option>
                         </select>
                     </div>
+                    --}}
                     
                     <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50 shrink-0">
                         <button @click="viewMode = 'grid'" 
