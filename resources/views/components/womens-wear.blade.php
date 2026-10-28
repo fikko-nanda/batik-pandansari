@@ -13,13 +13,41 @@
                 return PandansariAPI.coverUrl(p.images) || this.fallbackImage;
             },
             priceOf(p) {
+                const min = p.harga_terendah ?? p.min_price ?? p.variants_min_harga;
+                if (min != null && !isNaN(min) && Number(min) > 0) {
+                    return PandansariAPI.formatRp(min);
+                }
                 const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);
-                if (!v.length) return 'Lihat Detail';
-                return PandansariAPI.formatRp(Math.min(...v.map(x => Number(x.harga))));
+                if (v.length) {
+                    return PandansariAPI.formatRp(Math.min(...v.map(x => Number(x.harga))));
+                }
+                if (p.harga != null && Number(p.harga) > 0) {
+                    return PandansariAPI.formatRp(p.harga);
+                }
+                return null;
+            },
+            hasVariants(p) {
+                if (p.has_variants !== undefined) return !!p.has_variants;
+                const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif');
+                if (v.length > 0) return true;
+                if (p.harga_terendah != null || p.min_price != null || p.variants_min_harga != null) return true;
+                return false;
             },
             sizesOf(p) {
                 const v = (p.variants ?? []).map(x => x.ukuran).filter(Boolean);
                 return v.length ? [...new Set(v)].join(', ') : '';
+            },
+            async muatVarianProduk(items) {
+                if (!Array.isArray(items)) return;
+                items.forEach(p => {
+                    if (p.harga_terendah == null && (!p.variants || !p.variants.length)) {
+                        PandansariAPI.productVariants(p.id_product).then(res => {
+                            if (res.ok && Array.isArray(res.data) && res.data.length) {
+                                p.variants = res.data;
+                            }
+                        }).catch(() => {});
+                    }
+                });
             },
             async toggleWishlist(p) {
                 if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
@@ -43,6 +71,7 @@
                 }
                 this.loading = false;
                 this.produk = data;
+                this.muatVarianProduk(this.produk);
             }
          }">
     <div class="max-w-[1280px] mx-auto px-4 sm:px-6">

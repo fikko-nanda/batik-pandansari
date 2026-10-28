@@ -8,7 +8,7 @@
             selectedCategory: '',
             searchQuery: '',
             sortBy: 'terpopuler',
-            viewMode: 'grid',
+
 
             // --- State dari API ---
             categories: [],       // GET /api/categories → [{ id_category, nama_kategori }]
@@ -43,6 +43,7 @@
                     this.total = res.meta?.total ?? this.products.length;
                     this.lastPage = res.meta?.last_page ?? 1;
                     this.page = res.meta?.current_page ?? page;
+                    this.muatVarianProduk(this.products);
                 } else {
                     this.products = [];
                     this.errorMsg = res.message;
@@ -68,13 +69,41 @@
                 return PandansariAPI.coverUrl(p.images) || this.fallbackImage;
             },
             priceOf(p) {
+                const min = p.harga_terendah ?? p.min_price ?? p.variants_min_harga;
+                if (min != null && !isNaN(min) && Number(min) > 0) {
+                    return PandansariAPI.formatRp(min);
+                }
                 const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif' && x.harga != null);
-                if (!v.length) return 'Lihat Detail';
-                return PandansariAPI.formatRp(Math.min(...v.map(x => Number(x.harga))));
+                if (v.length) {
+                    return PandansariAPI.formatRp(Math.min(...v.map(x => Number(x.harga))));
+                }
+                if (p.harga != null && Number(p.harga) > 0) {
+                    return PandansariAPI.formatRp(p.harga);
+                }
+                return null;
+            },
+            hasVariants(p) {
+                if (p.has_variants !== undefined) return !!p.has_variants;
+                const v = (p.variants ?? []).filter(x => x.status_varian !== 'nonaktif');
+                if (v.length > 0) return true;
+                if (p.harga_terendah != null || p.min_price != null || p.variants_min_harga != null) return true;
+                return false;
             },
             sizesOf(p) {
                 const v = (p.variants ?? []).map(x => x.ukuran).filter(Boolean);
                 return v.length ? [...new Set(v)].join(', ') : '';
+            },
+            async muatVarianProduk(items) {
+                if (!Array.isArray(items)) return;
+                items.forEach(p => {
+                    if (p.harga_terendah == null && (!p.variants || !p.variants.length)) {
+                        PandansariAPI.productVariants(p.id_product).then(res => {
+                            if (res.ok && Array.isArray(res.data) && res.data.length) {
+                                p.variants = res.data;
+                            }
+                        }).catch(() => {});
+                    }
+                });
             },
             async toggleWishlist(p) {
                 if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
@@ -98,7 +127,7 @@
             // Samakan URL dengan kategori terpilih (mendukung highlight menu navbar & refresh)
             sinkronURL() {
                 const c = this.categories.find(x => x.id_category === this.selectedCategory);
-                const slug = this.namaKeSlug(c?.nama_kategori ?? '');
+                const slug = String(c?.slug ?? '').trim() || this.namaKeSlug(c?.nama_kategori ?? '');
                 window.history.replaceState({}, '', slug ? '/katalog?category=' + encodeURIComponent(slug) : '/katalog');
             },
             // Slug menu navbar → nama kategori (contoh: 'pria' → 'Pakaian Pria')
@@ -146,9 +175,13 @@
                 if (cid) {
                     this.selectedCategory = cid;
                 } else if (slug) {
-                    const nama = this.slugKeNama(slug);
-                    const c = this.categories.find(x => String(x.nama_kategori ?? '').toLowerCase() === nama.toLowerCase())
-                        ?? this.categories.find(x => nama && String(x.nama_kategori ?? '').toLowerCase().includes(nama.toLowerCase()));
+                    const key = String(slug).toLowerCase();
+                    let c = this.categories.find(x => String(x.slug ?? '').toLowerCase() === key);
+                    if (!c) {
+                        const nama = this.slugKeNama(slug);
+                        c = this.categories.find(x => String(x.nama_kategori ?? '').toLowerCase() === nama.toLowerCase())
+                            ?? this.categories.find(x => nama && String(x.nama_kategori ?? '').toLowerCase().includes(nama.toLowerCase()));
+                    }
                     this.selectedCategory = c ? c.id_category : '';
                 }
                 // Kata kunci dari pencarian navbar: /katalog?q=...
@@ -177,26 +210,8 @@
                     Katalog Batik Pandansari
                 </h1>
                 <p class="text-xs sm:text-sm text-slate-600 max-w-3xl mt-1 leading-relaxed">
-                    Eksplorasi kurasi busana batik autentik Batik Pandansari karya pengrajin maestro dari episentrum budaya: Surakarta, Yogyakarta, Pekalongan, dan Cirebon. Menyajikan batik tulis, cap tembaga, hingga busana siap pakai berfuring premium.
+                   Koleksi batik autentik pilihan dari pusatnya batik Indonesia: Surakarta, Yogyakarta, Pekalongan, dan Cirebon. Mulai dari batik tulis, batik cap, hingga pakaian siap pakai berbahan premium yang nyaman dipakai seharian.
                 </p>
-            </div>
-
-            <!-- 3. Promo Banner Diskon 25% -->
-            <div class="relative bg-[#0F1A24] rounded-2xl p-5 sm:p-8 text-white mb-6 sm:mb-8 overflow-hidden shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div class="relative z-10 max-w-2xl">
-                    <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-900/60 border border-sky-400/30 text-[#BAE6FD] text-[9px] sm:text-[10px] font-bold uppercase tracking-wider mb-2">
-                        <i class="fa-solid fa-tag text-[9px]"></i> BANNER PROMO INDONESIA
-                    </div>
-                    <h2 class="text-lg sm:text-2xl font-bold text-white tracking-tight">
-                        Diskon Spesial Hingga 25%
-                    </h2>
-                    <p class="text-xs text-slate-300 mt-1 leading-relaxed">
-                        Nikmati penawaran eksklusif untuk koleksi sarimbit keluarga, kemeja pria, dan Wastra Tradisional Lembaran. Gunakan kode kupon istimewa di keranjang belanja Anda: <span class="font-mono text-sky-300 font-bold underline underline-offset-2">PANDANSARI25</span>
-                    </p>
-                </div>
-                <a href="#" class="relative z-10 w-full sm:w-auto text-center shrink-0 bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold px-5 py-3 rounded-xl transition shadow">
-                    KLAIM VOUCHER & BELANJA →
-                </a>
             </div>
 
             <!-- Pencarian Kata Kunci Motif / Produk -->
@@ -214,7 +229,7 @@
                 </button>
             </div>
 
-            <!-- 4. Filter Category Pills (Rapi Flex-Wrap Tanpa Geser) -->
+            <!-- 3. Filter Category Pills (Rapi Flex-Wrap Tanpa Geser) -->
             <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-4 sm:mb-6 text-[11px] sm:text-xs font-semibold font-['Plus_Jakarta_Sans']">
                 <!-- Pill: Semua (tanpa filter kategori) -->
                 <button @click="clearCategory()"
@@ -235,7 +250,7 @@
                 </template>
             </div>
 
-            <!-- 5. Active Filter Header Bar -->
+            <!-- 4. Active Filter Header Bar -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200/80 mb-6 shadow-sm font-['Plus_Jakarta_Sans']">
                 
                 <!-- Applied Filter Tags -->
@@ -269,12 +284,12 @@
                     </template>
                 </div>
 
-                <!-- View Mode Switcher (Dropdown filter Urutkan disembunyikan sementara) -->
+                <!-- Toolbar Action (Dropdown Urutkan disembunyikan sementara) -->
                 <div class="flex items-center justify-end gap-3 w-full sm:w-auto">
-                    {{-- Dropdown Urutkan disembunyikan sementara waktu sesuai permintaan
+                    {{-- Dropdown Urutkan disembunyikan sementara waktu sesuai instruksi
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-slate-500 font-medium whitespace-nowrap">Urutkan:</span>
-                        <select x-model="sortBy" 
+                        <select x-model="sortBy"
                                 class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 focus:outline-none cursor-pointer">
                             <option value="terpopuler">Katalog Terpopuler</option>
                             <option value="harga-rendah">Harga: Rendah ke Tinggi</option>
@@ -283,28 +298,12 @@
                         </select>
                     </div>
                     --}}
-                    
-                    <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50 shrink-0">
-                        <button @click="viewMode = 'grid'" 
-                                type="button" 
-                                class="p-1.5 transition"
-                                :class="viewMode === 'grid' ? 'bg-white text-slate-900 border-r border-slate-200 shadow-sm' : 'text-slate-400 hover:text-slate-900'">
-                            <i class="fa-solid fa-table-cells-large text-xs"></i>
-                        </button>
-                        <button @click="viewMode = 'list'" 
-                                type="button" 
-                                class="p-1.5 transition"
-                                :class="viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-900'">
-                            <i class="fa-solid fa-list text-xs"></i>
-                        </button>
-                    </div>
                 </div>
 
             </div>
 
-            <!-- 6. Grid Produk (2 Kolom di HP / Smartphone, 4 Kolom di Desktop) -->
-            <div class="grid gap-3 sm:gap-6 mb-10"
-                 :class="viewMode === 'grid' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'">
+            <!-- 5. Grid Produk (2 Kolom di HP / Smartphone, 4 Kolom di Desktop) -->
+            <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-10">
 
             <!-- State API: Skeleton / Error / Kosong -->
             <template x-if="loading">
@@ -333,7 +332,7 @@
             </template>
             </div>
 
-            <!-- 7. Pagination Bar (dari meta GET /api/products) -->
+            <!-- 6. Pagination Bar (dari meta GET /api/products) -->
             <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-200/80 mb-12 font-['Plus_Jakarta_Sans']">
                 <span class="text-xs text-slate-500 text-center sm:text-left">
                     Halaman <span class="font-bold text-slate-900" x-text="page"></span> dari <span class="font-bold text-slate-900" x-text="lastPage"></span> (Menampilkan <span x-text="total"></span> mahakarya)
@@ -357,7 +356,7 @@
                 </div>
             </div>
 
-            <!-- 8. Banner Konsultasi Custom WhatsApp -->
+            <!-- 7. Banner Konsultasi Custom WhatsApp -->
             <x-consultation-banner />
 
         </div>

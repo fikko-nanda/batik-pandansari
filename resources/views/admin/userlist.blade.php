@@ -88,7 +88,7 @@
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
         const me = await PandansariAPI.me();
-        if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
+        if (!me.ok || me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
         await Promise.all([this.loadUsers(), this.loadSummary()]);
         this.loading = false;
     }
@@ -333,7 +333,13 @@
                 </div>
                 <div>
                     <label class="block font-bold text-slate-700 mb-1">Nomor telepon</label>
-                    <input type="text" x-model="form.nomor_telepon"
+                    <input type="tel"
+                           inputmode="numeric"
+                           pattern="[0-9]*"
+                           maxlength="13"
+                           x-model="form.nomor_telepon"
+                           @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
+                           @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                            class="w-full border border-slate-200 rounded-xl p-2.5 font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500"
                            placeholder="08xxxxxxxxxx">
                 </div>

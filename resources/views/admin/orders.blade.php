@@ -157,9 +157,18 @@
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
         const me = await PandansariAPI.me();
-        if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
+        if (!me.ok || me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
+
+        // Tautan dari lonceng notifikasi: /admin/orders?status=<status>&detail=<id_order>
+        const qs = new URLSearchParams(window.location.search);
+        const statusDariUrl = qs.get('status');
+        if (statusDariUrl && this.STATUS_LIST.includes(statusDariUrl)) this.selectedTab = statusDariUrl;
+
         await Promise.all([this.loadOrders(), this.loadSummary()]);
         this.loading = false;
+
+        const detailDariUrl = qs.get('detail');
+        if (detailDariUrl) await this.bukaDetail({ id_order: detailDariUrl, status_pesanan: '' });
     }
 }" class="space-y-6 text-slate-800 font-sans">
 

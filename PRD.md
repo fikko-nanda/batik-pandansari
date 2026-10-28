@@ -67,7 +67,7 @@ Sistem menggunakan pendekatan **Hybrid Monolith** Laravel 13, dengan pemisahan h
 
 ### **3.2 Modul Admin (Atelier Backoffice - `/admin`)**
 1. **Dashboard & Finance:** Stat metrics omset, order aktif, rata-rata transaksi, dan laporan pembukuan (omset gross, fee MDR Midtrans, omset net).
-2. **Katalog & Stok Varian:** CRUD Master produk, varian SKU, harga, berat, dan fitur *Kurasi Stok Cepat* (inline stock update).
+2. **Katalog & Stok Varian:** CRUD Master produk, varian SKU, harga, berat, dan fitur *Kurasi Stok Cepat* (modal atur stok per produk).
 3. **Logistik & Transaksi:** Filter tab pesanan (Menunggu Pembayaran, Diproses, Dikirim, Selesai, Dibatalkan), input resi, dan pencetakan shipping label.
 4. **Promosi & CMS:** Pengaturan kode kupon (minimal belanja, diskon max, periode), kelola banner hero, 3 kategori utama, galeri foto atelier, dan direktori pengguna.
 

@@ -10,43 +10,137 @@
             product: null,
             variants: [],
             images: [],
+            sizeChart: null,
             loading: true,
             errorMsg: '',
 
             // State UI
             activeImage: '',
             fallbackImage: '{{ asset('images/katalog1.webp') }}',
-            selectedVariantId: null,
+            selectedWarna: '',
+            selectedUkuran: '',
             qty: 1,
             cartBusy: false,
             notice: '',       // pesan sukses/eror aksi (keranjang/wishlist)
             noticeOk: false,
             rekomendasi: [],  // produk serupa dari kategori sama (GET /products?category=...)
 
+            // Varian terpilih = kombinasi warna + ukuran
             get selectedVariant() {
-                return this.variants.find(v => v.id_variant === this.selectedVariantId) ?? null;
+                return this.variantFor(this.selectedWarna, this.selectedUkuran);
+            },
+
+            get activeImageItem() {
+                return this.images.find(i => i.src === this.activeImage) ?? null;
+            },
+
+            get activeImageIsChart() {
+                return !!this.activeImageItem?.isChart;
+            },
+
+            // Daftar warna unik dari varian aktif
+            get listWarna() {
+                return [...new Set(this.variants.map(v => v.warna).filter(Boolean))];
+            },
+
+            // Ukuran unik untuk warna terpilih, diurutkan logis
+            get listUkuran() {
+                const URUT = ['ALL SIZE', 'FREE SIZE', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL'];
+                const src = this.selectedWarna
+                    ? this.variants.filter(v => (v.warna ?? '') === this.selectedWarna)
+                    : this.variants;
+                const uniq = [...new Set(src.map(v => v.ukuran).filter(Boolean))];
+                return uniq.sort((a, b) => {
+                    const ia = URUT.indexOf(String(a).toUpperCase());
+                    const ib = URUT.indexOf(String(b).toUpperCase());
+                    if (ia === -1 && ib === -1) return String(a).localeCompare(String(b));
+                    if (ia === -1) return 1;
+                    if (ib === -1) return -1;
+                    return ia - ib;
+                });
+            },
+
+            // Cari varian dari kombinasi warna + ukuran
+            variantFor(warna, ukuran) {
+                return this.variants.find(v => (v.warna ?? '') === (warna ?? '') && (v.ukuran ?? '') === (ukuran ?? '')) ?? null;
+            },
+
+            pilihWarna(w) {
+                this.selectedWarna = w;
+                this.selectedUkuran = this.listUkuran[0] ?? '';
+                this.qty = 1;
+            },
+
+            pilihUkuran(u) {
+                this.selectedUkuran = u;
+                this.qty = 1;
+            },
+
+            isSizeChartImage(img) {
+                return String(img?.type ?? '').toLowerCase() === 'size_chart';
             },
 
             async load() {
                 this.loading = true;
-                const [p, v] = await Promise.all([
+                const [p, v, imgRes] = await Promise.all([
                     PandansariAPI.product(this.productId),
                     PandansariAPI.productVariants(this.productId),
+                    PandansariAPI.productImages(this.productId),
                 ]);
                 if (!p.ok) { this.loading = false; this.errorMsg = p.message; return; }
                 this.product = p.data;
                 this.loading = false;
 
-                // Galeri: gambar utama dulu, lalu sisanya (URL dari path_gambar backend)
-                const imgs = (this.product.images ?? []).filter(i => i.path_gambar || i.url);
-                this.images = imgs.map(i => ({ src: PandansariAPI.imgUrl(i.path_gambar ?? i.url), fallback: this.fallbackImage, label: i.alt_text ?? 'Foto Produk' }));
+                // Gabungkan gambar dari detail produk + endpoint gambar publik, lalu deduplikasi per path.
+                const rawImgs = [
+                    ...(Array.isArray(this.product.images) ? this.product.images : []),
+                    ...(imgRes.ok && Array.isArray(imgRes.data) ? imgRes.data : []),
+                ].filter(i => i && (i.path_gambar || i.url));
+                const seen = new Set();
+                const imgs = rawImgs.filter(img => {
+                    const key = String(img.path_gambar ?? img.url ?? img.id_image ?? '');
+                    if (!key || seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+
+                // Size chart bisa datang dari relasi size_chart atau item gambar bertipe size_chart.
+                const rawChart = Array.isArray(this.product.size_chart) ? (this.product.size_chart[0] ?? null) : this.product.size_chart;
+                const chartFromProduct = rawChart && (typeof rawChart === 'string' || rawChart.path_gambar || rawChart.url) ? rawChart : null;
+                const chartFromImages = rawImgs.find(i => this.isSizeChartImage(i)) ?? null;
+                const chart = chartFromProduct ?? chartFromImages;
+
+                const chartId = chart && typeof chart === 'object' ? chart.id_image : null;
+                const chartPath = typeof chart === 'string' ? chart : (chart?.path_gambar ?? chart?.url ?? null);
+                const isChart = (img) => this.isSizeChartImage(img)
+                    || (chartId && String(img.id_image) === String(chartId))
+                    || (chartPath && (img.path_gambar === chartPath || img.url === chartPath));
+
+                // Galeri: foto produk dulu, size chart selalu menjadi slide terakhir.
+                this.images = imgs
+                    .filter(img => !isChart(img))
+                    .map(img => ({ src: PandansariAPI.imgUrl(img.path_gambar ?? img.url), fallback: this.fallbackImage, label: img.alt_text ?? 'Foto Produk' }));
+
+                const chartSrc = typeof chart === 'string'
+                    ? PandansariAPI.imgUrl(chart)
+                    : PandansariAPI.imgUrl(chart?.path_gambar ?? chart?.url ?? '');
+                this.sizeChart = chartSrc
+                    ? { src: chartSrc, fallback: this.fallbackImage, label: chart?.alt_text ?? 'Panduan Ukuran' }
+                    : null;
+                if (this.sizeChart) {
+                    this.images.push({ ...this.sizeChart, isChart: true });
+                }
                 this.activeImage = this.images[0]?.src ?? this.fallbackImage;
 
-                // Varian aktif hanya; pilih default = varian pertama yang memiliki stok
+                // Varian aktif hanya; default = warna pertama + ukuran pertama yang tersedia (prioritaskan yang memiliki stok)
                 this.variants = (v.data ?? []).filter(x => x.status_varian !== 'nonaktif');
-                if (this.variants.length) {
-                    const firstStock = this.variants.find(x => x.stok == null || Number(x.stok) > 0) ?? this.variants[0];
-                    this.selectedVariantId = firstStock.id_variant;
+                const inStockVariant = this.variants.find(x => x.stok == null || Number(x.stok) > 0) ?? this.variants[0];
+                if (inStockVariant) {
+                    this.selectedWarna = inStockVariant.warna || (this.listWarna[0] ?? '');
+                    this.selectedUkuran = inStockVariant.ukuran || (this.listUkuran[0] ?? '');
+                } else {
+                    this.selectedWarna = this.listWarna[0] ?? '';
+                    this.selectedUkuran = this.listUkuran[0] ?? '';
                 }
             },
 
@@ -144,8 +238,9 @@
                     <!-- 1. GAMBAR UTAMA (MEMANJANG KE BAWAH / PORTRAIT) -->
                     <div class="w-full h-[480px] sm:h-[580px] bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm relative shrink-0">
                         <img :src="activeImage" 
-                             alt="Kemeja Pria Parang Seling Indigo" 
-                             class="w-full h-full object-cover block transition-all duration-300"
+                             :alt="activeImageItem?.label ?? 'Foto Produk'" 
+                             class="w-full h-full block transition-all duration-300"
+                             :class="activeImageIsChart ? 'object-contain p-4 bg-white' : 'object-cover'"
                              onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=800&auto=format&fit=crop'">
                     </div>
 
@@ -159,7 +254,8 @@
                                     :aria-label="img.label">
                                 <img :src="img.src" 
                                      :alt="img.label" 
-                                     class="w-full h-full object-cover block group-hover:scale-105 transition-transform duration-300"
+                                     class="w-full h-full block group-hover:scale-105 transition-transform duration-300"
+                                     :class="img.isChart ? 'object-contain p-1.5 bg-white' : 'object-cover'"
                                      :onerror="`this.src='${img.fallback}'; if(activeImage === img.src) activeImage='${img.fallback}';`">
                             </button>
                         </template>
@@ -205,27 +301,49 @@
                         </div>
                     </div>
 
-                    <!-- Varian Selector (dari GET /api/products/{id}/variants) -->
-                    <div class="space-y-2">
-                        <div class="flex items-center justify-between text-xs">
-                            <span class="font-bold text-[#0F1A24]">Pilih Ukuran / Varian:</span>
-                            <span class="text-slate-400 font-medium" x-show="selectedVariant" x-text="'Warna: ' + (selectedVariant?.warna ?? '-')"></span>
+                    <!-- Varian Selector — 2 tahap: Warna → Ukuran (dari GET /api/products/{id}/variants) -->
+                    <div class="space-y-4">
+
+                        <!-- Tahap 1: Pilih Warna -->
+                        <div class="space-y-2" x-show="listWarna.length">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-bold text-[#0F1A24]">Pilih Warna:</span>
+                                <span class="text-slate-400 font-medium" x-text="selectedWarna || '—'"></span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="w in listWarna" :key="'w-' + w">
+                                    <button @click="pilihWarna(w)"
+                                            type="button"
+                                            class="px-4 h-10 sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center"
+                                            :class="selectedWarna === w ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
+                                        <span x-text="w"></span>
+                                    </button>
+                                </template>
+                            </div>
                         </div>
 
-                        <div class="flex flex-wrap gap-2">
-                            <template x-for="v in variants" :key="v.id_variant">
-                                <button @click="if (v.stok == null || Number(v.stok) > 0) { selectedVariantId = v.id_variant; qty = 1; }"
-                                        type="button"
-                                        :disabled="v.stok != null && Number(v.stok) <= 0"
-                                        class="px-3 h-10 sm:w-auto sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed"
-                                        :class="selectedVariantId === v.id_variant ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
-                                    <span x-text="v.ukuran ? v.ukuran : (v.nama_varian ?? 'Varian')"></span>
-                                    <span class="block text-[9px] font-medium" :class="selectedVariantId === v.id_variant ? 'text-slate-300' : 'text-slate-400'"
-                                          x-text="(v.stok == null || Number(v.stok) > 0) ? PandansariAPI.formatRp(v.harga) : 'HABIS'"></span>
-                                </button>
-                            </template>
-                            <p class="text-xs text-slate-400 italic w-full" x-show="!loading && !variants.length">Varian tidak tersedia.</p>
+                        <!-- Tahap 2: Pilih Ukuran (terfilter sesuai warna terpilih) -->
+                        <div class="space-y-2" x-show="listUkuran.length">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="font-bold text-[#0F1A24]">Pilih Ukuran:</span>
+                                <span class="text-slate-400 font-medium" x-show="selectedVariant" x-text="'Tersedia ' + (selectedVariant?.stok ?? 0) + ' buah'"></span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="u in listUkuran" :key="'u-' + u">
+                                    <button @click="pilihUkuran(u)"
+                                            type="button"
+                                            :disabled="(variantFor(selectedWarna, u)?.stok ?? 0) <= 0"
+                                            class="px-3 h-10 sm:w-auto sm:h-11 rounded-xl text-xs sm:text-sm font-bold border transition shadow-sm cursor-pointer text-center disabled:opacity-40 disabled:cursor-not-allowed"
+                                            :class="selectedUkuran === u ? 'bg-[#0F1A24] text-white border-[#0F1A24]' : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'">
+                                        <span x-text="u"></span>
+                                        <span class="block text-[9px] font-medium" :class="selectedUkuran === u ? 'text-slate-300' : 'text-slate-400'"
+                                              x-text="(variantFor(selectedWarna, u)?.stok ?? 0) > 0 ? PandansariAPI.formatRp(variantFor(selectedWarna, u).harga) : 'HABIS'"></span>
+                                    </button>
+                                </template>
+                            </div>
                         </div>
+
+                        <p class="text-xs text-slate-400 italic" x-show="!loading && !variants.length">Varian tidak tersedia.</p>
                     </div>
 
                     <!-- Size Chart Table Box -->
@@ -285,7 +403,7 @@
                         </button>
 
                         <!-- WhatsApp Consultation Button -->
-                        <a href="https://wa.me/6281234567890?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi%20ukuran%20Kemeja%20Pria%20Parang%20Seling%20Indigo" target="_blank" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
+                        <a href="https://wa.me/6283820380977?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi%20ukuran%20Kemeja%20Pria%20Parang%20Seling%20Indigo" target="_blank" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
                             <i class="fa-brands fa-whatsapp text-emerald-600 text-sm"></i>
                             <span>Konsultasi Ukuran & Fitting via WhatsApp</span>
                         </a>
@@ -310,6 +428,16 @@
                     <p x-text="product?.deskripsi ?? 'Memuat deskripsi produk…'">
                         <strong class="text-[#0F1A24]"></strong>
                     </p>
+                </div>
+
+                <div x-show="sizeChart" class="pt-4 border-t border-slate-100">
+                    <h3 class="text-xs sm:text-sm font-bold text-[#0F1A24] uppercase tracking-wider mb-3">Panduan Ukuran</h3>
+                    <a :href="sizeChart?.src ?? '#'" target="_blank" rel="noopener noreferrer"
+                       class="block max-w-2xl mx-auto bg-slate-50 border border-slate-200 rounded-xl overflow-hidden"
+                       :title="'Buka ' + (sizeChart?.label ?? 'Panduan Ukuran')">
+                        <img :src="sizeChart?.src ?? ''" :alt="sizeChart?.label ?? 'Panduan Ukuran'"
+                             class="w-full max-h-[640px] object-contain">
+                    </a>
                 </div>
             </div>
 

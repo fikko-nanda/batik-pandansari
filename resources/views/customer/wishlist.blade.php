@@ -243,14 +243,17 @@
                                 <a :href="'/detail/' + (it.product?.id_product ?? '')">
                                     <h3 class="font-bold text-[#0F1A24] text-xs sm:text-base mb-1 leading-snug group-hover:text-[#0369A1] transition-colors line-clamp-2" x-text="titleOf(it)"></h3>
                                 </a>
-                                <p class="text-[11px] sm:text-xs text-slate-500 line-clamp-2 mt-1" x-text="descOf(it)"></p>
+                                {{-- Deskripsi dihilangkan agar tampilan lebih ringkas --}}
                             </div>
 
                             <div class="mt-3 sm:mt-4 pt-3 border-t border-slate-100">
-                                <div class="flex items-center gap-2 mb-3">
+                                <div class="flex flex-col gap-0.5 mb-3">
                                     <!-- Harga varian termurah, atau ajak ke detail -->
                                     <template x-if="hargaOf(it) !== null">
-                                        <span class="font-bold text-[#0F1A24] text-xs sm:text-lg" x-text="formatRupiah(hargaOf(it))"></span>
+                                        <div>
+                                            <span class="text-[9px] sm:text-[10px] text-slate-400 font-medium block leading-none mb-0.5">Mulai dari</span>
+                                            <span class="font-bold text-[#0F1A24] text-xs sm:text-lg" x-text="formatRupiah(hargaOf(it))"></span>
+                                        </div>
                                     </template>
                                     <template x-if="hargaOf(it) === null">
                                         <span class="text-xs text-slate-400 italic">Lihat Detail untuk harga</span>

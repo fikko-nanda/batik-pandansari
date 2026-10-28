@@ -29,6 +29,14 @@
     // === Ringkasan (GET /vouchers/summary) ===
     summary: null,
 
+    // === Jenis promo (frontend-convention) ===
+    jenisPromo: 'semua', // 'semua' (subtotal cart) | 'satu' (terikat 1 produk via tag [PROD:id] di deskripsi)
+    cariProduk: '',
+    produkSemua: [],   // daftar produk (dimuat sekali saat dropdown dibuka)
+    dropdownBuka: false,
+    produkMuat: false,
+    prodPilihan: null,
+
     num(n) { return Number(n ?? 0).toLocaleString('id-ID'); },
     fmt(n) { return PandansariAPI.formatRp(n); },
     tanggal(s) {
@@ -36,6 +44,59 @@
         try { return new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return s; }
     },
     pesan(ok, msg) { this.noticeOk = ok; this.notice = msg; setTimeout(() => this.notice = '', 5000); },
+
+    // === Konvensi tag promo-1-produk (frontend) ===
+    stripTag(t) { return String(t ?? '').replace(/^\[PROD:[^\]]+\]\s*/, ''); },
+    punyaTag(t) { return /^\[PROD:[^\]]+\]/.test(String(t ?? '')); },
+    idDariTag(t) {
+        const m = String(t ?? '').match(/^\[PROD:([^\]]+)\]/);
+        return m ? m[1] : '';
+    },
+
+    // === Dropdown pilih produk untuk promo 'satu' (filter real-time nama & SKU) ===
+    get produkTerfilter() {
+        const q = this.cariProduk.trim().toLowerCase();
+        if (!q) return this.produkSemua;
+        return this.produkSemua.filter(p =>
+            String(p.nama_product ?? '').toLowerCase().includes(q) ||
+            String(p.sku ?? '').toLowerCase().includes(q));
+    },
+    async bukaDropdown() {
+        this.dropdownBuka = true;
+        if (this.produkSemua.length || this.produkMuat) return;
+        this.produkMuat = true;
+        try {
+            const res = await PandansariAPI.admin.adminProducts({ per_page: 100 });
+            if (!res.ok) { this.pesan(false, res.message || 'Gagal memuat daftar produk.'); return; }
+            const daftar = Array.isArray(res.data) ? res.data : (res.data?.data ?? res.data?.items ?? []);
+            this.produkSemua = daftar.map(p => {
+                const imgs = Array.isArray(p.images) ? p.images : [];
+                const prim = imgs.find(i => i.is_primary) ?? imgs.find(i => (i.type ?? '') === 'produk') ?? imgs[0];
+                const vari = Array.isArray(p.variants) ? p.variants : (p.varian ?? []);
+                const hargas = vari.map(v => Number(v?.harga)).filter(n => !isNaN(n) && n > 0);
+                return {
+                    id_product: p.id_product ?? p.id_produk ?? p.id ?? '',
+                    nama_product: String(p.nama_produk ?? p.nama_product ?? p.nama ?? ''),
+                    kategori_name: p.category?.nama_kategori ?? p.kategori_name ?? p.nama_kategori ?? '',
+                    harga_min: hargas.length ? Math.min(...hargas) : (p.harga_mulai ?? p.harga_min ?? p.harga ?? null),
+                    sku: [p.sku, ...vari.map(v => v?.sku ?? '')].filter(Boolean).join(', '),
+                    gambar_url: PandansariAPI.imgUrl(prim?.url ?? prim?.path_gambar ?? p.foto_sampul ?? ''),
+                };
+            }).filter(p => p.id_product);
+        } catch (e) {
+            console.warn('Gagal memuat produk dropdown:', e);
+            this.pesan(false, 'Gagal memuat daftar produk — coba lagi.');
+        } finally {
+            this.produkMuat = false;
+        }
+    },
+    pilihProduk(p) {
+        this.prodPilihan = { ...p };
+        if (p.harga_min) this.form.minimal_pembelian = Number(p.harga_min);
+        this.dropdownBuka = false;
+        this.cariProduk = '';
+    },
+    batalkanProduk() { this.prodPilihan = null; },
 
     // === Simulasi diskon (seperti desain lama) ===
     get simulatedDiscount() {
@@ -60,11 +121,13 @@
             this.pesan(false, 'Nama, kode, tanggal mulai & selesai wajib diisi.'); return;
         }
         if (Number(f.nilai_diskon || 0) <= 0) { this.pesan(false, 'Nilai diskon harus lebih dari 0.'); return; }
+        if (this.jenisPromo === 'satu' && !this.prodPilihan) { this.pesan(false, 'Pilih produk dulu untuk promo khusus 1 produk.'); return; }
         this.saving = true;
         const res = await PandansariAPI.admin.createVoucher({
             kode_voucher: f.kode_voucher.trim().toUpperCase(),
             nama_voucher: f.nama_voucher.trim(),
             deskripsi: f.deskripsi.trim() || undefined,
+            id_product_peruntukan: this.jenisPromo === 'satu' ? this.prodPilihan.id_product : undefined,
             tipe_diskon: f.tipe_diskon,
             nilai_diskon: Number(f.nilai_diskon),
             minimal_pembelian: f.minimal_pembelian === '' ? undefined : Number(f.minimal_pembelian),
@@ -85,6 +148,9 @@
                 kuota_total: '', kuota_per_pengguna: 1,
                 tanggal_mulai: '', tanggal_selesai: '',
             };
+            this.jenisPromo = 'semua';
+            this.prodPilihan = null;
+            this.cariProduk = '';
             this.muatSemua();
         } else {
             const errs = Object.values(res.errors ?? {}).flat();
@@ -144,7 +210,7 @@
 
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loadingList = false; return; }
         const me = await PandansariAPI.me();
-        if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loadingList = false; return; }
+        if (!me.ok || me.data?.peran !== 'admin') { this.notAdmin = true; this.loadingList = false; return; }
         this.muatSemua();
     }
 }" class="space-y-6 text-slate-800 font-sans pb-10">
@@ -204,6 +270,98 @@
         <span>Voucher dibuat langsung tersimpan di database. Kolom bertanda * wajib diisi; kode bersifat unik.</span>
     </div>
 
+    <!-- 2b. JENIS PROMO -->
+    <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-4">
+        <div class="flex items-center gap-3 border-b border-slate-100 pb-3">
+            <div class="w-8 h-8 bg-[#0A192F] text-sky-400 rounded-xl flex items-center justify-center text-xs shrink-0">
+                <i class="fa-solid fa-bullseye"></i>
+            </div>
+            <div>
+                <h2 class="text-sm font-extrabold text-slate-900">Jenis promo</h2>
+                <p class="text-[10px] text-slate-400">Tentukan target pemberlakuan promo terhadap produk.</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-medium">
+            <label :class="jenisPromo === 'semua' ? 'bg-[#AEE2F0]/50 border-sky-400 ring-2 ring-sky-300' : 'bg-slate-50 border-slate-200'" class="p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3">
+                <input type="radio" name="jenis_promo" value="semua" x-model="jenisPromo" class="mt-0.5 accent-sky-600">
+                <div>
+                    <strong class="text-slate-900 font-extrabold block text-xs">Semua Produk</strong>
+                    <span class="text-[10px] text-slate-500 block">Berlaku untuk seluruh subtotal belanja di keranjang.</span>
+                </div>
+            </label>
+
+            <label :class="jenisPromo === 'satu' ? 'bg-[#AEE2F0]/50 border-sky-400 ring-2 ring-sky-300' : 'bg-slate-50 border-slate-200'" class="p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3">
+                <input type="radio" name="jenis_promo" value="satu" x-model="jenisPromo" class="mt-0.5 accent-sky-600">
+                <div>
+                    <strong class="text-slate-900 font-extrabold block text-xs">Khusus 1 Produk</strong>
+                    <span class="text-[10px] text-slate-500 block">Promo terikat satu produk pilihan (konvensi frontend).</span>
+                </div>
+            </label>
+        </div>
+
+        <div x-show="jenisPromo === 'satu'" class="pt-3 border-t border-slate-100 space-y-3 text-xs font-medium">
+            <div>
+                <label class="block text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">PILIH PRODUK *</label>
+                <div class="relative" @click.outside="dropdownBuka = false">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                        <input type="text" x-model="cariProduk" @click="bukaDropdown()" @focus="bukaDropdown()"
+                               class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 pl-9 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                               placeholder="Cari nama atau SKU produk…">
+                    </div>
+
+                    <div x-show="dropdownBuka"
+                         class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto divide-y divide-slate-100">
+                        <div x-show="produkMuat" class="px-4 py-6 text-center text-slate-400 text-[11px]">
+                            <i class="fa-solid fa-circle-notch fa-spin mr-1"></i>Memuat produk…
+                        </div>
+                        <template x-for="p in produkTerfilter" :key="p.id_product">
+                            <button type="button" @click="pilihProduk(p)" class="w-full text-left px-4 py-2.5 hover:bg-sky-50 flex items-center gap-3 transition cursor-pointer">
+                                <div class="w-9 h-9 rounded-lg bg-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
+                                    <img x-show="p.gambar_url" :src="p.gambar_url" class="w-full h-full object-cover" alt="">
+                                    <i x-show="!p.gambar_url" class="fa-regular fa-image text-slate-300"></i>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <strong class="block text-xs text-slate-900 truncate" x-text="p.nama_product"></strong>
+                                    <span class="text-[10px] text-slate-400 block" x-text="p.kategori_name"></span>
+                                    <span class="text-[10px] font-mono text-slate-400 block" x-show="p.sku" x-text="p.sku"></span>
+                                </div>
+                                <span class="text-emerald-700 text-xs font-bold shrink-0" x-text="p.harga_min ? fmt(p.harga_min) : ''"></span>
+                            </button>
+                        </template>
+                        <div x-show="!produkMuat && !produkTerfilter.length" class="px-4 py-6 text-center text-slate-400 text-[11px]">
+                            Tidak ada produk yang cocok.
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Pencarian real-time by nama & SKU; semua produk dimuat sekali ke dropdown (GET /admin/products).</p>
+                </div>
+            </div>
+
+            <div x-show="prodPilihan" class="bg-sky-50 border border-sky-200 rounded-xl p-3 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-white border border-sky-200 overflow-hidden shrink-0 flex items-center justify-center">
+                    <img x-show="prodPilihan?.gambar_url" :src="prodPilihan?.gambar_url" class="w-full h-full object-cover" alt="">
+                    <i x-show="!prodPilihan?.gambar_url" class="fa-regular fa-image text-slate-300"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <strong class="block text-xs font-extrabold text-slate-900 truncate" x-text="prodPilihan ? prodPilihan.nama_product : ''"></strong>
+                    <span class="text-[10px] text-slate-500 block">Harga termurah: <span x-text="prodPilihan?.harga_min ? fmt(prodPilihan.harga_min) : '—'"></span> • minimal belanja diset otomatis, masih bisa diubah.</span>
+                </div>
+                <button type="button" @click="batalkanProduk()"
+                        class="text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 transition cursor-pointer shrink-0">
+                    Ganti produk
+                </button>
+            </div>
+
+            <p class="text-[10px] text-amber-700" x-show="jenisPromo === 'satu' && !prodPilihan">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>Belum ada produk terpilih — tombol simpan tetap nonaktif sampai produk dipilih.
+            </p>
+            <p class="text-[10px] text-slate-400" x-show="jenisPromo === 'satu'">
+                Server menghitung diskon hanya dari subtotal produk terikat di keranjang; keranjang tanpa produk terikat ditolak oleh server (422).
+            </p>
+        </div>
+    </div>
+
     <!-- 3. MAIN GRID (FORM LEFT + PREVIEW RIGHT) -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
@@ -242,6 +400,7 @@
                     <div>
                         <label class="block text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">DESKRIPSI PROMO</label>
                         <textarea x-model="form.deskripsi" rows="3" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400 leading-relaxed" placeholder="Nikmati potongan untuk koleksi batik pilihan Pandansari…"></textarea>
+                        <span class="text-[10px] text-slate-400 block mt-1" x-show="jenisPromo === 'satu'">Referensi produk dikirim ke field resmi <span class="font-mono">id_product_peruntukan</span> (tanpa tag di deskripsi).</span>
                     </div>
                 </div>
             </div>
@@ -374,6 +533,12 @@
                         <span class="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 block mt-0.5" x-text="form.nama_voucher || 'Nama promo'"></span>
                     </div>
 
+                    <span x-show="prodPilihan"
+                          class="inline-flex items-center gap-1 bg-[#AEE2F0] text-slate-900 rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider w-max max-w-full">
+                        <i class="fa-solid fa-shirt text-[8px]"></i>
+                        <span class="truncate" x-text="prodPilihan ? ('Khusus: ' + prodPilihan.nama_product) : ''"></span>
+                    </span>
+
                     <div>
                         <div class="text-2xl sm:text-3xl font-black text-white tracking-tight" x-text="'Diskon ' + (form.nilai_diskon || 0) + (form.tipe_diskon === 'persentase' ? '%' : ' Rp')"></div>
                         <p class="text-[10px] text-slate-300 leading-tight mt-1" x-text="form.maksimal_diskon ? ('Hingga Rp ' + Number(form.maksimal_diskon).toLocaleString('id-ID') + '.') : 'Tanpa batas potongan.'"></p>
@@ -439,13 +604,13 @@
         </div>
 
         <div class="flex items-center gap-2.5 self-end sm:self-auto">
-            <button type="button" @click="simpanVoucher(false)" :disabled="saving"
+            <button type="button" @click="simpanVoucher(false)" :disabled="saving || (jenisPromo === 'satu' && !prodPilihan)"
                     class="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl transition cursor-pointer disabled:opacity-60 flex items-center gap-2">
                 <i class="fa-solid fa-box-archive text-xs"></i>
                 <span x-show="!saving">Simpan Draf (nonaktif)</span>
                 <span x-show="saving"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
             </button>
-            <button type="button" @click="simpanVoucher(true)" :disabled="saving"
+            <button type="button" @click="simpanVoucher(true)" :disabled="saving || (jenisPromo === 'satu' && !prodPilihan)"
                     class="px-6 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-black rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-60">
                 <i class="fa-solid fa-paper-plane text-xs"></i>
                 <span x-show="!saving">Publikasikan Promo</span>
@@ -494,6 +659,12 @@
                             <td class="py-3 px-3">
                                 <strong class="font-mono font-black text-slate-900 block" x-text="v.kode_voucher"></strong>
                                 <span class="text-[10px] text-slate-500 block" x-text="v.nama_voucher"></span>
+                                <span x-show="v.id_product_peruntukan || punyaTag(v.deskripsi)"
+                                      class="px-1.5 py-0.5 rounded-md bg-sky-100 text-sky-800 text-[9px] font-black uppercase inline-block mt-0.5"
+                                      x-text="v.nama_produk_peruntukan ? ('1 Produk: ' + v.nama_produk_peruntukan) : '1 Produk'"></span>
+                                <span x-show="v.status_produk_peruntukan && v.status_produk_peruntukan !== 'aktif'"
+                                      class="px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[9px] font-black uppercase inline-block mt-0.5 ml-0.5"
+                                      x-text="'Produk ' + (v.status_produk_peruntukan ?? 'nonaktif')"></span>
                             </td>
                             <td class="py-3 px-3">
                                 <strong class="text-slate-900 block" x-text="v.tipe_diskon === 'persentase' ? (v.nilai_diskon + '%') : fmt(v.nilai_diskon)"></strong>

@@ -14,7 +14,7 @@
                 </div>
             </div>
 
-            <a href="https://wa.me/" class="bg-[#ADD8E6] text-[#0F1A24] text-xs font-bold tracking-wider uppercase px-6 py-3.5 rounded-xl hover:bg-sky-200 transition shrink-0 shadow font-['Plus_Jakarta_Sans']">
+            <a href="https://wa.me/6283820380977?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi%20desain%20custom%20dan%20sarimbit" target="_blank" class="bg-[#ADD8E6] text-[#0F1A24] text-xs font-bold tracking-wider uppercase px-6 py-3.5 rounded-xl hover:bg-sky-200 transition shrink-0 shadow font-['Plus_Jakarta_Sans']">
                 KONSULTASI WHATSAPP SEKARANG
             </a>
         </div>

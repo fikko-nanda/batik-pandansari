@@ -11,37 +11,24 @@
         needLogin: false,
         errorMsg: '',
         busyPay: null,
-        payInfo: {},              // GET /orders/{id}/payment: { id_order: { ada_pending, kadaluarsa } },
-        async muatStatusPembayaran() {
-            const pending = this.orders.filter(o => o.status_pesanan === 'menunggu_pembayaran');
-            if (!pending.length) { this.payInfo = {}; return; }
-            const entries = await Promise.all(pending.map(async o => {
-                const r = await PandansariAPI.lastPayment(o.id_order);
-                const d = r.ok ? (r.data ?? null) : null;
-                const kadaluarsa = d?.expires_at ? new Date(d.expires_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-                return [o.id_order, {
-                    ada_pending: d?.status_pembayaran === 'menunggu' || d?.status_pembayaran === 'pending',
-                    kadaluarsa,
-                }];
-            }));
-            this.payInfo = Object.fromEntries(entries);
-        },
         user: null,
         addressesCount: 0,
         fallbackImage: '{{ asset('images/katalog1.webp') }}',
 
         statusLabels: {
             'menunggu_pembayaran': 'Menunggu Pembayaran',
+            'menunggu_verifikasi': 'Menunggu Verifikasi',
             'dibayar': 'Dibayar', 'diproses': 'Diproses', 'dikirim': 'Sedang Dikirim',
             'selesai': 'Selesai', 'dibatalkan': 'Dibatalkan'
         },
+        statusOf(o) { return o.status_tampil ?? o.status_pesanan; },
         statusGroup(s) {
             if (s === 'selesai') return 'selesai';
             if (s === 'dibatalkan') return 'dibatalkan';
             return 'berlangsung';
         },
         statusBadgeClass(s) {
-            if (s === 'menunggu_pembayaran') return 'bg-amber-100 text-amber-700';
+            if (s === 'menunggu_pembayaran' || s === 'menunggu_verifikasi') return 'bg-amber-100 text-amber-700';
             if (s === 'dibatalkan') return 'bg-rose-100 text-rose-600';
             if (s === 'selesai') return 'bg-slate-100 text-slate-600';
             return 'bg-[#BAE6FD] text-[#0369A1]';
@@ -50,15 +37,15 @@
         get counts() {
             return {
                 semua: this.total || this.orders.length,
-                berlangsung: this.orders.filter(o => this.statusGroup(o.status_pesanan) === 'berlangsung').length,
-                selesai: this.orders.filter(o => this.statusGroup(o.status_pesanan) === 'selesai').length,
-                dibatalkan: this.orders.filter(o => this.statusGroup(o.status_pesanan) === 'dibatalkan').length,
+                berlangsung: this.orders.filter(o => this.statusGroup(this.statusOf(o)) === 'berlangsung').length,
+                selesai: this.orders.filter(o => this.statusGroup(this.statusOf(o)) === 'selesai').length,
+                dibatalkan: this.orders.filter(o => this.statusGroup(this.statusOf(o)) === 'dibatalkan').length,
             };
         },
         get filteredOrders() {
             const q = this.searchQuery.trim().toLowerCase();
             return this.orders.filter(o => {
-                const inGroup = this.activeTab === 'semua' || this.statusGroup(o.status_pesanan) === this.activeTab;
+                const inGroup = this.activeTab === 'semua' || this.statusGroup(this.statusOf(o)) === this.activeTab;
                 const inSearch = !q ||
                     (o.nomor_pesanan ?? '').toLowerCase().includes(q) ||
                     (o.items ?? []).some(it => (it.name ?? '').toLowerCase().includes(q));
@@ -89,7 +76,7 @@
                     // harga_satuan, jumlah, id_variant) — fallback ke bentuk nested bila ada
                     items: (o.items ?? []).map(it => {
                         const v = it.variant ?? {};
-                        const p = v.product ?? {};
+                        const p = v.product ?? it.product ?? {};
                         const harga = Number(v.harga ?? it.harga_satuan ?? it.harga ?? 0);
                         const ukuran = v.ukuran ?? it.ukuran;
                         const warna = v.warna ?? it.warna;
@@ -98,21 +85,56 @@
                             name: p.nama_produk ?? it.nama_produk ?? 'Produk',
                             variant: [ukuran && ('Ukuran ' + ukuran), warna, jumlah > 1 && (jumlah + ' pcs')].filter(Boolean).join(' • '),
                             price: harga * jumlah,
-                            image: PandansariAPI.coverUrl(p.images) || this.fallbackImage,
+                            image: PandansariAPI.getProductImage(it) || PandansariAPI.getProductImage(v) || PandansariAPI.coverUrl(p.images) || this.fallbackImage,
                             id_variant: v.id_variant ?? it.id_variant,
+                            raw: it,
                         };
                     }),
                 }));
                 this.total = res.meta?.total ?? this.orders.length;
                 this.lastPage = res.meta?.last_page ?? 1;
-                // cek transaksi pembayaran tertunda utk pesanan yg menunggu pembayaran (GET /orders/{id}/payment)
-                this.muatStatusPembayaran();
+                this.cekBanyakPembayaran();
+                this.refreshItemImages();
             } else if (res.status === 401) {
                 this.needLogin = true;
             } else {
                 this.errorMsg = res.message;
             }
         },
+
+        refreshItemImages() {
+            this.orders.forEach(o => {
+                (o.items ?? []).forEach(it => {
+                    const resolved = PandansariAPI.getProductImage(it.raw ?? it);
+                    if (resolved) it.image = resolved;
+                });
+            });
+            this.orders = [...this.orders];
+        },
+        /**
+         * Pesanan berstatus 'menunggu_pembayaran' bisa saja sudah lunas di Midtrans
+         * tapi webhook backend belum memperbarui status. Cek transaksi terakhir agar
+         * label di riwayat tidak menyesatkan (tampil 'Menunggu Verifikasi').
+         */
+        async cekBanyakPembayaran() {
+            const pending = this.orders.filter(o => (o.status_pesanan ?? '') === 'menunggu_pembayaran');
+            if (!pending.length) return;
+            await Promise.all(pending.map(async (o) => {
+                try {
+                    const id = o.id_order ?? o.id ?? o.nomor_pesanan;
+                    const r = await PandansariAPI.lastPayment(id);
+                    if (!r.ok || !r.data) return;
+                    const p = Array.isArray(r.data) ? r.data[0] : r.data;
+                    const st = String(
+                        p?.status_transaksi ?? p?.transaction_status ?? p?.status_pembayaran ?? p?.status ?? ''
+                    ).toLowerCase();
+                    if (['settlement', 'capture', 'paid', 'lunas', 'dibayar', 'success', 'berhasil'].includes(st)) {
+                        o.status_tampil = 'menunggu_verifikasi';
+                    }
+                } catch (e) { /* transaksi belum ada — abaikan */ }
+            }));
+        },
+
         gotoPage(n) {
             if (n < 1 || n > this.lastPage || n === this.page) return;
             this.page = n;
@@ -120,23 +142,38 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         },
 
-        // Bayar pesanan yang masih menunggu pembayaran → Midtrans Snap.
-        // Cek dulu transaksi tertunda (GET /orders/{id}/payment); kalau masih menunggu, LANJUTKAN
-        // transaksi lama (tidak bikin dua transaksi untuk satu pesanan).
-        async bayar(order) {
+        // Konfirmasi pembayaran manual via WhatsApp (ongkir & rekening dari admin).
+        bayar(order) {
+            if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
             this.busyPay = order.nomor_pesanan;
-            let res = await PandansariAPI.lastPayment(order.id_order);
-            const bisaLanjut = res.ok && res.data
-                && (res.data.status_pembayaran === 'menunggu' || res.data.status_pembayaran === 'pending')
-                && (res.data.redirect_url ?? res.data.payment_url);
-            if (!bisaLanjut) res = await PandansariAPI.payOrder(order.id_order);
+
+            const items = (order.items ?? []).map((it, index) => {
+                const varian = it.variant ? ' (' + it.variant + ')' : '';
+                const idBarang = it.id_variant ?? '-';
+                return `${index + 1}. ${it.name}${varian} — ${this.formatRupiah(it.price)} [ID: ${idBarang}]`;
+            });
+
+            const lines = [
+                'Halo Batik Pandansari, saya ingin konfirmasi pembayaran pesanan saya.',
+                '',
+                'Nomor Pesanan: ' + (order.nomor_pesanan ?? '-'),
+                'Nama: ' + (order.nama_penerima ?? this.user?.nama_pengguna ?? '-'),
+                'No. HP: ' + (order.nomor_telepon_penerima ?? this.user?.nomor_telepon ?? '-'),
+                'Alamat: ' + (order.alamat_pengiriman ?? '-'),
+                '',
+                'Item:',
+                ...(items.length ? items : ['-']),
+                '',
+                'Total (belum termasuk ongkir): ' + this.formatRupiah(this.totalOf(order)),
+                'Status: Menunggu Pembayaran',
+                '',
+                'Mohon info ongkir dan rekening pembayarannya. Terima kasih.',
+            ];
+
             this.busyPay = null;
-            const url = res.data?.redirect_url ?? res.data?.payment_url;
-            if (url) {
-                window.location.href = url;
-            } else {
-                alert(res.message); // sederhana; bisa diganti toast
-            }
+            const url = 'https://wa.me/6283820380977?text=' + encodeURIComponent(lines.join('\n'));
+            const win = window.open(url, '_blank', 'noopener');
+            if (!win) window.location.href = url;
         },
         // Beli Lagi: masukkan item pesanan ke keranjang
         async beliLagi(order) {
@@ -169,7 +206,22 @@
 
         async init() {
             if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
+            try {
+                if (typeof PandansariAPI?.loadCatalogImages === 'function') {
+                    const p = PandansariAPI.loadCatalogImages();
+                    if (p && typeof p.then === 'function') {
+                        p.then(() => { this.refreshItemImages(); }).catch(() => {});
+                    }
+                }
+            } catch (_) {}
             await Promise.all([this.load(), this.loadIdentity()]);
+            this.refreshItemImages();
+            // Segarkan daftar saat pengguna kembali dari halaman pembayaran
+            // (tombol back / tab kembali aktif) agar status tidak tertinggal.
+            window.addEventListener('pageshow', (e) => { if (e.persisted) this.load(); });
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') this.load();
+            });
         }
      }">
 
@@ -358,8 +410,8 @@
                                 </div>
 
                                 <span class="text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider"
-                                      :class="statusBadgeClass(order.status_pesanan)"
-                                      x-text="statusLabels[order.status_pesanan] ?? order.status_pesanan">
+                                      :class="statusBadgeClass(statusOf(order))"
+                                      x-text="statusLabels[statusOf(order)] ?? statusOf(order)">
                                 </span>
                             </div>
 
@@ -391,20 +443,22 @@
                                 </div>
 
                                 <div class="flex items-center gap-2 justify-end">
-                                    <!-- Tombol bayar untuk pesanan menunggu pembayaran -->
-                                    <template x-if="order.status_pesanan === 'menunggu_pembayaran'">
-                                        <div class="flex items-center gap-2">
-                                            <div x-show="payInfo[order.id_order]?.ada_pending" x-cloak
-                                                 class="hidden sm:block text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 leading-tight">
-                                                <span class="block font-bold">Ada transaksi pembayaran tertunda</span>
-                                                <span x-show="payInfo[order.id_order]?.kadaluarsa">tenggat: <span x-text="payInfo[order.id_order]?.kadaluarsa"></span></span>
-                                            </div>
-                                            <button type="button" :disabled="busyPay === order.nomor_pesanan" @click="bayar(order)"
-                                                    class="bg-[#BAE6FD] hover:bg-sky-200 text-[#0369A1] text-xs font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
-                                                <i class="fa-solid" :class="busyPay === order.nomor_pesanan ? 'fa-circle-notch fa-spin' : 'fa-credit-card'"></i>
-                                                <span x-text="busyPay === order.nomor_pesanan ? 'MEMPROSES…' : (payInfo[order.id_order]?.ada_pending ? 'LANJUTKAN BAYAR' : 'BAYAR SEKARANG')"></span>
-                                            </button>
-                                        </div>
+                                    <!-- Tombol Bayar via Midtrans Snap (ke detail pesanan) -->
+                                    <template x-if="order.status_pesanan === 'menunggu_pembayaran' && !order.status_tampil">
+                                        <a :href="'/orders/' + (order.id_order || order.id || order.nomor_pesanan)"
+                                           class="bg-[#0369A1] hover:bg-[#0284C7] text-white text-xs font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-sky-500/20">
+                                            <i class="fa-solid fa-credit-card text-xs"></i>
+                                            <span>BAYAR SEKARANG</span>
+                                        </a>
+                                    </template>
+
+                                    <!-- Konfirmasi pembayaran manual via WhatsApp -->
+                                    <template x-if="order.status_pesanan === 'menunggu_pembayaran' && !order.status_tampil">
+                                        <button type="button" @click="bayar(order)"
+                                                class="bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/20">
+                                            <i class="fa-brands fa-whatsapp text-sm"></i>
+                                            <span>KONFIRMASI WA</span>
+                                        </button>
                                     </template>
 
                                     <!-- Beli Lagi -->

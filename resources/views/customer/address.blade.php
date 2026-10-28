@@ -95,12 +95,10 @@
         },
 
         async simpan() {
-            // tujuan RajaOngkir wajib (dipakai ongkir & checkout)
-            if (!this.tujuanTerpilih?.id) {
-                this.tampil('Pilih dulu tujuan ongkir: cari kecamatan/kota di kolom Cari Tujuan, lalu klik salah satu hasil.', false);
-                return;
+            const payload = { ...this.form };
+            if (this.tujuanTerpilih?.id) {
+                payload.id_tujuan_rajaongkir = this.tujuanTerpilih.id;
             }
-            const payload = { ...this.form, id_tujuan_rajaongkir: this.tujuanTerpilih.id };
             this.saving = true;
             const res = this.isEdit
                 ? await PandansariAPI.updateAddress(this.editingId, payload)
@@ -300,9 +298,7 @@
                                         ★ ALAMAT UTAMA
                                     </span>
                                     <span class="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md uppercase" x-text="item.label_alamat ?? 'Alamat'"></span>
-                                    <span class="px-2.5 py-1 rounded-md uppercase flex items-center gap-1"
-                                          :class="item.id_tujuan_rajaongkir ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'"
-                                          x-text="item.id_tujuan_rajaongkir ? '🚚 SIAP ONGKIR' : '⚠ PERLU TUJUAN ONGKIR'"></span>
+                                    <span class="px-2.5 py-1 rounded-md uppercase bg-slate-100 text-slate-600">ALAMAT PENGIRIMAN</span>
                                 </div>
 
                                 <div class="flex items-center gap-3">
@@ -359,14 +355,21 @@
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-semibold text-slate-600 mb-1">Nomor Telepon <span class="text-rose-500">*</span></label>
-                                    <input type="text" x-model="form.nomor_telepon" required
+                                    <input type="tel"
+                                           inputmode="numeric"
+                                           pattern="[0-9]*"
+                                           maxlength="13"
+                                           x-model="form.nomor_telepon"
+                                           required
+                                           @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
+                                           @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                             </div>
-                            <!-- Cari tujuan RajaOngkir (wajib — dipakai hitung ongkir & checkout) -->
-                            <div class="relative rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                            <!-- Cari tujuan (opsional) -->
+                            <div class="relative rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                                 <label class="block text-[11px] font-semibold text-slate-700 mb-1">
-                                    🚚 Cari Tujuan Ongkir (kecamatan/kota) <span class="text-rose-500">*</span>
+                                    Cari Tujuan (kecamatan/kota) <span class="text-slate-400">(opsional)</span>
                                 </label>
                                 <div class="relative">
                                     <input type="text" x-model="tujuanCari" @input="cariTujuan()"
@@ -393,7 +396,7 @@
                                         <span x-text="tujuanTerpilih.label"></span>
                                     </div>
                                 </template>
-                                <p class="mt-1.5 text-[10px] text-slate-500 italic">Memilih tujuan otomatis mengisi Provinsi, Kota, Kecamatan &amp; Kode Pos dan <b>wajib</b> agar ongkir &amp; checkout bisa dihitung.</p>
+                                <p class="mt-1.5 text-[10px] text-slate-500 italic">Bisa dipilih untuk membantu mengisi Provinsi, Kota, Kecamatan &amp; Kode Pos. Ongkir tetap akan dikonfirmasi via WhatsApp.</p>
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>

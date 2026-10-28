@@ -7,12 +7,20 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "dompdf/dompdf": "3.1.6",
+        "google/apiclient": "*",
         "laravel/framework": "^13.17",
-        "laravel/sanctum": "*",
-        "laravel/tinker": "^3.0"
+        "laravel/sanctum": "^4.3",
+        "laravel/tinker": "^3.0",
+        "midtrans/midtrans-php": "^2.6"
+    },
+    "conflict": {
+        "symfony/http-foundation": "<7.4.19 || >=8.0.0 <8.1.7",
+        "symfony/yaml": "<7.4.18 || >=8.0.0 <8.1.6"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
+        "laravel/boost": "*",
         "laravel/pail": "^1.2.5",
         "laravel/pao": "^1.0.6",
         "laravel/pint": "^1.27",

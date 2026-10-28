@@ -79,7 +79,7 @@
         async init() {
             if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
             const me = await PandansariAPI.me();
-            if (me.ok && me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
+            if (!me.ok || me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
             this.user = PandansariAPI.getUser();
             await this.muatUlang();
             this.loading = false;
@@ -109,7 +109,7 @@
                 Sugeng Rawuh, <span class="italic font-normal" x-text="user?.nama_pengguna ?? 'Admin'"></span>
             </h1>
             <p class="text-xs text-slate-300 leading-relaxed font-normal">
-                Ikhtisar perputaran wastra, status gerbang bayar Midtrans, serta logistik RajaOngkir — data langsung dari API backend.
+                Ikhtisar perputaran wastra, status gerbang bayar Midtrans, serta data langsung dari API backend.
             </p>
         </div>
 
