@@ -140,7 +140,7 @@ abstract class EndpointTestCase extends TestCase
 
     protected function makeProduct(string $nama, string $status = 'aktif', string $idCategory = 'cat-1'): Product
     {
-        return Product::create([
+        $product = Product::create([
             'id_product' => (string) Str::uuid(),
             'id_category' => $idCategory,
             'nama_produk' => $nama,
@@ -148,6 +148,10 @@ abstract class EndpointTestCase extends TestCase
             'deskripsi' => 'Deskripsi '.$nama,
             'status_produk' => $status,
         ]);
+
+        $product->categories()->sync([$idCategory]);
+
+        return $product;
     }
 
     protected function makeVariant(Product $product, int $stok = 10, string $status = 'aktif', float $harga = 150000): ProductVariant
@@ -191,7 +195,6 @@ abstract class EndpointTestCase extends TestCase
             'kode_pos' => '51133',
             'alamat_lengkap' => 'Jl. Batik No. 12',
             'alamat_utama' => $utama,
-            'id_tujuan_rajaongkir' => '61622',
         ]);
     }
 

@@ -2,11 +2,15 @@
 
 namespace App\Providers;
 
+use App\Services\Logging\NotificationLogger;
 use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Foundation\DevCommands;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Mail\Events\MessageSent;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Symfony\Component\Mime\Message;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,10 +27,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Worker queue dev harus mencoba ulang cukup kali: OTP/email bisa
-        // sementara ditolak SMTP (mis. Mailtrap "Too many emails per second").
-        // Nilai default framework (--tries=1) membuat email gagal permanen.
-        DevCommands::artisan('queue:listen --tries=10 --timeout=60 --sleep=1', 'queue');
+        $this->registerMailTracking();
+
         // Endpoint webhook Midtrans bersifat publik (dipanggil server Midtrans),
         // jadi dibatasi per IP agar tidak bisa dibanjiri pihak tak bertanggung jawab.
         RateLimiter::for('midtrans-webhook', fn (Request $request) => Limit::perMinute(
@@ -59,26 +61,77 @@ class AppServiceProvider extends ServiceProvider
         // layanan Google dari satu sumber.
         RateLimiter::for('google-auth', fn (Request $request) => Limit::perMinute(20)->by($request->ip()));
 
-        // Batas pengiriman email keluar dari worker queue. Mailtrap (dan
-        // sebagian penyedia SMTP) membatasi jumlah email per detik; batas ini
-        // mencegah job gagal 550 "Too many emails per second". Default 1
-        // email per 2 detik (aman untuk plan testing Mailtrap).
-        RateLimiter::for('email', function () {
-            $seconds = max(1, (int) config('mail.outbound_rate_seconds', 2));
-
-            return (new Limit(1, $seconds))->by('email');
-        });
-
-        // Cek ongkir serentak (JNE/J&T/POS) menyentuh API RajaOngkir yang
-        // berkuota, jadi dibatasi per pengguna (bukan per IP agar pelanggan
-        // di jaringan kantor/warnet yang sama tidak saling memblokir).
-        RateLimiter::for('rajaongkir-check', function (Request $request) {
-            $userId = (string) optional($request->user())->getAuthIdentifier();
+        // Login dibatasi per email+IP (anti brute force satu akun) sekaligus
+        // per IP (anti credential stuffing dari satu sumber).
+        RateLimiter::for('login', function (Request $request) {
+            $email = mb_strtolower((string) $request->input('email', ''));
 
             return [
-                Limit::perMinute(20)->by('rajaongkir-check|'.($userId !== '' ? $userId : $request->ip())),
-                Limit::perMinute(60)->by('rajaongkir-check-ip|'.$request->ip()),
+                Limit::perMinute((int) config('security.login_per_email_per_minute', 5))
+                    ->by('login|'.$email.'|'.$request->ip()),
+                Limit::perMinute((int) config('security.login_per_ip_per_minute', 30))
+                    ->by('login-ip|'.$request->ip()),
             ];
         });
+
+        // Registrasi memicu pengiriman email OTP, jadi dibatasi agar tidak
+        // dipakai untuk spam email maupun membanjiri database.
+        RateLimiter::for('register', function (Request $request) {
+            $email = mb_strtolower((string) $request->input('email', ''));
+
+            return [
+                Limit::perMinute((int) config('security.register_per_email_per_minute', 5))
+                    ->by('register|'.$email.'|'.$request->ip()),
+                Limit::perMinute((int) config('security.register_per_ip_per_minute', 20))
+                    ->by('register-ip|'.$request->ip()),
+            ];
+        });
+    }
+
+    /**
+     * Hubungkan siklus kirim email Laravel ke notification_logs.
+     *
+     * - MessageSending menambah attempt_count saat transport mulai mengirim.
+     * - MessageSent menandai "sent" (diterima transport), BUKAN "delivered".
+     */
+    private function registerMailTracking(): void
+    {
+        Event::listen(MessageSending::class, function (MessageSending $event): void {
+            $id = $this->notificationLogIdFromHeaders($event->message);
+
+            if ($id !== null) {
+                app(NotificationLogger::class)->markAttempt($id);
+            }
+        });
+
+        Event::listen(MessageSent::class, function (MessageSent $event): void {
+            $id = $this->notificationLogIdFromHeaders(
+                $event->sent->getOriginalMessage()
+            );
+
+            if ($id !== null) {
+                app(NotificationLogger::class)->markSent(
+                    $id,
+                    $event->sent->getMessageId()
+                );
+            }
+        });
+    }
+
+    private function notificationLogIdFromHeaders(?object $message): ?int
+    {
+        if (! $message instanceof Message) {
+            return null;
+        }
+
+        $header = $message->getHeaders()->get('X-Notification-Log-Id');
+
+        if ($header === null) {
+            return null;
+        }
+
+        $value = trim($header->getBodyAsString());
+
+        return ctype_digit($value) ? (int) $value : null;
     }
 }

@@ -54,12 +54,12 @@ class MidtransService
                 'gross_amount' => (int) round((float) $order->total_pembayaran),
             ],
             'customer_details' => $this->customerDetails($order),
-            // Batas waktu pembayaran 10 menit, sejalan dengan reservasi stok.
+            // Batas waktu pembayaran 12 jam, sejalan dengan reservasi stok.
             // Midtrans akan menutup transaksi otomatis setelah waktu ini.
             'expiry' => [
                 'start_time' => now()->format('Y-m-d H:i:s O'),
-                'unit' => 'minute',
-                'duration' => OrderService::PAYMENT_WINDOW_MINUTES,
+                'unit' => 'hour',
+                'duration' => OrderService::PAYMENT_WINDOW_HOURS,
             ],
             // Arahkan pengguna kembali ke halaman hasil pembayaran milik sendiri
             // agar tidak berakhir di example.com bawaan akun Midtrans. Status

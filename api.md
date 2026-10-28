@@ -45,8 +45,7 @@ Beberapa endpoint list (paginate) juga mengembalikan `meta`:
 | 404 | Sumber daya tidak ditemukan |
 | 422 | Data tidak valid / proses bisnis ditolak (mis. stok tidak cukup) |
 | 500 | Kesalahan server |
-| 502 | Gagal pada layanan pihak ketiga (Midtrans / RajaOngkir) |
-| 503 | Layanan pihak ketiga tidak dapat dihubungi (RajaOngkir) |
+| 502 | Gagal pada layanan pihak ketiga (Midtrans) |
 
 ### Error handling
 
@@ -366,11 +365,11 @@ Catatan: tabel `users` tidak punya kolom status, sehingga `pengguna_aktif` = `to
 | Param | Tipe | Keterangan |
 |---|---|---|
 | `search` | string, max:150 | Cari `nama_produk` atau `deskripsi` (like) |
-| `category` | string, max:36 | Filter `id_category` |
+| `category` | string, max:36 | Filter berdasarkan kategori mana pun yang dimiliki produk |
 | `page` | int, min:1 | Halaman |
 | `per_page` | int, min:1, max:100 | Default 10 |
 
-Response menyertakan relasi `category`, `images` (urut: primary desc, urutan asc).
+Response menyertakan `categories` (semua kategori) dan `category` (kategori utama/pertama untuk kompatibilitas), serta `images` (urut: primary desc, urutan asc).
 
 ### Admin
 
@@ -406,7 +405,7 @@ Response menyertakan relasi `category`, `images` (urut: primary desc, urutan asc
 
 ```json
 {
-  "id_category": "string (required, exists:categories,id_category)",
+  "id_categories": ["string (minimal 1, setiap ID exists:categories,id_category)"],
   "nama_produk": "string (required, max:150)",
   "slug": "string (nullable, max:180, unique)",
   "deskripsi": "string (nullable)",
@@ -418,8 +417,11 @@ Response menyertakan relasi `category`, `images` (urut: primary desc, urutan asc
 ```
 
 Catatan:
+- `id_categories` wajib saat membuat produk, minimal satu kategori, tanpa batas maksimal. Saat update, jika dikirim, daftar ini menggantikan seluruh kategori.
+- `id_category` tunggal lama masih diterima sebagai alternatif untuk menjaga kompatibilitas klien.
 - `slug` otomatis di-slugify. Jika kosong/null saat POST, di-generate unik dari `nama_produk` (mis. `batik-tulis-1`).
 - Default `status_produk` saat POST: `draft`.
+- Response produk menyertakan `categories` berisi semua kategori; `id_category` dan `category` tetap menunjuk kategori utama untuk kompatibilitas.
 - `PUT` bersifat parsial: field yang tidak dikirim tidak berubah; field yang dikirim `null` ditulis `null` (kecuali `slug`).
 - `status_produk = aktif` mensyaratkan produk sudah punya minimal 1 foto produk (`type=produk`). Buat sebagai `draft`, unggah gambarnya, lalu aktifkan.
 - `DELETE` = soft disable: set `status_produk = nonaktif` (bukan hard delete).
@@ -528,12 +530,11 @@ Ordering response GET: `is_primary` desc, lalu `urutan` asc.
   "nama_kecamatan": "string (required/max:60)",
   "kode_pos": "string (required/max:10)",
   "alamat_lengkap": "string (required)",
-  "alamat_utama": "boolean (nullable)",
-  "id_tujuan_rajaongkir": "integer (nullable, min:1)"
+  "alamat_utama": "boolean (nullable)"
 }
 ```
 
-`id_tujuan_rajaongkir` adalah ID tujuan (per kelurahan) dari `GET /shipping/destinations`, disimpan agar ongkir checkout bisa dihitung backend. Jika `alamat_utama = true`, alamat lain milik user di-unset jadi false. Alamat pertama otomatis jadi utama. Ordering: `alamat_utama` desc, `dibuat_pada` desc. **404** jika tidak ditemukan / bukan milik user.
+Jika `alamat_utama = true`, alamat lain milik user di-unset jadi false. Alamat pertama otomatis jadi utama. Ordering: `alamat_utama` desc, `dibuat_pada` desc. **404** jika tidak ditemukan / bukan milik user.
 
 ---
 
@@ -706,38 +707,28 @@ Status penggunaan voucher: `menunggu` | `digunakan` | `dibatalkan`.
 ```json
 {
   "id_user_address": "string (required)",
-  "kurir": "jne | pos | tiki | sicepat | jnt | anteraja | jxpress | lex | lion | ninja (required)",
-  "layanan": "string (required, max:50) â€” kode/nama layanan dari POST /shipping/cost",
   "kode_voucher": "string (nullable, max:50)",
-  "biaya_pengiriman": "numeric (nullable, min:0, max:9999999999.99) â€” DIABAIKAN",
   "catatan": "string (nullable)"
 }
 ```
 
-> `biaya_pengiriman` dari klien tidak dipercaya. Ongkir dihitung ulang di backend: `POST /shipping/cost` ke RajaOngkir (`origin` dari `RAJAONGKIR_ORIGIN_ID`, `destination` = `id_tujuan_rajaongkir` alamat, `weight` = Î£(`berat_gram` varian Ã— jumlah), `courier` = `kurir`), lalu biaya diambil dari layanan yang cocok dengan `layanan`.
+Ongkos kirim tidak dihitung oleh sistem. `biaya_pengiriman` selalu `0`; pengiriman dihitung manual di luar aplikasi. Field lama seperti `kurir`, `layanan`, `shipping_cost`, atau `biaya_pengiriman` akan diabaikan bila masih dikirim klien.
 
 **Proses:**
-1. Validasi alamat milik user â†’ **404** jika tidak ada
-2. Ambil keranjang aktif + items â†’ **422** `"Keranjang Anda kosong."` jika kosong
-3. Hitung ongkir via RajaOngkir â†’ **422/502/503** jika gagal (lihat di bawah); **422** `ALAMAT_TANPA_TUJUAN_RAJAONGKIR` bila alamat belum punya `id_tujuan_rajaongkir`; **422** `LAYANAN_TIDAK_TERSEDIA` bila `layanan` tidak ada pada hasil kurir
-4. **Dalam transaksi DB:** lock setiap variant, cek variant aktif + produk aktif + stok cukup â†’ **422** jika tidak
-5. Hitung `subtotal`; jika ada `kode_voucher`, validasi via `VoucherService` â†’ **422** jika tidak valid
-6. `total = max(0, subtotal + biaya_pengiriman - diskon)`
-7. Buat order (`nomor_pesanan` unik format `ORD-YYYYMMDD-XXXX`, status `menunggu_pembayaran`)
-8. Buat `order_items`, kurangi stok variant, catat `inventory_movement` (jenis `keluar`, referensi `nomor_pesanan`)
-9. Jika voucher â†’ buat `voucher_usages` status `menunggu`
-10. Catat `order_status_history` (null â†’ `menunggu_pembayaran`)
-11. Set keranjang `status_cart = checkout`
+1. Validasi alamat milik user → **404** jika tidak ada
+2. Ambil keranjang aktif + items → **422** `"Keranjang Anda kosong."` jika kosong
+3. **Dalam transaksi DB:** lock setiap variant, cek variant aktif + produk aktif + stok cukup → **422** jika tidak
+4. Hitung `subtotal`; jika ada `kode_voucher`, validasi via `VoucherService` → **422** jika tidak valid
+5. `dasar_pph = max(0, subtotal - diskon)`; `pph = round(dasar_pph * 11%)` (rupiah terdekat); `total = dasar_pph + pph`
+6. Buat order (`nomor_pesanan` unik format `ORD-YYYYMMDD-XXXX`, status `menunggu_pembayaran`)
+7. Buat `order_items`, kurangi stok variant, catat `inventory_movement` (jenis `keluar`, referensi `nomor_pesanan`)
+8. Jika voucher → buat `voucher_usages` status `menunggu`
+9. Catat `order_status_history` (null → `menunggu_pembayaran`)
+10. Set keranjang `status_cart = checkout`
 
-**Response 201:** order + items.
+Batas pembayaran adalah **12 jam** sejak checkout (`kedaluwarsa_pada`). Setelah lewat, pesanan `menunggu_pembayaran` dibatalkan otomatis dan reservasi stok dilepas.
 
-**Error ongkir** (body `{ "success": false, "message": "<KODE>" }`, pesanan tidak dibuat):
-
-| Status | Kode |
-|---|---|
-| 422 | `ALAMAT_TANPA_TUJUAN_RAJAONGKIR`, `LAYANAN_TIDAK_TERSEDIA`, `RAJAONGKIR_INVALID_REQUEST`, `RAJAONGKIR_DESTINATION_NOT_FOUND`, `RAJAONGKIR_NO_SERVICE` |
-| 502 | `RAJAONGKIR_UPSTREAM_ERROR`, `RAJAONGKIR_UNAUTHORIZED`, `RAJAONGKIR_NOT_CONFIGURED`, `RAJAONGKIR_INVALID_RESPONSE` |
-| 503 | `RAJAONGKIR_UNAVAILABLE` |
+**Response 201:** order + items (termasuk `subtotal`, `diskon`, `pph`, `total_pembayaran`).
 
 **500** jika gagal diproses:
 ```json
@@ -832,7 +823,7 @@ Syarat: order milik user **dan** `status_pesanan == menunggu_pembayaran` (selain
 
 Logika:
 - Jika ada payment terakhir berstatus `menunggu` dengan `payment_reference` dan (`expires_at` null / masih future) â†’ **reuse** (**200**)
-- Jika tidak â†’ buat Payment (status `menunggu`), panggil Midtrans Snap. Jika gagal â†’ hapus payment & **502**. Update `payment_reference` (snap token), `payment_url`, `expires_at = now() + 1 hari`. Return **201**.
+- Jika tidak â†’ buat Payment (status `menunggu`), panggil Midtrans Snap. Jika gagal â†’ hapus payment & **502**. Update `payment_reference` (snap token), `payment_url`, `expires_at = orders.kedaluwarsa_pada` (12 jam sejak checkout). Return **201**.
 
 **Response data:**
 
@@ -919,72 +910,7 @@ Response sukses:
 
 ---
 
-## 14. Ongkos Kirim (RajaOngkir)
-
-Integrasi API resmi RajaOngkir (Komerce) `https://rajaongkir.komerce.id/api/v1` (header `key` = `RAJAONGKIR_API_KEY`). Origin toko dibaca dari tabel `settings` (`rajaongkir.origin_id`, bisa diubah admin via `/admin/shipping/config`) dengan fallback env `RAJAONGKIR_ORIGIN_ID`. Daftar kurir yang diterima `courier` = kurir **aktif** menurut konfigurasi admin (lihat Â§16; default semua kurir aktif, identik dengan perilaku lama). Pencarian tujuan di-cache agar hemat kuota.
-
-| Method | Endpoint | Auth | Deskripsi |
-|---|---|---|---|
-| GET | `/shipping/destinations` | `auth:sanctum` | Cari tujuan pengiriman (per kelurahan) |
-| POST | `/shipping/cost` | `auth:sanctum` | Hitung ongkir |
-
-**GET `/shipping/destinations` Query:**
-
-| Param | Tipe | Keterangan |
-|---|---|---|
-| `search` | string | required, min:2, max:100 (nama kelurahan/kecamatan/kota/kode pos) |
-
-**Response 200:**
-
-```json
-{
-  "success": true,
-  "message": "Daftar tujuan pengiriman berhasil diambil.",
-  "data": [
-    {
-      "id": 61622,
-      "label": "BANJARSARI, BANJARSARI, SURAKARTA, JAWA TENGAH, 57136",
-      "province_name": "JAWA TENGAH",
-      "city_name": "SURAKARTA",
-      "district_name": "BANJARSARI",
-      "subdistrict_name": "BANJARSARI",
-      "zip_code": "57136"
-    }
-  ]
-}
-```
-
-Simpan `id` ke `user_addresses.id_tujuan_rajaongkir`. Tidak ada hasil â†’ `200`, `data: []`.
-
-**POST `/shipping/cost` Body:**
-
-```json
-{
-  "destination": "integer (required, min:1) â€” ID tujuan dari /shipping/destinations",
-  "weight": "integer (required, min:1, max:30000) â€” berat total gram",
-  "courier": "jne | pos | tiki | sicepat | jnt | anteraja | jxpress | lex | lion | ninja (required)"
-}
-```
-
-**Response 200:**
-
-```json
-{
-  "success": true,
-  "message": "Biaya pengiriman berhasil dihitung.",
-  "data": [
-    { "name": "JNE", "code": "jne", "service": "CTC", "description": "Layanan Reguler", "cost": 9000, "etd": "2-3" }
-  ]
-}
-```
-
-**Error** (body `{ "success": false, "message": "<KODE>" }`): `422` `RAJAONGKIR_INVALID_REQUEST` / `RAJAONGKIR_DESTINATION_NOT_FOUND` / `RAJAONGKIR_NO_SERVICE`, `502` `RAJAONGKIR_UPSTREAM_ERROR` / `RAJAONGKIR_UNAUTHORIZED` / `RAJAONGKIR_NOT_CONFIGURED` / `RAJAONGKIR_INVALID_RESPONSE`, `503` `RAJAONGKIR_UNAVAILABLE`.
-
-Ketahanan: request diulang otomatis **1 kali** (delay 250 ms) hanya saat gangguan koneksi atau upstream `5xx`; error `4xx` tidak diulang (hemat kuota). Verifikasi TLS memakai CA sistem; bila kosong, otomatis memakai `cacert.pem` bawaan SDK Midtrans (`RAJAONGKIR_VERIFY` untuk memaksa file tertentu). Cek cepat: `php artisan external:check`.
-
----
-
-## 15. Pengiriman & Pemenuhan (Admin)
+## 14. Pengiriman & Pemenuhan (Admin)
 
 Semua endpoint di grup ini memakai `auth:sanctum` + `admin`: **401** tanpa token, **403** untuk non-admin.
 
@@ -1006,7 +932,7 @@ Semua endpoint di grup ini memakai `auth:sanctum` + `admin`: **401** tanpa token
   "success": true,
   "message": "Daftar pengiriman berhasil diambil.",
   "data": [
-    { "id_shipment": "c92c2906-09cf-48bd-809a-8a35b7995725", "id_order": "7b23ee75-92f7-44b4-a5c6-e7ce20306e9f", "provider": "rajaongkir", "kurir": "JNE", "layanan_pengiriman": "Reguler", "kode_layanan": "REG", "berat_gram": 500, "biaya_pengiriman": "9000.00", "nomor_resi": null, "status_pengiriman": "menunggu", "tanggal_dikirim": null, "tanggal_diterima": null, "dibuat_pada": "2026-10-19T15:03:08.000000Z", "diperbarui_pada": "2026-10-19T15:03:08.000000Z", "order": { "id_order": "7b23ee75-92f7-44b4-a5c6-e7ce20306e9f", "nomor_pesanan": "ORD-SHIP-B", "status_pesanan": "menunggu_pembayaran", "nama_penerima": "Pelanggan 7IJD" } }
+    { "id_shipment": "c92c2906-09cf-48bd-809a-8a35b7995725", "id_order": "7b23ee75-92f7-44b4-a5c6-e7ce20306e9f", "provider": "manual", "kurir": "JNE", "layanan_pengiriman": "Reguler", "kode_layanan": "REG", "berat_gram": 500, "biaya_pengiriman": "9000.00", "nomor_resi": null, "status_pengiriman": "menunggu", "tanggal_dikirim": null, "tanggal_diterima": null, "dibuat_pada": "2026-10-19T15:03:08.000000Z", "diperbarui_pada": "2026-10-19T15:03:08.000000Z", "order": { "id_order": "7b23ee75-92f7-44b4-a5c6-e7ce20306e9f", "nomor_pesanan": "ORD-SHIP-B", "status_pesanan": "menunggu_pembayaran", "nama_penerima": "Pelanggan 7IJD" } }
   ],
   "meta": { "current_page": 1, "per_page": 15, "total": 2, "last_page": 1 }
 }
@@ -1035,7 +961,7 @@ Aturan bisnis (semua dalam satu transaksi, setiap perubahan dicatat ke `shipment
 {
   "success": true,
   "message": "Status pengiriman berhasil diperbarui.",
-  "data": { "id_shipment": "bb656e32-4149-4029-93ce-0d0c1c8ffbac", "id_order": "1b01a253-5e62-4f11-846a-f72f4e555641", "provider": "rajaongkir", "kurir": "JNE", "layanan_pengiriman": "Reguler", "kode_layanan": "REG", "berat_gram": 500, "biaya_pengiriman": "9000.00", "nomor_resi": "RESI-2026-001", "status_pengiriman": "dikirim", "tanggal_dikirim": "2026-10-19T15:03:08.000000Z", "tanggal_diterima": null, "dibuat_pada": "2026-10-19T15:03:08.000000Z", "diperbarui_pada": "2026-10-19T15:03:08.000000Z", "histories": [ { "id_shipment_history": "ac3db4f4-4513-4b25-83f3-e92d467829a1", "id_shipment": "bb656e32-4149-4029-93ce-0d0c1c8ffbac", "status_sebelumnya": "menunggu", "status_baru": "dikirim", "lokasi": "Pekalongan", "keterangan": "Paket diserahkan ke kurir", "waktu_perubahan": "2026-10-19T15:03:08.000000Z", "dibuat_pada": "2026-10-19T15:03:08.000000Z", "diperbarui_pada": "2026-10-19T15:03:08.000000Z" } ], "order": { "id_order": "1b01a253-5e62-4f11-846a-f72f4e555641", "nomor_pesanan": "ORD-SHIP-D", "status_pesanan": "menunggu_pembayaran" } }
+  "data": { "id_shipment": "bb656e32-4149-4029-93ce-0d0c1c8ffbac", "id_order": "1b01a253-5e62-4f11-846a-f72f4e555641", "provider": "manual", "kurir": "JNE", "layanan_pengiriman": "Reguler", "kode_layanan": "REG", "berat_gram": 500, "biaya_pengiriman": "9000.00", "nomor_resi": "RESI-2026-001", "status_pengiriman": "dikirim", "tanggal_dikirim": "2026-10-19T15:03:08.000000Z", "tanggal_diterima": null, "dibuat_pada": "2026-10-19T15:03:08.000000Z", "diperbarui_pada": "2026-10-19T15:03:08.000000Z", "histories": [ { "id_shipment_history": "ac3db4f4-4513-4b25-83f3-e92d467829a1", "id_shipment": "bb656e32-4149-4029-93ce-0d0c1c8ffbac", "status_sebelumnya": "menunggu", "status_baru": "dikirim", "lokasi": "Pekalongan", "keterangan": "Paket diserahkan ke kurir", "waktu_perubahan": "2026-10-19T15:03:08.000000Z", "dibuat_pada": "2026-10-19T15:03:08.000000Z", "diperbarui_pada": "2026-10-19T15:03:08.000000Z" } ], "order": { "id_order": "1b01a253-5e62-4f11-846a-f72f4e555641", "nomor_pesanan": "ORD-SHIP-D", "status_pesanan": "menunggu_pembayaran" } }
 }
 ```
 
@@ -1076,102 +1002,6 @@ Aturan bisnis:
 
 ---
 
-## 16. Konfigurasi RajaOngkir (Admin)
-
-Semua endpoint `auth:sanctum` + `admin` (**401**/**403** untuk non-admin). Sumber konfigurasi: tabel `settings` (kunci `rajaongkir.origin_id`, `rajaongkir.kurir_aktif` JSON) menang, fallback `config/services` + env `RAJAONGKIR_ORIGIN_ID`. API key **tidak pernah** dikirim balik ke klien (hanya `api_key_terisi: true/false`).
-
-| Method | Endpoint | Auth | Deskripsi |
-|---|---|---|---|
-| GET | `/admin/shipping/config` | `admin` | Baca origin & kurir aktif |
-| PUT | `/admin/shipping/config` | `admin` | Ubah `origin_id` (tersimpan ke `settings`) |
-| GET | `/admin/shipping/health` | `admin` | Cek konfigurasi + konektivitas (tanpa memakai kuota API) |
-| GET | `/admin/shipping/couriers` | `admin` | Daftar kurir + status aktif |
-| PUT | `/admin/shipping/couriers/{code}` | `admin` | Aktif/nonaktifkan satu kurir |
-| POST | `/admin/shipping/simulate` | `admin` | Cek ongkir multi-kurir (MENGGUNAKAN kuota RajaOngkir) |
-
-**GET `/admin/shipping/config` Response 200 (aktual):**
-
-```json
-{
-  "success": true,
-  "message": "Konfigurasi pengiriman berhasil diambil.",
-  "data": { "origin_id": "82935", "sumber_origin": "env", "base_url": "https://rajaongkir.komerce.id/api/v1", "api_key_terisi": true, "kurir_aktif": ["jne", "pos", "tiki", "sicepat", "jnt", "anteraja", "jxpress", "lex", "lion", "ninja"] }
-}
-```
-
-`sumber_origin` = `settings` bila admin pernah mengubah origin, selain itu `env`.
-
-**PUT `/admin/shipping/config` Body:** `{ "origin_id": "string (required, digits, max:20)" }`. **Response 200 (aktual):**
-
-```json
-{
-  "success": true,
-  "message": "Konfigurasi pengiriman berhasil diperbarui.",
-  "data": { "origin_id": "99999", "sumber_origin": "settings", "base_url": "https://rajaongkir.komerce.id/api/v1", "api_key_terisi": true, "kurir_aktif": ["jne", "pos", "tiki", "sicepat", "jnt", "anteraja", "jxpress", "lex", "lion", "ninja"] }
-}
-```
-
-Perubahan langsung dipakai `POST /shipping/cost`, checkout, dan simulasi (cache `settings:shipping.*` di-flush saat menulis). **422** bila `origin_id` bukan angka/kosong/terlalu panjang (tidak ada yang ditulis).
-
-**GET `/admin/shipping/health` Response 200 (aktual):**
-
-```json
-{
-  "success": true,
-  "message": "Kesehatan konfigurasi pengiriman berhasil diperiksa.",
-  "data": { "status": "ok", "checks": { "api_key_terisi": true, "base_url_valid": true, "origin_terisi": true, "konektivitas_https": true }, "base_url": "https://rajaongkir.komerce.id/api/v1", "origin_id": "82935", "jumlah_kurir_aktif": 10, "memakai_kuota_api": false }
-}
-```
-
-`status`: `belum_terkonfigurasi` (API key/origin kosong) | `degraded` (konektivitas gagal) | `ok`. Hanya 1 request ringan (cek koneksi host) â€” **tidak memanggil endpoint API RajaOngkir** sehingga `memakai_kuota_api` selalu `false`.
-
-**GET `/admin/shipping/couriers` Response 200 (aktual):**
-
-```json
-{
-  "success": true,
-  "message": "Daftar kurir berhasil diambil.",
-  "data": [ { "kode": "jne", "aktif": true }, { "kode": "pos", "aktif": true }, { "kode": "tiki", "aktif": true }, { "kode": "sicepat", "aktif": true }, { "kode": "jnt", "aktif": true }, { "kode": "anteraja", "aktif": true }, { "kode": "jxpress", "aktif": true }, { "kode": "lex", "aktif": true }, { "kode": "lion", "aktif": true }, { "kode": "ninja", "aktif": true } ],
-  "meta": { "total": 10, "aktif": 10 }
-}
-```
-
-**PUT `/admin/shipping/couriers/{code}` Body:** `{ "aktif": "boolean (required)" }`. **Response 200 (aktual):**
-
-```json
-{
-  "success": true,
-  "message": "Status kurir berhasil diperbarui.",
-  "data": { "kode": "pos", "aktif": false, "kurir_aktif": ["jne", "tiki", "sicepat", "jnt", "anteraja", "jxpress", "lex", "lion", "ninja"] }
-}
-```
-
-Aturan: kode di luar 10 kurir didukung â†’ **404** `"Kurir tidak ditemukan."`; menonaktifkan kurir terakhir yang aktif â†’ **422** `"Minimal satu kurir harus tetap aktif."`. Kurir nonaktif langsung ditolak `POST /shipping/cost` dan checkout (**422**, pesan validasi `The selected courier is invalid.`).
-
-**POST `/admin/shipping/simulate` Body:**
-
-```json
-{
-  "destination": "integer (required, min:1)",
-  "weight": "integer (required, min:1, max:30000)",
-  "couriers": ["jne", "sicepat"] (opsional â€” harus kurir aktif; tanpa ini memakai SEMUA kurir aktif)"
-}
-```
-
-**Response 200 (aktual):**
-
-```json
-{
-  "success": true,
-  "message": "Simulasi ongkos kirim selesai.",
-  "data": { "origin_id": "82935", "destination": 61622, "weight": 1000, "memakai_kuota_api": 2, "hasil": [ { "kurir": "jne", "berhasil": true, "error": null, "layanan": [ { "name": "JNE", "code": "jne", "service": "REG", "description": "Layanan Reguler", "cost": 9000, "etd": "2-3" } ] }, { "kurir": "sicepat", "berhasil": true, "error": null, "layanan": [ { "name": "SICEPAT", "code": "sicepat", "service": "REG", "description": "Layanan Reguler", "cost": 9000, "etd": "2-3" } ] } ] }
-}
-```
-
-Aturan: upstream error per kurir tidak menggagalkan seluruh permintaan â€” entri jadi `berhasil: false` + `error: "RAJAONGKIR_UPSTREAM_ERROR"` + `layanan: []` (atau pesan error spesifik), sementara kurir lain tetap dihitung. `memakai_kuota_api` = jumlah panggilan API yang benar-benar dilakukan. Tanpa origin â†’ **502** `RAJAONGKIR_NOT_CONFIGURED` tanpa panggilan API sama sekali. Kurir nonaktif yang diminta â†’ **422** `"Tidak ada kurir aktif yang diminta."`. Validasi input (`destination`/`weight`/`couriers`) â†’ **422**.
-
----
-
 ## Catatan Teknis
 
 - ID semua entitas berupa **UUID string** (`id_user`, `id_product`, `id_variant`, `id_order`, dll).
@@ -1179,5 +1009,4 @@ Aturan: upstream error per kurir tidak menggagalkan seluruh permintaan â€” 
 - Field bahasa Indonesia: `nama_pengguna`, `kata_sandi`, `peran`, `status_produk`, `status_varian`, `status_pesanan`, `status_pembayaran`, `status_voucher`, `status_penggunaan`, `status_cart`, dll.
 - Diskon/voucher: `tipe_diskon` âˆˆ `persentase`/`nominal`.
 - Pembayaran via Midtrans Snap. Webhook publik selalu diverifikasi signature (gagal â†’ 403, hanya dicatat ke application log) dan dibatasi per IP (`throttle:midtrans-webhook`) agar tahan banjir request.
-- Ongkir via RajaOngkir (`RAJAONGKIR_API_KEY`, `RAJAONGKIR_BASE_URL`, `RAJAONGKIR_ORIGIN_ID` di `.env`); berat per varian dari `product_variants.berat_gram`; tujuan dari `user_addresses.id_tujuan_rajaongkir`.
 - Endpoint `/test-json` hanya untuk health check cepat, return teks `"TEST LARAVEL BERHASIL"`.

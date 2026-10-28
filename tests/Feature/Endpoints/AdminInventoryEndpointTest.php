@@ -96,8 +96,10 @@ class AdminInventoryEndpointTest extends EndpointTestCase
     public function test_daftar_inventaris_filter_sorting_paginasi(): void
     {
         $this->seedCategory('cat-1', 'Batik Tulis');
+        $this->seedCategory('cat-2', 'Batik Cap');
 
         $parang = $this->makeProduct('Batik Parang', 'aktif', 'cat-1');
+        $parang->categories()->sync(['cat-1', 'cat-2']);
         $vAman = $this->makeVariant($parang, 20, 'aktif', 150000);
         $vMenipis = $this->makeVariant($parang, 3, 'aktif', 175000);
         $vKritis = $this->makeVariant($parang, 0, 'nonaktif', 200000);
@@ -159,7 +161,7 @@ class AdminInventoryEndpointTest extends EndpointTestCase
         ]);
         $this->assertSame(3, $this->recorded[4]['response']['meta']['total'] ?? null);
 
-        $this->hit('GET', '/api/admin/inventory?category=cat-1&sort=stok&order=asc', [
+        $this->hit('GET', '/api/admin/inventory?category=cat-2&sort=stok&order=asc', [
             'endpoint' => 'GET /api/admin/inventory',
             'label' => 'Filter kategori + urutkan stok menaik',
             'expected' => 200,
@@ -629,8 +631,10 @@ class AdminInventoryEndpointTest extends EndpointTestCase
     public function test_valuasi_inventaris_hanya_hitung_harga_modal(): void
     {
         $this->seedCategory();
+        $this->seedCategory('cat-2', 'Batik Cap');
 
         $product = $this->makeProduct('Batik Parang');
+        $product->categories()->sync(['cat-1', 'cat-2']);
         $punyaModal = $this->makeVariant($product, 10, 'aktif', 150000);
         $tanpaModal = $this->makeVariant($product, 4, 'aktif', 175000);
 
@@ -661,7 +665,7 @@ class AdminInventoryEndpointTest extends EndpointTestCase
         // Harga jual (175.000) tidak boleh dipakai sebagai harga modal.
         $this->assertStringContainsString('harga_modal', $data['keterangan_nilai'] ?? '');
 
-        $this->hit('GET', '/api/admin/inventory/valuation?category=cat-1', [
+        $this->hit('GET', '/api/admin/inventory/valuation?category=cat-2', [
             'endpoint' => 'GET /api/admin/inventory/valuation',
             'label' => 'Valuasi difilter kategori',
             'expected' => 200,

@@ -58,8 +58,6 @@ berikut contoh request dan cara mengujinya dengan Thunder Client.
 | 33 | PUT | `/admin/orders/{id}/status` | Admin |
 | 34 | GET | `/admin/payments` | Admin |
 | 35 | POST | `/payments/midtrans/notification` | Publik (webhook) |
-| 36 | GET | `/shipping/destinations` | Login |
-| 37 | POST | `/shipping/cost` | Login |
 | 38 | PUT | `/me` | Login |
 | 39 | PUT | `/me/password` | Login |
 | 40 | POST | `/vouchers/{id}/publish` | Admin |
@@ -71,12 +69,6 @@ berikut contoh request dan cara mengujinya dengan Thunder Client.
 | 46 | PUT | `/admin/shipments/{id}/status` | Admin |
 | 47 | GET | `/admin/order-fulfillments` | Admin |
 | 48 | POST | `/admin/orders/{id}/fulfillments` | Admin |
-| 49 | GET | `/admin/shipping/config` | Admin |
-| 50 | PUT | `/admin/shipping/config` | Admin |
-| 51 | GET | `/admin/shipping/health` | Admin |
-| 52 | GET | `/admin/shipping/couriers` | Admin |
-| 53 | PUT | `/admin/shipping/couriers/{code}` | Admin |
-| 54 | POST | `/admin/shipping/simulate` | Admin |
 | 55 | GET | `/admin/products` | Admin |
 | 56 | GET | `/admin/products/{id}` | Admin |
 | 57 | GET | `/admin/products/export` | Admin |
@@ -227,14 +219,14 @@ Parsial (`sometimes`); `slug` unik mengecualikan dirinya. `200` `"Kategori berha
 
 ### GET `/products` (publik)
 
-Query opsional: `search` (nama/deskripsi), `category` (id_category), `page`, `per_page` (default 10, maks 100).
+Query opsional: `search` (nama/deskripsi), `category` (id kategori mana pun yang dimiliki produk), `page`, `per_page` (default 10, maks 100).
 Hanya produk `aktif`. Respons menyertakan `meta` (current_page, per_page, total, last_page).
 
 Contoh: `/products?search=parang`, `/products?category=9f5d8990-c871-11f1-8a96-002b6777bbb3&page=1`
 
 ### GET `/products/{id}` (publik)
 
-`{id}` = `id_product`. Menyertakan `category`, `variants` (hanya `aktif`), `images`. Non-aktif/tidak ada → `404`.
+`{id}` = `id_product`. Menyertakan `categories` (semua kategori), `category` (kategori utama untuk kompatibilitas), `variants` (hanya `aktif`), dan `images`. Non-aktif/tidak ada → `404`.
 
 Data uji: `3b7676c0-c898-11f1-8b52-002b6777bbb3` (Batik Parang Klasik).
 
@@ -242,7 +234,10 @@ Data uji: `3b7676c0-c898-11f1-8b52-002b6777bbb3` (Batik Parang Klasik).
 
 ```json
 {
-  "id_category": "9f5d8990-c871-11f1-8a96-002b6777bbb3",
+  "id_categories": [
+    "9f5d8990-c871-11f1-8a96-002b6777bbb3",
+    "8a5d8990-c871-11f1-8a96-002b6777bbb3"
+  ],
   "nama_produk": "Batik Test",
   "slug": "batik-test",
   "deskripsi": "Contoh",
@@ -250,7 +245,7 @@ Data uji: `3b7676c0-c898-11f1-8b52-002b6777bbb3` (Batik Parang Klasik).
 }
 ```
 
-- Wajib: `id_category` (harus ada), `nama_produk` (maks 150).
+- Wajib: `id_categories` (minimal satu kategori, semua ID harus ada, tanpa batas maksimal), `nama_produk` (maks 150). `id_category` tunggal masih diterima untuk kompatibilitas klien lama.
 - Opsional: `slug` (unik, maks 180; auto dari nama bila kosong), `deskripsi`, `sku` (unik, maks 100), `berat_produk` (gram, 1..1000000), `bahan_kain` (maks 100), `status_produk` (`draft/aktif/nonaktif`, default `draft`).
 - Respons `201`.
 - `status_produk='aktif'` hanya bisa dipakai bila produk sudah punya minimal 1 foto produk (`type='produk'`). Buat sebagai `draft`, unggah gambarnya, lalu aktifkan lewat `PUT`.
@@ -258,6 +253,7 @@ Data uji: `3b7676c0-c898-11f1-8b52-002b6777bbb3` (Batik Parang Klasik).
 ### PUT `/products/{id}` (admin)
 
 Parsial (semua opsional). `slug` dan `sku` unik kecuali dirinya. `404` bila tak ada.
+`id_categories` yang dikirim harus memuat minimal satu kategori dan menggantikan seluruh kategori produk.
 Field yang tidak dikirim tetap; field yang dikirim `null` ditulis `null` (kecuali `slug`).
 Perpindahan status ke `aktif` mensyaratkan produk sudah punya minimal 1 foto produk.
 
@@ -433,24 +429,20 @@ Alur status pesanan: `menunggu_pembayaran` → `dibayar` → `diproses` → `dik
 
 ### POST `/checkout` (login)
 
-Membuat pesanan dari keranjang `aktif`. Subtotal dari harga varian saat checkout, stok langsung berkurang, keranjang ditandai `checkout`, riwayat status awal `menunggu_pembayaran` dibuat.
+Membuat pesanan dari keranjang `aktif`. Subtotal dari harga varian saat checkout, tanpa biaya pengiriman, stok varian direservasi, keranjang ditandai `checkout`, riwayat status awal `menunggu_pembayaran` dibuat.
 
 ```json
 {
   "id_user_address": "660e8400-e29b-41d4-a716-446655440000",
-  "kurir": "jne",
-  "layanan": "CTC",
   "kode_voucher": "BATIKHEMAT",
-  "biaya_pengiriman": 18000,
   "catatan": "Tolong dikemas rapi"
 }
 ```
 
-- Wajib: `id_user_address` (harus alamat milik sendiri), `kurir` (`jne`/`pos`/`tiki`/`sicepat`/`jnt`/`anteraja`/`jxpress`/`lex`/`lion`/`ninja`), `layanan` (kode layanan dari `POST /shipping/cost`). Opsional: `kode_voucher`, `catatan`.
-- `biaya_pengiriman` **diabaikan** (dipertahankan hanya untuk kompatibilitas klien) — ongkir dihitung ulang backend dari RajaOngkir.
-- Berat total = Σ(`berat_gram` varian × jumlah); tujuan = `id_tujuan_rajaongkir` pada alamat.
-- `404` bila alamat bukan milik user; `422` bila keranjang kosong, stok kurang, varian/produk nonaktif, voucher tidak valid, alamat tanpa `id_tujuan_rajaongkir` (`ALAMAT_TANPA_TUJUAN_RAJAONGKIR`), layanan tidak tersedia (`LAYANAN_TIDAK_TERSEDIA`), atau RajaOngkir menolak request.
-- `502` bila upstream RajaOngkir bermasalah; `503` bila koneksi RajaOngkir gagal — pada semua kegagalan ongkir pesanan **tidak** dibuat.
+- Wajib: `id_user_address` (harus alamat milik sendiri). Opsional: `kode_voucher`, `catatan`.
+- `dasar_pph = max(0, subtotal - diskon)`; `pph = round(dasar_pph * 11%)` (rupiah terdekat); `total_pembayaran = dasar_pph + pph`; `biaya_pengiriman` selalu `0`.
+- `kedaluwarsa_pada` = **12 jam** sejak checkout. Pesanan `menunggu_pembayaran` yang lewat batas dibatalkan otomatis dan stok dilepas.
+- `404` bila alamat bukan milik user; `422` bila keranjang kosong, stok kurang, varian/produk nonaktif, atau voucher tidak valid.
 - Respons `201`: objek pesanan + `items`.
 
 ### Pesanan
@@ -468,29 +460,6 @@ Membuat pesanan dari keranjang `aktif`. Subtotal dari harga varian saat checkout
 
 `status_pesanan`: `menunggu_pembayaran` / `dibayar` / `diproses` / `dikirim` / `selesai` / `dibatalkan`.
 Ke `dibatalkan` (dari `menunggu_pembayaran`/`dibayar`) → stok dikembalikan, penggunaan voucher dibatalkan. Ke `dibayar` → voucher `menunggu` menjadi `digunakan`.
-
-### Ongkos Kirim (RajaOngkir)
-
-Konfigurasi `.env`:
-
-```
-RAJAONGKIR_API_KEY=
-RAJAONGKIR_BASE_URL=https://rajaongkir.komerce.id/api/v1
-RAJAONGKIR_ORIGIN_ID=
-# Kosongkan agar CA otomatis terdeteksi (php.ini atau cacert bawaan SDK Midtrans)
-RAJAONGKIR_VERIFY=
-```
-
-- GET `/shipping/destinations?search={kelurahan}` (login) → daftar tujuan (per kelurahan) dari RajaOngkir; hasil di-cache 7 hari agar hemat kuota. `422` bila `search` kosong/kurang dari 2 karakter.
-- POST `/shipping/cost` (login) body `{ destination, weight, courier }` → daftar layanan/kurir beserta `cost` & `etd`. `422` untuk parameter salah/tujuan tidak dikenal/tanpa layanan, `502` upstream bermasalah, `503` koneksi gagal.
-
-Ketahanan koneksi:
-
-- Verifikasi TLS memakai CA sistem (`php.ini` `curl.cainfo`/`openssl.cafile`); bila tidak ada, otomatis memakai `cacert.pem` bawaan SDK Midtrans — jadi tidak wajib mengatur CA di tiap mesin.
-- Saat koneksi gangguan sesaat atau upstream `5xx`, request diulang otomatis **1 kali** (delay 250 ms). Error `4xx` (mis. `422`) tidak diulang.
-- Cek semua endpoint pihak ketiga sekaligus: `php artisan external:check` (RajaOngkir destinations & cost, Midtrans API). Exit code `1` bila ada yang gagal.
-
-Jika muncul error `cURL error 60: SSL certificate problem`, artinya CA tidak ditemukan: isi `RAJAONGKIR_VERIFY=/path/ke/cacert.pem` (atau set `curl.cainfo` di `php.ini`). Lihat juga Troubleshooting.
 
 ### Pembayaran (Midtrans Snap Sandbox)
 
@@ -529,7 +498,7 @@ Pemetaan status transaksi:
 
 ---
 
-## Promo, Pengiriman, Pemenuhan & Konfigurasi (Admin)
+## Promo, Pengiriman & Pemenuhan (Admin)
 
 Semua endpoint di bagian ini memakai `Authorization: Bearer {{adminToken}}`; tanpa token → `401`, memakai token pelanggan → `403`.
 
@@ -565,34 +534,6 @@ Aturan: status sama → `422`; `dikirim`/`dalam_perjalanan` wajib `nomor_resi` (
 
 Aturan: pesanan `menunggu_pembayaran`/`dibatalkan`/`selesai` → `422`; status sama dengan catatan terakhir → `422` `"Status pemenuhan sama dengan catatan terakhir."`; pesanan tidak ada → `404`; status di luar daftar → `422`.
 
-### Konfigurasi RajaOngkir (tabel `settings` + fallback `.env`)
-
-- GET `/admin/shipping/config` → `{ "origin_id": "82935", "sumber_origin": "env", "base_url": "...", "api_key_terisi": true, "kurir_aktif": ["jne", ...] }` — **API key tidak pernah dikembalikan**.
-- PUT `/admin/shipping/config` body `{ "origin_id": "99999" }` (wajib angka, maks 20) → tersimpan ke `settings`, `sumber_origin` jadi `settings`, dan langsung dipakai perhitungan ongkir. Tidak valid → `422`.
-- GET `/admin/shipping/health` → `{ "status": "ok" | "degraded" | "belum_terkonfigurasi", "checks": { "api_key_terisi", "base_url_valid", "origin_terisi", "konektivitas_https" }, ..., "memakai_kuota_api": false }` — hanya cek konfigurasi + koneksi host, **tanpa memanggil API RajaOngkir** (kuota tidak berkurang).
-- GET `/admin/shipping/couriers` → 10 kurir + `meta: { total, aktif }`.
-- PUT `/admin/shipping/couriers/{code}` body `{ "aktif": false }` → kode tak dikenal `404`; menonaktifkan kurir terakhir → `422` `"Minimal satu kurir harus tetap aktif."`; kurir nonaktif langsung ditolak `POST /shipping/cost` & checkout (`422`).
-- POST `/admin/shipping/simulate` body `{ "destination": 61622, "weight": 1000, "couriers": ["jne", "sicepat"] }` (`couriers` opsional — tanpa itu memakai semua kurir aktif) → respons:
-
-```json
-{
-  "success": true,
-  "message": "Simulasi ongkos kirim selesai.",
-  "data": {
-    "origin_id": "82935",
-    "destination": 61622,
-    "weight": 1000,
-    "memakai_kuota_api": 2,
-    "hasil": [
-      { "kurir": "jne", "berhasil": true, "error": null, "layanan": [ { "name": "JNE", "code": "jne", "service": "REG", "description": "Layanan Reguler", "cost": 9000, "etd": "2-3" } ] },
-      { "kurir": "sicepat", "berhasil": true, "error": null, "layanan": [ { "name": "SICEPAT", "code": "sicepat", "service": "REG", "description": "Layanan Reguler", "cost": 9000, "etd": "2-3" } ] }
-    ]
-  }
-}
-```
-
-Kegagalan per kurir hanya mengisi entri `berhasil: false` + `error` (mis. `RAJAONGKIR_UPSTREAM_ERROR`) tanpa membatalkan kurir lain; tanpa origin → `502 RAJAONGKIR_NOT_CONFIGURED` tanpa panggilan API; kurir nonaktif → `422` `"Tidak ada kurir aktif yang diminta."`. **Endpoint ini memakai kuota RajaOngkir** (1 request per kurir).
-
 ---
 
 # Cara menguji di Thunder Client (VS Code)
@@ -627,9 +568,7 @@ Kegagalan per kurir hanya mengisi entri `berhasil: false` + `error` (mis. `RAJAO
 8. **Uji Regresi**: GET `/products`, `/products/{id}`, `/categories`, `/me` → tetap normal.
 9. **Uji Checkout & Pembayaran** (`custToken`):
    - Tambah item ke keranjang: POST `/cart/items` dengan `id_variant` + `jumlah`.
-   - Pastikan alamat punya `id_tujuan_rajaongkir` (ambil `id` dari GET `/shipping/destinations?search=surakarta`).
-   - POST `/shipping/cost` `{ "destination": <id>, "weight": 1000, "courier": "jne" }` → catat salah satu `service`.
-   - POST `/checkout` dengan `id_user_address` milik sendiri + `kurir` + `layanan` dari hasil di atas → simpan `data.id_order` → `201`.
+   - POST `/checkout` dengan `id_user_address` milik sendiri → simpan `data.id_order` → `201`.
    - GET `/orders` dan GET `/orders/{id_order}` → cek stok berkurang & status `menunggu_pembayaran`.
    - POST `/orders/{id_order}/payment` → simpan `data.snap_token`; panggil ulang → `200` (reuse).
    - GET `/orders/{id_order}/payment` → pastikan `status_pembayaran` = `menunggu`.
@@ -649,10 +588,5 @@ Kegagalan per kurir hanya mengisi entri `berhasil: false` + `error` (mis. `RAJAO
 
 ## Troubleshooting
 
-- **`cURL error 60: SSL certificate problem`** — PHP tidak menemukan CA bundle. Pilihan: set `RAJAONGKIR_VERIFY=/path/ke/cacert.pem` di `.env`, atau isi `curl.cainfo`/`openssl.cafile` di `php.ini`. Kode sudah otomatis memakai `cacert.pem` bawaan SDK Midtrans bila CA sistem kosong.
-- **`502 RAJAONGKIR_NOT_CONFIGURED`** — `RAJAONGKIR_API_KEY` atau `RAJAONGKIR_ORIGIN_ID` belum diisi.
-- **`502 RAJAONGKIR_UNAUTHORIZED`** — API key salah/ditolak; cek juga kuota paket (Starter 100 request/hari).
-- **`503 RAJAONGKIR_UNAVAILABLE`** — koneksi ke RajaOngkir benar-benar gagal (offline/DNS mati). Request gangguan sesaat sudah diulang otomatis 1 kali.
-- **`422 ALAMAT_TANPA_TUJUAN_RAJAONGKIR`** — alamat belum punya `id_tujuan_rajaongkir`; isi lewat PUT `/addresses/{id}`.
-- **`422 LAYANAN_TIDAK_TERSEDIA`** — `layanan` tidak ada pada hasil `POST /shipping/cost` untuk `kurir` tersebut.
+- **`cURL error 60: SSL certificate problem`** - PHP tidak menemukan CA bundle. Isi `curl.cainfo`/`openssl.cafile` di `php.ini`. Kode sudah otomatis memakai `cacert.pem` bawaan SDK Midtrans bila CA sistem kosong.
 - **Verifikasi cepat semua endpoint pihak ketiga**: `php artisan external:check`.

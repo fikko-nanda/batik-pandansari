@@ -256,7 +256,7 @@ class AdminShipmentEndpointTest extends EndpointTestCase
         return Shipment::create(array_merge([
             'id_shipment' => (string) Str::uuid(),
             'id_order' => $idOrder,
-            'provider' => 'rajaongkir',
+            'provider' => 'manual',
             'kurir' => 'JNE',
             'layanan_pengiriman' => 'Reguler',
             'kode_layanan' => 'REG',

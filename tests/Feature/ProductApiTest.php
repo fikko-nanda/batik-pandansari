@@ -58,6 +58,12 @@ class ProductApiTest extends TestCase
             $table->timestamp('diperbarui_pada')->nullable();
         });
 
+        Schema::create('product_categories', function (Blueprint $table) {
+            $table->string('id_product');
+            $table->string('id_category');
+            $table->primary(['id_product', 'id_category']);
+        });
+
         Schema::create('product_images', function (Blueprint $table) {
             $table->string('id_image')->primary();
             $table->string('id_product');
@@ -109,7 +115,7 @@ class ProductApiTest extends TestCase
 
     private function makeProduct(string $nama, string $status): Product
     {
-        return Product::create([
+        $product = Product::create([
             'id_product' => (string) Str::uuid(),
             'id_category' => 'cat-1',
             'nama_produk' => $nama,
@@ -117,6 +123,10 @@ class ProductApiTest extends TestCase
             'deskripsi' => "Deskripsi {$nama}",
             'status_produk' => $status,
         ]);
+
+        $product->categories()->sync(['cat-1']);
+
+        return $product;
     }
 
     public function test_public_index_only_returns_active_products(): void
@@ -229,5 +239,109 @@ class ProductApiTest extends TestCase
         Sanctum::actingAs($this->makeUser('admin'));
 
         $this->getJson('/api/admin/products/tidak-ada')->assertStatus(404);
+    }
+
+    public function test_admin_can_create_product_with_more_than_one_hundred_categories(): void
+    {
+        $categoryIds = [];
+
+        for ($index = 1; $index <= 101; $index++) {
+            $id = 'cat-'.$index;
+            $categoryIds[] = $id;
+
+            Category::create([
+                'id_category' => $id,
+                'nama_kategori' => 'Kategori '.$index,
+                'slug' => 'kategori-'.$index,
+                'status_aktif' => true,
+            ]);
+        }
+
+        Sanctum::actingAs($this->makeUser('admin'));
+
+        $response = $this->postJson('/api/products', [
+            'id_categories' => $categoryIds,
+            'nama_produk' => 'Batik Multi Kategori',
+        ]);
+
+        $response->assertStatus(201)->assertJsonCount(101, 'data.categories');
+
+        $product = Product::findOrFail($response->json('data.id_product'));
+        $this->assertSame('cat-1', $product->id_category);
+        $this->assertCount(101, $product->categories);
+    }
+
+    public function test_admin_cannot_create_or_update_product_without_a_category(): void
+    {
+        $this->seedCategory();
+        $product = $this->makeProduct('Produk Berkategori', 'draft');
+
+        Sanctum::actingAs($this->makeUser('admin'));
+
+        $createResponse = $this->postJson('/api/products', [
+            'id_categories' => [],
+            'nama_produk' => 'Produk Tanpa Kategori',
+        ]);
+
+        $createResponse->assertStatus(422)
+            ->assertJsonValidationErrors('id_categories');
+        $this->assertSame(1, Product::count());
+
+        $updateResponse = $this->putJson('/api/products/'.$product->id_product, [
+            'id_categories' => [],
+        ]);
+
+        $updateResponse->assertStatus(422)
+            ->assertJsonValidationErrors('id_categories');
+        $this->assertSame(['cat-1'], $product->fresh()->categories->pluck('id_category')->all());
+    }
+
+    public function test_admin_can_replace_a_products_categories(): void
+    {
+        $this->seedCategory();
+        Category::create([
+            'id_category' => 'cat-2',
+            'nama_kategori' => 'Batik Cap',
+            'slug' => 'batik-cap',
+            'status_aktif' => true,
+        ]);
+        Category::create([
+            'id_category' => 'cat-3',
+            'nama_kategori' => 'Batik Modern',
+            'slug' => 'batik-modern',
+            'status_aktif' => true,
+        ]);
+        $product = $this->makeProduct('Produk Multi Kategori', 'draft');
+
+        Sanctum::actingAs($this->makeUser('admin'));
+
+        $this->putJson('/api/products/'.$product->id_product, [
+            'id_categories' => ['cat-2', 'cat-3'],
+        ])->assertStatus(200)
+            ->assertJsonCount(2, 'data.categories')
+            ->assertJsonPath('data.id_category', 'cat-2');
+
+        $categoryIds = $product->fresh()->categories->pluck('id_category')->all();
+        sort($categoryIds);
+        $this->assertSame(['cat-2', 'cat-3'], $categoryIds);
+    }
+
+    public function test_public_product_filter_includes_secondary_categories(): void
+    {
+        $this->seedCategory();
+        Category::create([
+            'id_category' => 'cat-2',
+            'nama_kategori' => 'Batik Cap',
+            'slug' => 'batik-cap',
+            'status_aktif' => true,
+        ]);
+        $product = $this->makeProduct('Produk Multi Kategori', 'aktif');
+        $product->categories()->sync(['cat-1', 'cat-2']);
+
+        $this->getJson('/api/products?category=cat-2')
+            ->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id_product', $product->id_product)
+            ->assertJsonCount(2, 'data.0.categories');
     }
 }

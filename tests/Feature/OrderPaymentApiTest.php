@@ -13,6 +13,7 @@ use App\Models\ProductVariant;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Models\Voucher;
+use App\Models\WebhookLog;
 use App\Services\MidtransService;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
@@ -21,13 +22,10 @@ use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Midtrans\Notification;
 use Mockery;
-use Tests\Feature\Endpoints\Concerns\FakesRajaOngkir;
 use Tests\TestCase;
 
 class OrderPaymentApiTest extends TestCase
 {
-    use FakesRajaOngkir;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -98,7 +96,6 @@ class OrderPaymentApiTest extends TestCase
             $table->string('kode_pos');
             $table->text('alamat_lengkap');
             $table->boolean('alamat_utama')->default(false);
-            $table->string('id_tujuan_rajaongkir')->nullable();
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });
@@ -133,6 +130,7 @@ class OrderPaymentApiTest extends TestCase
             $table->decimal('maksimal_diskon', 12, 2)->nullable();
             $table->unsignedInteger('kuota_total')->nullable();
             $table->unsignedInteger('kuota_per_pengguna')->default(1);
+            $table->string('id_product_peruntukan', 36)->nullable();
             $table->dateTime('tanggal_mulai');
             $table->dateTime('tanggal_selesai');
             $table->string('status_voucher')->default('aktif');
@@ -149,6 +147,7 @@ class OrderPaymentApiTest extends TestCase
             $table->decimal('subtotal', 12, 2)->default(0);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);
             $table->decimal('diskon', 12, 2)->default(0);
+            $table->decimal('pph', 12, 2)->default(0);
             $table->decimal('total_pembayaran', 12, 2)->default(0);
             $table->string('nama_penerima');
             $table->string('nomor_telepon_penerima');
@@ -233,18 +232,65 @@ class OrderPaymentApiTest extends TestCase
         Schema::create('webhook_logs', function (Blueprint $table) {
             $table->string('id_webhook_log')->primary();
             $table->string('provider');
+            $table->string('event_id', 100)->nullable();
+            $table->string('event_type', 100)->nullable();
             $table->string('provider_transaction_id')->nullable();
+            $table->string('idempotency_key', 150)->nullable();
             $table->string('id_order')->nullable();
             $table->string('endpoint');
             $table->string('method');
             $table->longText('payload');
             $table->string('signature')->nullable();
+            $table->boolean('signature_valid')->nullable();
             $table->string('status')->default('diterima');
+            $table->string('processing_status', 30)->default('received');
+            $table->json('payload_summary')->nullable();
+            $table->json('response_summary')->nullable();
+            $table->unsignedSmallInteger('attempt_count')->default(1);
+            $table->text('error_message')->nullable();
+            $table->timestamp('received_at')->nullable();
+            $table->timestamp('processed_at')->nullable();
             $table->unsignedSmallInteger('http_status')->nullable();
             $table->string('alamat_ip')->nullable();
             $table->text('catatan')->nullable();
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
+        });
+
+        Schema::create('api_audit_logs', function (Blueprint $table) {
+            $table->bigIncrements('id_audit_log');
+            $table->string('correlation_id', 100)->nullable();
+            $table->char('id_pengguna', 36)->nullable();
+            $table->string('service_name', 50);
+            $table->string('http_method', 10);
+            $table->string('endpoint', 500);
+            $table->unsignedSmallInteger('http_status')->nullable();
+            $table->json('request_summary')->nullable();
+            $table->json('response_summary')->nullable();
+            $table->unsignedInteger('latency_ms')->nullable();
+            $table->string('ip_address', 45)->nullable();
+            $table->string('error_code', 100)->nullable();
+            $table->text('error_message')->nullable();
+            $table->timestamp('created_at')->nullable();
+        });
+
+        Schema::create('notification_logs', function (Blueprint $table) {
+            $table->bigIncrements('id_notification_log');
+            $table->char('id_pengguna', 36)->nullable();
+            $table->string('channel', 20);
+            $table->string('provider', 50);
+            $table->string('notification_type', 100);
+            $table->string('recipient_masked', 255)->nullable();
+            $table->string('reference_type', 50)->nullable();
+            $table->string('reference_id', 100)->nullable();
+            $table->string('provider_message_id', 150)->nullable();
+            $table->string('delivery_status', 30)->default('queued');
+            $table->unsignedSmallInteger('attempt_count')->default(0);
+            $table->string('error_code', 100)->nullable();
+            $table->text('error_message')->nullable();
+            $table->timestamp('sent_at')->nullable();
+            $table->timestamp('delivered_at')->nullable();
+            $table->timestamps();
         });
     }
 
@@ -303,7 +349,6 @@ class OrderPaymentApiTest extends TestCase
             'kode_pos' => '57134',
             'alamat_lengkap' => 'Jl. Contoh No. 10',
             'alamat_utama' => true,
-            'id_tujuan_rajaongkir' => '61622',
         ]);
     }
 
@@ -425,18 +470,20 @@ class OrderPaymentApiTest extends TestCase
         $address = $this->makeAddress($user);
         $this->makeCart($user, $variant, 2);
         Sanctum::actingAs($user);
-        $this->fakeRajaOngkirCost(18000);
 
         $response = $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
-            'kurir' => 'jne',
-            'layanan' => 'CTC',
-            'biaya_pengiriman' => 18000,
         ]);
 
         $response->assertStatus(201)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.status_pesanan', 'menunggu_pembayaran');
+
+        $order = Order::where('id_user', $user->id_user)->firstOrFail();
+        $this->assertTrue(
+            $order->kedaluwarsa_pada->between(now()->addHours(11)->addMinutes(59), now()->addHours(12)->addMinute()),
+            'Batas pembayaran harus 12 jam sejak checkout.'
+        );
 
         $fresh = $variant->fresh();
         $this->assertSame(10, (int) $fresh->stok, 'Stok fisik tidak berkurang saat checkout.');
@@ -445,8 +492,9 @@ class OrderPaymentApiTest extends TestCase
         $this->assertDatabaseHas('orders', [
             'id_user' => $user->id_user,
             'subtotal' => 200000,
-            'biaya_pengiriman' => 18000,
-            'total_pembayaran' => 218000,
+            'biaya_pengiriman' => 0,
+            'pph' => 22000,
+            'total_pembayaran' => 222000,
         ]);
         $this->assertSame('checkout', Cart::where('id_user', $user->id_user)->value('status_cart'));
         $this->assertDatabaseCount('order_items', 1);
@@ -463,8 +511,6 @@ class OrderPaymentApiTest extends TestCase
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
-            'kurir' => 'jne',
-            'layanan' => 'CTC',
         ])->assertStatus(404);
     }
 
@@ -476,8 +522,6 @@ class OrderPaymentApiTest extends TestCase
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
-            'kurir' => 'jne',
-            'layanan' => 'CTC',
         ])->assertStatus(422);
     }
 
@@ -488,12 +532,9 @@ class OrderPaymentApiTest extends TestCase
         $address = $this->makeAddress($user);
         $this->makeCart($user, $variant, 5);
         Sanctum::actingAs($user);
-        $this->fakeRajaOngkirCost(10000);
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
-            'kurir' => 'jne',
-            'layanan' => 'CTC',
         ])->assertStatus(422);
     }
 
@@ -505,16 +546,14 @@ class OrderPaymentApiTest extends TestCase
         $this->makeCart($user, $variant, 2);
         $this->makeVoucher(['tipe_diskon' => 'persentase', 'nilai_diskon' => 10, 'maksimal_diskon' => 50000]);
         Sanctum::actingAs($user);
-        $this->fakeRajaOngkirCost(0);
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
-            'kurir' => 'jne',
-            'layanan' => 'CTC',
             'kode_voucher' => 'BATIKHEMAT',
         ])->assertStatus(201)
             ->assertJsonPath('data.diskon', '20000.00')
-            ->assertJsonPath('data.total_pembayaran', '180000.00');
+            ->assertJsonPath('data.pph', '19800.00')
+            ->assertJsonPath('data.total_pembayaran', '199800.00');
 
         $this->assertDatabaseHas('voucher_usages', [
             'id_user' => $user->id_user,
@@ -529,17 +568,12 @@ class OrderPaymentApiTest extends TestCase
         $address = $this->makeAddress($user);
         $this->makeCart($user, $variant, 1);
         Sanctum::actingAs($user);
-        $this->fakeRajaOngkirCost(5000);
 
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
-            'kurir' => 'jne',
-            'layanan' => 'CTC',
         ])->assertStatus(201);
         $this->postJson('/api/checkout', [
             'id_user_address' => $address->id_user_address,
-            'kurir' => 'jne',
-            'layanan' => 'CTC',
         ])->assertStatus(422);
         $this->assertDatabaseCount('orders', 1);
     }
@@ -797,7 +831,21 @@ class OrderPaymentApiTest extends TestCase
             'signature_key' => 'invalid',
         ])->assertStatus(403);
 
-        $this->assertDatabaseCount('webhook_logs', 0);
+        // Percobaan signature tidak valid tetap dicatat untuk audit, tetapi
+        // signature asli tidak boleh disimpan.
+        $this->assertDatabaseHas('webhook_logs', [
+            'provider' => 'midtrans',
+            'signature_valid' => false,
+            'status' => 'ditolak',
+            'processing_status' => 'rejected',
+            'http_status' => 403,
+        ]);
+
+        $log = WebhookLog::latest('dibuat_pada')->first();
+        $this->assertNotNull($log);
+        $this->assertNull($log->signature);
+        $this->assertSame('[REDACTED]', $log->payload_summary['signature_key'] ?? null);
+        $this->assertStringNotContainsString('"invalid"', (string) $log->payload);
     }
 
     public function test_webhook_ignores_amount_mismatch(): void

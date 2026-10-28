@@ -27,6 +27,7 @@ class Order extends Model
         'subtotal',
         'biaya_pengiriman',
         'diskon',
+        'pph',
         'total_pembayaran',
         'nama_penerima',
         'nomor_telepon_penerima',
@@ -42,6 +43,7 @@ class Order extends Model
             'subtotal' => 'decimal:2',
             'biaya_pengiriman' => 'decimal:2',
             'diskon' => 'decimal:2',
+            'pph' => 'decimal:2',
             'total_pembayaran' => 'decimal:2',
         ];
     }

@@ -141,6 +141,7 @@ class GoogleAuthEndpointTest extends EndpointTestCase
             'expected' => 200,
         ]);
 
+        $this->assertSame('Login Google berhasil', $this->recorded[0]['response']['message'] ?? null);
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertNotEmpty($data['token'] ?? null);
         $this->assertSame('Bearer', $data['token_type'] ?? null);
@@ -331,29 +332,38 @@ class GoogleAuthEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
-    public function test_login_google_email_terdaftar_belum_terverifikasi(): void
+    public function test_login_google_email_terdaftar_belum_terverifikasi_otomatis_tertaut(): void
     {
         $existing = $this->makeUser('pelanggan'); // email_verified_at NULL
 
         $token = 'valid-token-unverified-local';
-        $this->registerToken($token, ['email' => $existing->email]);
+        $payload = $this->registerToken($token, ['email' => $existing->email]);
 
         $this->asGuest();
         $this->hit('POST', '/api/auth/google', [
             'endpoint' => 'POST /api/auth/google',
-            'label' => 'Login Google pada email terdaftar tapi belum terverifikasi (409 requires_linking)',
+            'label' => 'Login Google pada email terdaftar tapi belum terverifikasi (auto-taut)',
             'json' => ['id_token' => $token],
-            'expected' => 409,
+            'expected' => 200,
         ]);
 
-        $response = $this->recorded[0]['response'] ?? [];
-        $this->assertFalse($response['success'] ?? true);
-        $this->assertTrue($response['requires_linking'] ?? false, 'Bendera requires_linking harus true.');
-        $this->assertNull($existing->fresh()->google_id, 'Akun tak terverifikasi tidak boleh otomatis ditautkan.');
+        $data = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame('Login Google berhasil', $this->recorded[0]['response']['message'] ?? null);
+        $this->assertSame($existing->id_user, $data['user']['id_user'] ?? null);
+        $this->assertSame($payload['sub'], $data['user']['google_id'] ?? null);
+        $this->assertNotNull($data['user']['email_verified_at'] ?? null);
+        $this->assertSame(['personal_access_tokens' => '0 -> 1 (+1)'], $this->recorded[0]['db_effect']);
+        $this->assertSame($payload['sub'], $existing->fresh()->google_id);
+        $this->assertNotNull($existing->fresh()->email_verified_at);
+        $this->assertNull(
+            $existing->fresh()->kata_sandi,
+            'Kata sandi akun lokal yang belum terverifikasi harus dicabut untuk mencegah pre-hijacking.'
+        );
+        $this->note('Akun lokal belum terverifikasi ditautkan; kata sandi lama dicabut karena Google membuktikan kepemilikan email.');
         $this->assertRecorded();
     }
 
-    public function test_login_google_email_tertaut_akun_lain(): void
+    public function test_login_google_email_tertaut_akun_lain_menimpa_tautan_lama(): void
     {
         $owner = $this->makeGoogleUser(['google_id' => 'g-pemilik-asli']);
 
@@ -363,13 +373,16 @@ class GoogleAuthEndpointTest extends EndpointTestCase
         $this->asGuest();
         $this->hit('POST', '/api/auth/google', [
             'endpoint' => 'POST /api/auth/google',
-            'label' => 'Login Google ketika email sudah tertaut ke google_id lain (409)',
+            'label' => 'Login Google pada email yang sudah tertaut ke google_id lain (tautan ditimpa)',
             'json' => ['id_token' => $token],
-            'expected' => 409,
+            'expected' => 200,
         ]);
 
-        $this->assertFalse($this->recorded[0]['response']['success'] ?? true);
-        $this->assertSame('g-pemilik-asli', $owner->fresh()->google_id);
+        $data = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame($owner->id_user, $data['user']['id_user'] ?? null);
+        $this->assertSame('g-pemilik-lain', $data['user']['google_id'] ?? null);
+        $this->assertSame('g-pemilik-lain', $owner->fresh()->google_id);
+        $this->assertSame(['personal_access_tokens' => '0 -> 1 (+1)'], $this->recorded[0]['db_effect']);
         $this->assertRecorded();
     }
 
@@ -391,6 +404,31 @@ class GoogleAuthEndpointTest extends EndpointTestCase
 
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertSame($user->id_user, $data['user']['id_user'] ?? null);
+        $this->assertSame(['personal_access_tokens' => '0 -> 1 (+1)'], $this->recorded[0]['db_effect']);
+        $this->assertRecorded();
+    }
+
+    public function test_login_google_mencari_berdasarkan_google_id_lebih_dulu(): void
+    {
+        $googleSub = 'g-sub-tetap';
+        $user = $this->makeGoogleUser(['google_id' => $googleSub]);
+        $emailBaru = 'email-google-baru-'.Str::lower(Str::random(6)).'@example.com';
+
+        $token = 'valid-token-google-id-priority';
+        $this->registerToken($token, ['sub' => $googleSub, 'email' => $emailBaru]);
+
+        $this->asGuest();
+        $this->hit('POST', '/api/auth/google', [
+            'endpoint' => 'POST /api/auth/google',
+            'label' => 'Login Google memprioritaskan pencarian berdasarkan google_id',
+            'json' => ['id_token' => $token],
+            'expected' => 200,
+        ]);
+
+        $data = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame($user->id_user, $data['user']['id_user'] ?? null);
+        $this->assertSame($user->email, $data['user']['email'] ?? null);
+        $this->assertTrue(User::where('email', $emailBaru)->doesntExist(), 'Email baru tidak boleh membuat pengguna baru.');
         $this->assertSame(['personal_access_tokens' => '0 -> 1 (+1)'], $this->recorded[0]['db_effect']);
         $this->assertRecorded();
     }

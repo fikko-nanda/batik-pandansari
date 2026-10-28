@@ -284,6 +284,152 @@ class VoucherEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_voucher_per_produk_validate_memakai_subtotal_produk(): void
+    {
+        $user = $this->actingAsRole('pelanggan');
+        $this->seedCategory();
+        $productA = $this->makeProduct('Batik Peruntukan A');
+        $variantA = $this->makeVariant($productA, 10, 'aktif', 150000);
+        $productB = $this->makeProduct('Batik Lain B');
+        $variantB = $this->makeVariant($productB, 10, 'aktif', 200000);
+        $this->addToCart($user, $variantA, 2);
+        $this->addToCart($user, $variantB, 1);
+
+        $this->makeVoucher([
+            'kode_voucher' => 'PRODUKA10',
+            'tipe_diskon' => 'persentase',
+            'nilai_diskon' => 10,
+            'minimal_pembelian' => 0,
+            'kuota_per_pengguna' => 5,
+            'id_product_peruntukan' => $productA->id_product,
+        ]);
+
+        $this->hit('POST', '/api/vouchers/validate', [
+            'endpoint' => 'POST /api/vouchers/validate',
+            'label' => 'Validasi voucher per produk memakai subtotal produk dari cart',
+            'json' => ['kode_voucher' => 'PRODUKA10', 'subtotal' => 500000],
+            'expected' => 200,
+        ]);
+
+        $data = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame(30000.0, (float) ($data['jumlah_diskon'] ?? 0), 'Diskon harus 10% x 300.000 (produk A saja).');
+        $this->assertSame(300000.0, (float) ($data['subtotal_peruntukan'] ?? 0));
+        $this->assertSame(500000.0, (float) ($data['subtotal'] ?? 0), 'Field subtotal tetap berisi nilai dari klien.');
+        $this->assertSame($productA->id_product, $data['id_product_peruntukan'] ?? null);
+        $this->assertSame('Batik Peruntukan A', $data['nama_produk_peruntukan'] ?? null);
+
+        $this->note('Voucher per produk hanya menghitung baris cart dengan id_product peruntukan.');
+
+        $this->assertRecorded();
+    }
+
+    public function test_voucher_per_produk_validate_gagal(): void
+    {
+        $user = $this->actingAsRole('pelanggan');
+        $this->seedCategory();
+        $productA = $this->makeProduct('Batik Peruntukan A');
+        $variantA = $this->makeVariant($productA, 10, 'aktif', 150000);
+        $productB = $this->makeProduct('Batik Lain B');
+        $variantB = $this->makeVariant($productB, 10, 'aktif', 200000);
+        $productNonaktif = $this->makeProduct('Batik Nonaktif', 'nonaktif');
+        $this->makeVariant($productNonaktif, 10, 'aktif', 100000);
+        $this->addToCart($user, $variantB, 1);
+
+        $this->makeVoucher([
+            'kode_voucher' => 'PRODUKX',
+            'id_product_peruntukan' => $productA->id_product,
+        ]);
+        $this->makeVoucher([
+            'kode_voucher' => 'PRODUKMIN',
+            'minimal_pembelian' => 400000,
+            'id_product_peruntukan' => $productA->id_product,
+        ]);
+        $this->makeVoucher([
+            'kode_voucher' => 'PRODUKNONAKTIF',
+            'id_product_peruntukan' => $productNonaktif->id_product,
+        ]);
+
+        $this->hit('POST', '/api/vouchers/validate', [
+            'endpoint' => 'POST /api/vouchers/validate',
+            'label' => 'Validasi voucher per produk yang tidak ada di cart (422)',
+            'json' => ['kode_voucher' => 'PRODUKX', 'subtotal' => 200000],
+            'expected' => 422,
+        ]);
+
+        $this->addToCart($user, $variantA, 2);
+
+        $this->hit('POST', '/api/vouchers/validate', [
+            'endpoint' => 'POST /api/vouchers/validate',
+            'label' => 'Validasi voucher per produk dengan minimal belanja produk belum terpenuhi (422)',
+            'json' => ['kode_voucher' => 'PRODUKMIN', 'subtotal' => 500000],
+            'expected' => 422,
+        ]);
+
+        $this->hit('POST', '/api/vouchers/validate', [
+            'endpoint' => 'POST /api/vouchers/validate',
+            'label' => 'Validasi voucher per produk nonaktif (422)',
+            'json' => ['kode_voucher' => 'PRODUKNONAKTIF', 'subtotal' => 200000],
+            'expected' => 422,
+        ]);
+
+        $this->assertStringContainsString(
+            'Voucher hanya berlaku untuk produk Batik Peruntukan A.',
+            (string) ($this->recorded[0]['response']['message'] ?? '')
+        );
+        $this->assertStringContainsString(
+            'Minimal belanja untuk produk Batik Peruntukan A adalah Rp 400.000.',
+            (string) ($this->recorded[1]['response']['message'] ?? '')
+        );
+        $this->assertStringContainsString(
+            'Voucher hanya berlaku untuk produk Batik Nonaktif.',
+            (string) ($this->recorded[2]['response']['message'] ?? '')
+        );
+
+        foreach ($this->recorded as $entry) {
+            $this->assertSame([], $entry['db_effect'], 'Validasi gagal tidak boleh mengubah database: '.$entry['label']);
+        }
+
+        $this->assertRecorded();
+    }
+
+    public function test_voucher_available_per_produk_mengikuti_cart(): void
+    {
+        $user = $this->actingAsRole('pelanggan');
+        $this->seedCategory();
+        $productA = $this->makeProduct('Batik Peruntukan A');
+        $variantA = $this->makeVariant($productA, 10, 'aktif', 150000);
+        $productB = $this->makeProduct('Batik Lain B');
+        $this->makeVariant($productB, 10, 'aktif', 200000);
+        $productNonaktif = $this->makeProduct('Batik Nonaktif', 'nonaktif');
+        $this->addToCart($user, $variantA, 1);
+
+        $this->makeVoucher([
+            'kode_voucher' => 'CART_PRODA',
+            'id_product_peruntukan' => $productA->id_product,
+        ]);
+        $this->makeVoucher([
+            'kode_voucher' => 'CART_PRODB',
+            'id_product_peruntukan' => $productB->id_product,
+        ]);
+        $this->makeVoucher([
+            'kode_voucher' => 'CART_NONAKTIF',
+            'id_product_peruntukan' => $productNonaktif->id_product,
+        ]);
+
+        $this->hit('GET', '/api/vouchers/available', [
+            'endpoint' => 'GET /api/vouchers/available',
+            'label' => 'Voucher tersedia per produk hanya yang produknya ada di cart',
+            'expected' => 200,
+        ]);
+
+        $kode = array_column($this->recorded[0]['response']['data'] ?? [], 'kode_voucher');
+        $this->assertContains('CART_PRODA', $kode);
+        $this->assertNotContains('CART_PRODB', $kode, 'Voucher produk yang tidak ada di cart ikut tampil.');
+        $this->assertNotContains('CART_NONAKTIF', $kode, 'Voucher produk nonaktif ikut tampil.');
+
+        $this->assertRecorded();
+    }
+
     public function test_voucher_usages_me(): void
     {
         $user = $this->actingAsRole('pelanggan');

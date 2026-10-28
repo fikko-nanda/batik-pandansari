@@ -12,7 +12,7 @@ use Midtrans\Config;
  * SDK Midtrans sebagai fallback agar aplikasi tidak bergantung pada php.ini
  * tiap mesin. Urutan prioritas:
  *
- * 1. Path eksplisit (env, mis. RAJAONGKIR_VERIFY) bila filenya ada.
+ * 1. Path eksplisit (bila diisi dan filenya ada).
  * 2. Bila PHP sudah punya CA (curl.cainfo / openssl.cafile) → null (pakai default).
  * 3. cacert.pem bawaan SDK Midtrans (bila filenya ada).
  * 4. null.

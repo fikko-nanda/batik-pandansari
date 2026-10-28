@@ -19,7 +19,7 @@ class ExpireOrdersCommand extends Command
 {
     protected $signature = 'orders:expire';
 
-    protected $description = 'Batalkan pesanan menunggu pembayaran yang sudah kedaluwarsa (10 menit)';
+    protected $description = 'Batalkan pesanan menunggu pembayaran yang sudah kedaluwarsa (12 jam)';
 
     public function handle(OrderService $orderService): int
     {

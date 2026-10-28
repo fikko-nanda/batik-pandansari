@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Reservasi stok pesanan yang menunggu pembayaran (maksimal 10 menit).
+ * Reservasi stok pesanan yang menunggu pembayaran (maksimal 12 jam).
  *
  * Model stok:
  * - product_variants.stok           : stok fisik/total yang dimiliki.

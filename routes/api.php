@@ -1,36 +1,50 @@
 <?php
 
-use App\Http\Controllers\Api\AddressController;
-use App\Http\Controllers\Api\AdminDashboardController;
-use App\Http\Controllers\Api\AdminInventoryController;
-use App\Http\Controllers\Api\AdminReportController;
-use App\Http\Controllers\Api\AdminShippingController;
-use App\Http\Controllers\Api\AdminStockOpnameController;
-use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\CartController;
-use App\Http\Controllers\Api\CategoryController;
-use App\Http\Controllers\Api\CheckoutController;
-use App\Http\Controllers\Api\CmsFasilitasController;
-use App\Http\Controllers\Api\CmsGaleriController;
-use App\Http\Controllers\Api\CmsHeroController;
-use App\Http\Controllers\Api\CmsHomepageController;
-use App\Http\Controllers\Api\CmsKategoriController;
-use App\Http\Controllers\Api\CmsProfilUsahaController;
-use App\Http\Controllers\Api\FulfillmentController;
-use App\Http\Controllers\Api\GambarUkuranController;
-use App\Http\Controllers\Api\GoogleAuthController;
-use App\Http\Controllers\Api\MidtransNotificationController;
-use App\Http\Controllers\Api\OrderController;
-use App\Http\Controllers\Api\PaymentController;
-use App\Http\Controllers\Api\ProductController;
-use App\Http\Controllers\Api\ProductImageController;
-use App\Http\Controllers\Api\ProductVariantController;
-use App\Http\Controllers\Api\ShipmentController;
-use App\Http\Controllers\Api\ShippingController;
-use App\Http\Controllers\Api\UserController;
-use App\Http\Controllers\Api\VoucherController;
-use App\Http\Controllers\Api\VoucherUsageController;
-use App\Http\Controllers\Api\WishlistController;
+use App\Http\Controllers\Api\Admin\AdminDashboardController;
+use App\Http\Controllers\Api\Admin\AdminInventoryController;
+use App\Http\Controllers\Api\Admin\AdminReportController;
+use App\Http\Controllers\Api\Admin\AdminStockOpnameController;
+use App\Http\Controllers\Api\Admin\CategoryController;
+use App\Http\Controllers\Api\Admin\CmsFasilitasController;
+use App\Http\Controllers\Api\Admin\CmsGaleriController;
+use App\Http\Controllers\Api\Admin\CmsHeroController;
+use App\Http\Controllers\Api\Admin\CmsKategoriController;
+use App\Http\Controllers\Api\Admin\CmsProfilUsahaController;
+use App\Http\Controllers\Api\Admin\CmsPromoController;
+use App\Http\Controllers\Api\Admin\FulfillmentController;
+use App\Http\Controllers\Api\Admin\GambarUkuranController;
+use App\Http\Controllers\Api\Admin\OrderController;
+use App\Http\Controllers\Api\Admin\PaymentController;
+use App\Http\Controllers\Api\Admin\ProductController;
+use App\Http\Controllers\Api\Admin\ProductImageController;
+use App\Http\Controllers\Api\Admin\ProductVariantController;
+use App\Http\Controllers\Api\Admin\ShipmentController;
+use App\Http\Controllers\Api\Admin\UserController;
+use App\Http\Controllers\Api\Admin\VoucherController;
+use App\Http\Controllers\Api\Admin\VoucherUsageController;
+use App\Http\Controllers\Api\Customer\AddressController;
+use App\Http\Controllers\Api\Customer\AuthController;
+use App\Http\Controllers\Api\Customer\CartController;
+use App\Http\Controllers\Api\Customer\CheckoutController;
+use App\Http\Controllers\Api\Customer\GoogleAuthController;
+use App\Http\Controllers\Api\Customer\OrderController as CustomerOrderController;
+use App\Http\Controllers\Api\Customer\PaymentController as CustomerPaymentController;
+use App\Http\Controllers\Api\Customer\VoucherController as CustomerVoucherController;
+use App\Http\Controllers\Api\Customer\VoucherUsageController as CustomerVoucherUsageController;
+use App\Http\Controllers\Api\Customer\WishlistController;
+use App\Http\Controllers\Api\Public\CategoryController as PublicCategoryController;
+use App\Http\Controllers\Api\Public\CmsFasilitasController as PublicCmsFasilitasController;
+use App\Http\Controllers\Api\Public\CmsGaleriController as PublicCmsGaleriController;
+use App\Http\Controllers\Api\Public\CmsHeroController as PublicCmsHeroController;
+use App\Http\Controllers\Api\Public\CmsHomepageController;
+use App\Http\Controllers\Api\Public\CmsKategoriController as PublicCmsKategoriController;
+use App\Http\Controllers\Api\Public\CmsProfilUsahaController as PublicCmsProfilUsahaController;
+use App\Http\Controllers\Api\Public\GambarUkuranController as PublicGambarUkuranController;
+use App\Http\Controllers\Api\Public\MidtransNotificationController;
+use App\Http\Controllers\Api\Public\ProductController as PublicProductController;
+use App\Http\Controllers\Api\Public\ProductImageController as PublicProductImageController;
+use App\Http\Controllers\Api\Public\ProductVariantController as PublicProductVariantController;
+use App\Http\Controllers\Api\Teknisi\TeknisiController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/users', [UserController::class, 'index'])
@@ -41,8 +55,10 @@ Route::get('/users/{id}', [UserController::class, 'show'])
     ->middleware(['auth:sanctum', 'admin']);
 
 // API Autentikasi
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/register', [AuthController::class, 'register'])
+    ->middleware('throttle:register');
+Route::post('/login', [AuthController::class, 'login'])
+    ->middleware('throttle:login');
 // Login/daftar lewat ID Token Google (publik, dibatasi per IP).
 Route::post('/auth/google', [GoogleAuthController::class, 'login'])
     ->middleware('throttle:google-auth');
@@ -78,53 +94,45 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/cart', [CartController::class, 'clear']);
 
     // API Voucher untuk pelanggan (login)
-    Route::get('/vouchers/available', [VoucherController::class, 'available']);
-    Route::post('/vouchers/validate', [VoucherController::class, 'validateVoucher']);
-    Route::get('/voucher-usages/me', [VoucherUsageController::class, 'mine']);
-
-    // API Ongkos Kirim RajaOngkir (login)
-    Route::get('/shipping/destinations', [ShippingController::class, 'destinations']);
-    Route::post('/shipping/cost', [ShippingController::class, 'cost']);
-
-    // Cek ongkir serentak JNE/J&T/POS dengan cache 7 hari + pembatas laju
-    // per pengguna agar kuota RajaOngkir tidak cepat habis.
-    Route::post('/rajaongkir/check-all', [ShippingController::class, 'checkAll'])
-        ->middleware('throttle:rajaongkir-check');
+    Route::get('/vouchers/available', [CustomerVoucherController::class, 'available']);
+    Route::post('/vouchers/validate', [CustomerVoucherController::class, 'validateVoucher']);
+    Route::get('/voucher-usages/me', [CustomerVoucherUsageController::class, 'mine']);
 
     // API Checkout & Pesanan pelanggan (login, hanya milik sendiri)
     Route::post('/checkout', [CheckoutController::class, 'store']);
-    Route::get('/orders', [OrderController::class, 'index']);
-    Route::get('/orders/{id}', [OrderController::class, 'show']);
-    Route::get('/orders/{id}/invoice', [OrderController::class, 'invoice']);
+    Route::get('/orders', [CustomerOrderController::class, 'index']);
+    Route::get('/orders/{id}', [CustomerOrderController::class, 'show']);
+    Route::get('/orders/{id}/invoice', [CustomerOrderController::class, 'invoice']);
 
     // API Pembayaran pelanggan (login, hanya milik sendiri)
-    Route::post('/orders/{id}/payment', [PaymentController::class, 'store']);
-    Route::get('/orders/{id}/payment', [PaymentController::class, 'show']);
+    Route::post('/orders/{id}/payment', [CustomerPaymentController::class, 'store']);
+    Route::get('/orders/{id}/payment', [CustomerPaymentController::class, 'show']);
 });
 
 // API Kategori
-Route::get('/categories', [CategoryController::class, 'index']);
-Route::get('/categories/{id}', [CategoryController::class, 'show']);
+Route::get('/categories', [PublicCategoryController::class, 'index']);
+Route::get('/categories/{id}', [PublicCategoryController::class, 'show']);
 
 // API Produk (baca: publik)
-Route::get('/products', [ProductController::class, 'index']);
-Route::get('/products/{id}', [ProductController::class, 'show']);
+Route::get('/products', [PublicProductController::class, 'index']);
+Route::get('/products/{id}', [PublicProductController::class, 'show']);
 
 // API Varian & Gambar Produk (baca: publik)
-Route::get('/products/{id}/variants', [ProductVariantController::class, 'index']);
-Route::get('/products/{id}/images', [ProductImageController::class, 'index']);
+Route::get('/products/{id}/variants', [PublicProductVariantController::class, 'index']);
+Route::get('/products/{id}/images', [PublicProductImageController::class, 'index']);
 
 // API Konten CMS (baca: publik)
 Route::get('/cms/homepage', [CmsHomepageController::class, 'homepage']);
+Route::get('/cms/promos', [CmsHomepageController::class, 'promos']);
 Route::get('/cms/promo', [CmsHomepageController::class, 'promo']);
-Route::get('/cms/hero', [CmsHeroController::class, 'index']);
-Route::get('/cms/kategori', [CmsKategoriController::class, 'index']);
-Route::get('/cms/galeri', [CmsGaleriController::class, 'index']);
-Route::get('/cms/profil-usaha', [CmsProfilUsahaController::class, 'index']);
-Route::get('/cms/fasilitas', [CmsFasilitasController::class, 'index']);
+Route::get('/cms/hero', [PublicCmsHeroController::class, 'index']);
+Route::get('/cms/kategori', [PublicCmsKategoriController::class, 'index']);
+Route::get('/cms/galeri', [PublicCmsGaleriController::class, 'index']);
+Route::get('/cms/profil-usaha', [PublicCmsProfilUsahaController::class, 'index']);
+Route::get('/cms/fasilitas', [PublicCmsFasilitasController::class, 'index']);
 
 // API Gambar Panduan Ukuran (baca: publik, kelola: admin)
-Route::get('/gambar-ukuran', [GambarUkuranController::class, 'index']);
+Route::get('/gambar-ukuran', [PublicGambarUkuranController::class, 'index']);
 
 // API Produk (tulis: admin)
 Route::middleware(['auth:sanctum', 'admin'])->group(function () {
@@ -189,6 +197,15 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::put('/admin/cms/fasilitas/{id}', [CmsFasilitasController::class, 'update']);
     Route::delete('/admin/cms/fasilitas/{id}', [CmsFasilitasController::class, 'destroy']);
 
+    // API CMS Promo (admin)
+    Route::get('/admin/cms/promos', [CmsPromoController::class, 'index']);
+    Route::post('/admin/cms/promos', [CmsPromoController::class, 'store']);
+    Route::put('/admin/cms/promos/{id}', [CmsPromoController::class, 'updateById']);
+    Route::delete('/admin/cms/promos/{id}', [CmsPromoController::class, 'destroyById']);
+    Route::get('/admin/cms/promo', [CmsPromoController::class, 'show']);
+    Route::match(['put', 'post'], '/admin/cms/promo', [CmsPromoController::class, 'update']);
+    Route::delete('/admin/cms/promo/gambar', [CmsPromoController::class, 'destroyImage']);
+
     // API Gambar Panduan Ukuran (kelola: admin)
     Route::get('/admin/gambar-ukuran', [GambarUkuranController::class, 'adminIndex']);
     Route::post('/admin/gambar-ukuran', [GambarUkuranController::class, 'store']);
@@ -225,14 +242,6 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('/admin/shipments', [ShipmentController::class, 'index']);
     Route::put('/admin/shipments/{id}/status', [ShipmentController::class, 'updateStatus']);
 
-    // API Konfigurasi & uji coba RajaOngkir (admin)
-    Route::get('/admin/shipping/config', [AdminShippingController::class, 'config']);
-    Route::put('/admin/shipping/config', [AdminShippingController::class, 'updateConfig']);
-    Route::get('/admin/shipping/health', [AdminShippingController::class, 'health']);
-    Route::get('/admin/shipping/couriers', [AdminShippingController::class, 'couriers']);
-    Route::put('/admin/shipping/couriers/{code}', [AdminShippingController::class, 'updateCourier']);
-    Route::post('/admin/shipping/simulate', [AdminShippingController::class, 'simulate']);
-
     // API Inventaris (admin)
     // Route statis wajib didaftarkan sebelum /admin/inventory/{variant_id}
     // agar tidak tertangkap wildcard parameternya.
@@ -265,6 +274,25 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('/admin/reports/transactions/{id}', [AdminReportController::class, 'transactionDetail']);
 });
 
+// API monitoring & maintenance (khusus role teknisi).
+Route::middleware(['auth:sanctum', 'teknisi'])
+    ->prefix('teknisi')
+    ->group(function () {
+        Route::get('/dashboard', [TeknisiController::class, 'dashboard']);
+
+        Route::get('/audit-logs', [TeknisiController::class, 'auditLogs']);
+        Route::get('/audit-logs/{id}', [TeknisiController::class, 'auditLogDetail']);
+
+        Route::get('/webhook-logs', [TeknisiController::class, 'webhookLogs']);
+        Route::get('/webhook-logs/{id}', [TeknisiController::class, 'webhookLogDetail']);
+
+        Route::get('/notification-logs', [TeknisiController::class, 'notificationLogs']);
+        Route::get('/notification-logs/{id}', [TeknisiController::class, 'notificationLogDetail']);
+
+        Route::get('/health', [TeknisiController::class, 'health']);
+        Route::get('/failed-jobs', [TeknisiController::class, 'failedJobs']);
+    });
+
 // Webhook notifikasi Midtrans (publik, diverifikasi lewat signature + dibatasi per IP)
 Route::post('/payments/midtrans/notification', [MidtransNotificationController::class, 'handle'])
     ->middleware('throttle:midtrans-webhook');
@@ -279,7 +307,7 @@ Route::get('/test-json', function () {
 });
 
 // OTP Registrasi & Lupa Password
-use App\Http\Controllers\Api\OtpController;
+use App\Http\Controllers\Api\Public\OtpController;
 
 Route::post('/otp/verify-registration', [OtpController::class, 'verifyRegistration'])
     ->middleware('throttle:otp-verify');

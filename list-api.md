@@ -80,8 +80,7 @@ Validasi gagal (422) memakai renderer kustom pada `bootstrap/app.php`:
 | 404 | Data tidak ditemukan |
 | 422 | Validasi gagal / data tidak valid |
 | 500 | Kesalahan server |
-| 502 | Gagal pada layanan pihak ketiga (Midtrans / RajaOngkir) |
-| 503 | Layanan pihak ketiga tidak dapat dihubungi (RajaOngkir)
+| 502 | Gagal pada layanan pihak ketiga (Midtrans) |
 
 ---
 
@@ -465,7 +464,6 @@ Body:
 | kode_pos | string | ya | maks 10 |
 | alamat_lengkap | string | ya | - |
 | alamat_utama | boolean | tidak | alamat pertama otomatis jadi utama |
-| id_tujuan_rajaongkir | integer | tidak | ID tujuan (per kelurahan) dari `GET /api/shipping/destinations`; dipakai saat menghitung ongkir checkout |
 
 Respons `201`: `data` objek alamat.
 
@@ -539,7 +537,7 @@ Query:
 | Param | Tipe | Keterangan |
 |---|---|---|
 | search | string | cari di `nama_produk` / `deskripsi` |
-| category | string | filter `id_category` |
+| category | string | filter berdasarkan kategori mana pun yang dimiliki produk |
 | page | integer | halaman (min 1) |
 | per_page | integer | 1-100, default 10 |
 
@@ -557,7 +555,8 @@ Body:
 
 | Field | Tipe | Wajib | Keterangan |
 |---|---|---|---|
-| id_category | string | ya | harus ada di tabel kategori |
+| id_categories | array<string> | ya (minimal 1) | setiap ID harus ada di tabel kategori; tidak ada batas maksimal |
+| id_category | string | alternatif lama | satu kategori; tetap didukung untuk klien lama |
 | nama_produk | string | ya | maks 150 |
 | sku | string | tidak | unik, maks 100 |
 | slug | string | tidak | unik, maks 180; dibuat otomatis bila kosong |
@@ -566,14 +565,15 @@ Body:
 | bahan_kain | string | tidak | maks 100 |
 | status_produk | string | tidak | `draft` / `aktif` / `nonaktif` (default `draft`) |
 
-Respons `201`.
+Respons `201`, dengan `categories` berisi semua kategori produk. `id_category` dan relasi `category` menunjukkan kategori utama untuk kompatibilitas.
 
 Catatan: `status_produk = 'aktif'` hanya bisa dipakai bila produk sudah punya minimal 1 foto produk. Praktisnya, buat produk sebagai `draft`, unggah gambarnya, lalu aktifkan lewat `PUT`.
 
 ### 4.4. Ubah Produk
 - **Method / Path**: `PUT /api/products/{id}`
 - **Akses**: admin
-- Body: field sama, semua opsional.
+- Body: field produk sama, semua opsional; `id_categories` mengganti seluruh kategori produk dan harus berisi minimal satu ID bila dikirim.
+- `id_category` lama tetap didukung sebagai pengganti `id_categories` untuk satu kategori.
 - Sifat parsial: field yang tidak dikirim tidak berubah; field yang dikirim `null` ditulis `null` (kecuali `slug` yang tidak boleh `null`).
 - Perpindahan status ke `aktif` mensyaratkan produk sudah punya minimal 1 foto produk.
 
@@ -636,7 +636,7 @@ Body:
 | ukuran | string | tidak | maks 30 |
 | harga | numeric | ya | min 0 |
 | stok | integer | tidak | min 0 (default 0) |
-| berat_gram | integer | tidak | 1-1000000 gram (default 500); dipakai menghitung total berat ongkir |
+| berat_gram | integer | tidak | 1-1000000 gram (default 500) |
 | status_varian | string | tidak | `aktif` / `nonaktif` (default `aktif`) |
 
 Respons `201`.
@@ -942,34 +942,25 @@ Query: `page`, `per_page` (1-100).
 
 Alur status pesanan: `menunggu_pembayaran` → `dibayar` → `diproses` → `dikirim` → `selesai`, dengan status tambahan `dibatalkan`.
 
-### 11.1. Checkout
+#### 11.1. Checkout
 - **Method / Path**: `POST /api/checkout`
 - **Akses**: login
-- **Deskripsi**: Membuat pesanan dari keranjang `aktif` user. Subtotal diambil dari harga varian saat checkout, **biaya pengiriman dihitung ulang di backend lewat RajaOngkir** (nilai `biaya_pengiriman` dari klien diabaikan), stok varian langsung dikurangi, keranjang ditandai `checkout`, dan riwayat status awal `menunggu_pembayaran` dibuat.
+- **Deskripsi**: Membuat pesanan dari keranjang `aktif` user. Subtotal diambil dari harga varian saat checkout, tanpa biaya pengiriman, stok varian direservasi, keranjang ditandai `checkout`, dan riwayat status awal `menunggu_pembayaran` dibuat.
 
 Body:
 
 | Field | Tipe | Wajib | Keterangan |
 |---|---|---|---|
 | id_user_address | string | ya | harus alamat milik user yang login |
-| kurir | string | ya | salah satu: `jne`, `pos`, `tiki`, `sicepat`, `jnt`, `anteraja`, `jxpress`, `lex`, `lion`, `ninja` |
-| layanan | string | ya | kode/nama layanan dari `POST /api/shipping/cost` (mis. `CTC`, `JTR`, `REG`) |
 | kode_voucher | string | tidak | maks 50, divalidasi seperti `POST /api/vouchers/validate` |
-| biaya_pengiriman | numeric | tidak | **diabaikan** (dipertahankan hanya untuk kompatibilitas klien) |
 | catatan | string | tidak | catatan pesanan |
 
-Alur perhitungan ongkir: berat total = Σ(`berat_gram` varian × jumlah), tujuan = `id_tujuan_rajaongkir` alamat, lalu `POST /api/shipping/cost` ke RajaOngkir; biaya pesanan diambil dari layanan yang cocok dengan `layanan`.
-
+- `dasar_pph = max(0, subtotal - diskon)`; `pph = round(dasar_pph * 11%)` (rupiah terdekat); `total_pembayaran = dasar_pph + pph`; `biaya_pengiriman` selalu `0`.
+- `kedaluwarsa_pada` = **12 jam** sejak checkout. Pesanan `menunggu_pembayaran` yang lewat batas dibatalkan otomatis dan stok dilepas.
 - `404` bila `id_user_address` bukan milik user.
-- `422` bila keranjang kosong, stok tidak mencukupi, varian/produk tidak aktif, voucher tidak valid, alamat belum punya `id_tujuan_rajaongkir` (`ALAMAT_TANPA_TUJUAN_RAJAONGKIR`), atau `layanan` tidak tersedia pada kurir (`LAYANAN_TIDAK_TERSEDIA`).
-- `422` bila RajaOngkir menolak permintaan (`RAJAONGKIR_INVALID_REQUEST`, `RAJAONGKIR_DESTINATION_NOT_FOUND`, `RAJAONGKIR_NO_SERVICE`).
-- `502` bila upstream RajaOngkir bermasalah (`RAJAONGKIR_UPSTREAM_ERROR`, `RAJAONGKIR_UNAUTHORIZED`, `RAJAONGKIR_NOT_CONFIGURED`, `RAJAONGKIR_INVALID_RESPONSE`).
-- `503` bila koneksi ke RajaOngkir gagal (`RAJAONGKIR_UNAVAILABLE`).
-- Kegagalan ongkir (422/502/503) terjadi sebelum transaksi database → pesanan **tidak** dibuat, stok dan keranjang tidak berubah.
+- `422` bila keranjang kosong, stok tidak mencukupi, varian/produk tidak aktif, atau voucher tidak valid.
 - `500` bila terjadi kesalahan saat transaksi (perubahan di-rollback).
 - Respons `201`: `data` berisi objek pesanan beserta `items`.
-- Endpoint `GET /api/shipping/destinations` untuk memilih alamat tujuan dan `POST /api/shipping/cost` untuk menampilkan pilihan layanan/ongkir sebelum checkout.
-
 ### 11.2. Daftar Pesanan Saya
 - **Method / Path**: `GET /api/orders`
 - **Akses**: login (hanya milik sendiri)
@@ -1148,159 +1139,11 @@ Pemetaan status transaksi → pembayaran / pesanan:
 
 ---
 
-## 14. Ongkos Kirim (RajaOngkir)
-
-Integrasi API resmi RajaOngkir (Komerce) — `https://rajaongkir.komerce.id/api/v1`. Origin pengiriman toko diambil dari tabel `settings` (`rajaongkir.origin_id`, bisa diubah admin via 16.1) dengan fallback `RAJAONGKIR_ORIGIN_ID` di `.env` — bukan dari klien. Daftar `courier` yang diterima = kurir **aktif** menurut konfigurasi admin (16.4/16.5; default semua aktif sehingga perilaku tidak berubah).
-
-### 14.1. Cari Tujuan Pengiriman
-- **Method / Path**: `GET /api/shipping/destinations`
-- **Akses**: login
-- **Deskripsi**: Mencari tujuan pengiriman (per kelurahan). Hasil di-cache agar hemat kuota.
-
-Query: `search` (wajib, 2-100 karakter — nama kelurahan/kecamatan/kota/kode pos).
-
-Respons `200`:
-
-```json
-{
-  "success": true,
-  "message": "Daftar tujuan pengiriman berhasil diambil.",
-  "data": [
-    {
-      "id": 61622,
-      "label": "BANJARSARI, BANJARSARI, SURAKARTA, JAWA TENGAH, 57136",
-      "province_name": "JAWA TENGAH",
-      "city_name": "SURAKARTA",
-      "district_name": "BANJARSARI",
-      "subdistrict_name": "BANJARSARI",
-      "zip_code": "57136"
-    }
-  ]
-}
-```
-
-`id` inilah yang disimpan ke `user_addresses.id_tujuan_rajaongkir`. Bila tidak ada hasil → `200` dengan `data: []`.
-
-### 14.2. Cek Ongkos Kirim
-- **Method / Path**: `POST /api/shipping/cost`
-- **Akses**: login
-
-Body:
-
-| Field | Tipe | Wajib | Keterangan |
-|---|---|---|---|
-| destination | integer | ya | ID tujuan (per kelurahan) dari 14.1 |
-| weight | integer | ya | berat total gram, 1-30000 |
-| courier | string | tidak | satu kode kurir; kosong = seluruh kurir aktif. Salah satu dari: `jne`, `pos`, `tiki`, `sicepat`, `jnt`, `anteraja`, `ninja`, `lion`, `ide`, `sap`, `ncs`, `rex`, `rpx`, `sentral`, `star`, `wahana`, `spx` |
-| couriers | array | tidak | alternatif `courier`, banyak kurir sekaligus (boleh juga dipakai untuk kurir aktif tertentu) |
-
-Respons `200`:
-
-```json
-{
-  "success": true,
-  "message": "Biaya pengiriman berhasil dihitung.",
-  "data": [
-    {
-      "name": "JNE",
-      "code": "jne",
-      "service": "CTC",
-      "description": "Layanan Reguler",
-      "cost": 9000,
-      "etd": "2-3"
-    }
-  ]
-}
-```
-
-Kode error (body `{ "success": false, "message": "<KODE>" }`):
-
-| Status | Kode | Arti |
-|---|---|---|
-| 422 | `RAJAONGKIR_INVALID_REQUEST` | Parameter ditolak RajaOngkir |
-| 422 | `RAJAONGKIR_DESTINATION_NOT_FOUND` | Tujuan tidak dikenal |
-| 422 | `RAJAONGKIR_NO_SERVICE` | Tidak ada layanan untuk tujuan/kurir |
-| 502 | `RAJAONGKIR_UPSTREAM_ERROR` | RajaOngkir bermasalah |
-| 502 | `RAJAONGKIR_UNAUTHORIZED` | API key ditolak |
-| 502 | `RAJAONGKIR_NOT_CONFIGURED` | API key/origin belum diisi |
-| 502 | `RAJAONGKIR_INVALID_RESPONSE` | Format respons tidak dikenal |
-| 503 | `RAJAONGKIR_UNAVAILABLE` | Koneksi ke RajaOngkir gagal |
-
-Catatan ketahanan: request diulang otomatis 1 kali (delay 250 ms) hanya untuk gangguan koneksi / upstream `5xx`; error `4xx` tidak diulang. TLS memakai CA sistem, dan otomatis memakai `cacert.pem` bawaan SDK Midtrans bila CA sistem kosong (`RAJAONGKIR_VERIFY` untuk memaksa path file). Verifikasi cepat semua endpoint pihak ketiga: `php artisan external:check`.
-
-### 14.3. Cek Ongkos Kirim Serentak (JNE, J&T, POS)
-- **Method / Path**: `POST /api/rajaongkir/check-all`
-- **Akses**: login (pembatas laju `throttle:rajaongkir-check` — 20/menit per pengguna, 60/menit per IP → `429` bila lewat)
-- **Deskripsi**: Menghitung tarif **JNE (`jne`), J&T (`jnt`), dan POS (`pos`) sekaligus** untuk satu tujuan & berat, lalu **menyimpan hasilnya di cache selama 7 hari** untuk menghemat kuota RajaOngkir. Endpoint ini murni baca — **tidak pernah membuat baris `shipments`** dan tidak mengubah data apa pun.
-
-Body:
-
-| Field | Tipe | Wajib | Keterangan |
-|---|---|---|---|
-| destination | integer | ya | ID tujuan (per kelurahan) dari 14.1, min 1 |
-| weight | integer | ya | berat total gram, 1-30000 |
-
-Respons `200`:
-
-```json
-{
-  "success": true,
-  "message": "Biaya pengiriman berhasil dihitung.",
-  "data": [
-    { "name": "POS", "code": "pos", "service": "Pos Reguler", "description": "Reguler", "cost": 17000, "etd": "3-5" },
-    { "name": "J&T", "code": "jnt", "service": "EZ", "description": "Ekonomis", "cost": 18000, "etd": "3-4" },
-    { "name": "JNE", "code": "jne", "service": "REG", "description": "Reguler", "cost": 20000, "etd": "2-3" }
-  ],
-  "data_per_kurir": [
-    { "courier": "jne", "tersedia": true, "layanan": [
-      { "name": "JNE", "code": "jne", "service": "REG", "description": "Reguler", "cost": 20000, "etd": "2-3" }
-    ] },
-    { "courier": "jnt", "tersedia": true, "layanan": [
-      { "name": "J&T", "code": "jnt", "service": "EZ", "description": "Ekonomis", "cost": 18000, "etd": "3-4" }
-    ] },
-    { "courier": "pos", "tersedia": true, "layanan": [
-      { "name": "POS", "code": "pos", "service": "Pos Reguler", "description": "Reguler", "cost": 17000, "etd": "3-5" }
-    ] }
-  ],
-  "meta": {
-    "kurir_dicek": ["jne", "jnt", "pos"],
-    "kurir_tersedia": ["pos", "jnt", "jne"],
-    "kurir_tanpa_tarif": [],
-    "dari_cache": [],
-    "diambil_dari_api": ["jne", "jnt", "pos"],
-    "cache_ttl_hari": 7,
-    "berat_gram": 1000
-  }
-}
-```
-
-Struktur `data_per_kurir` (dilengkapi agar frontend mudah menampilkan ketiga kurir):
-
-- Selalu memuat **ketiga kurir** (`jne`, `jnt`, `pos`) sesuai urutan, walau ada yang tidak melayani rute.
-- `tersedia` = `true` bila kurir punya tarif, `false` bila tidak (kurir tetap tampil dengan `layanan: []`).
-- `layanan` = daftar layanan kurir tersebut (kosong bila `tersedia: false`).
-- Bila kamu hanya ingin menampilkan kurir yang ada tarifnya, cukup tampilkan entri dengan `tersedia: true` (mis. hanya `jne` yang tampil bila `jnt`/`pos` tidak melayani rute itu).
-- `data` (datar, terurut termurah) tetap dipertahankan untuk kompatibilitas; `data_per_kurir` adalah bentuk tambahan, bukan pengganti.
-
-Perilaku cache & kuota:
-
-- Tarif dihitung **per kurir** dan disimpan terpisah (kunci cache memuat origin, tujuan, berat, kode kurir, dan versi skema) dengan masa berlaku **7 hari** (`cache_ttl_hari`).
-- Kurir yang tarifnya sudah ada di cache **tidak dipanggil ulang** ke API. Bila sebagian kurir sudah ter-cache, hanya sisanya yang diambil — dan selalu dalam **satu** panggilan upstream (parameter `courier` dipisah titik dua), bukan satu panggilan per kurir.
-- `dari_cache` = kurir yang dilayani dari cache (tanpa request upstream); `diambil_dari_api` = kurir yang benar-benar diambil dari RajaOngkir pada panggilan ini.
-- Hasil "kurir tidak menyediakan tarif" (mis. `404`/`400`) juga ikut di-cache karena tetap memakan kuota; kurir tersebut muncul di `kurir_tanpa_tarif`.
-- Bila pengambilan gagal (upstream error/koneksi), hasil **tidak** di-cache sehingga panggilan berikutnya bisa mencoba lagi.
-- `Cache::lock` mencegah beberapa permintaan bersamaan menembak API berkali-kali untuk kunci yang sama (anti cache-stampede).
-- Hasil `data` digabung dari semua kurir dan diurutkan dari tarif **termurah**.
-
-Kode error (sama seperti 14.2, body `{ "success": false, "message": "<KODE>" }`): `422` (`RAJAONGKIR_INVALID_REQUEST`), `429` (`RAJAONGKIR_QUOTA_EXCEEDED`), `502` (`RAJAONGKIR_UPSTREAM_ERROR`, `RAJAONGKIR_UNAUTHORIZED`, `RAJAONGKIR_NOT_CONFIGURED`, `RAJAONGKIR_INVALID_RESPONSE`), `503` (`RAJAONGKIR_UNAVAILABLE`). Bila tidak ada kurir yang menyediakan tarif, tetap `200` dengan `data: []` dan `kurir_tanpa_tarif` terisi; `data_per_kurir` tetap memuat ketiga kurir dengan `tersedia: false`.
-
----
-
-## 15. Pengiriman & Pemenuhan (Admin)
+## 14. Pengiriman & Pemenuhan (Admin)
 
 Semua endpoint grup ini: `auth:sanctum` + `admin` (`401` tanpa token, `403` untuk pelanggan).
 
-### 15.1. Daftar Pengiriman
+### 14.1. Daftar Pengiriman
 - **Method / Path**: `GET /api/admin/shipments`
 - **Akses**: admin
 - **Deskripsi**: Data tabel `shipments` beserta relasi pesanan (`order.id_order`, `nomor_pesanan`, `status_pesanan`, `nama_penerima`). Paginasi default 15.
@@ -1317,7 +1160,7 @@ Respons `200` (aktual):
     {
       "id_shipment": "c92c2906-09cf-48bd-809a-8a35b7995725",
       "id_order": "7b23ee75-92f7-44b4-a5c6-e7ce20306e9f",
-      "provider": "rajaongkir",
+      "provider": "manual",
       "kurir": "JNE",
       "layanan_pengiriman": "Reguler",
       "kode_layanan": "REG",
@@ -1338,7 +1181,7 @@ Respons `200` (aktual):
 
 > Tabel `shipments` dan `shipment_histories` berasal dari dump database (tanpa file migrasi baru, mengikuti konvensi repo).
 
-### 15.2. Ubah Status Pengiriman
+### 14.2. Ubah Status Pengiriman
 - **Method / Path**: `PUT /api/admin/shipments/{id}/status`
 - **Akses**: admin
 
@@ -1357,14 +1200,14 @@ Body:
 - `404` bila pengiriman tidak ada.
 - Respons `200`: objek pengiriman + `histories` + `order` (contoh aktual terlihat pada hasil pengujian — `status_sebelumnya: "menunggu"`, `status_baru: "dikirim"`).
 
-### 15.3. Daftar Pemenuhan Pesanan
+### 14.3. Daftar Pemenuhan Pesanan
 - **Method / Path**: `GET /api/admin/order-fulfillments`
 - **Akses**: admin
 - **Deskripsi**: Catatan pemenuhan (tabel `order_fulfillments`, migrasi baru) beserta pesanan dan pencatatnya. Urut `dibuat_pada` desc lalu `urutan` desc. Paginasi default 15.
 
 Query: `status` (`persiapan` / `dikemas` / `siap_kirim` / `selesai`), `id_order`, `page`, `per_page` (1-100). `422` bila `status` di luar daftar.
 
-### 15.4. Catat Pemenuhan Pesanan
+### 14.4. Catat Pemenuhan Pesanan
 - **Method / Path**: `POST /api/admin/orders/{id}/fulfillments`
 - **Akses**: admin
 
@@ -1403,124 +1246,12 @@ Aturan bisnis:
 
 ---
 
-## 16. Konfigurasi RajaOngkir (Admin)
-
-Sumber konfigurasi: tabel `settings` (kunci `rajaongkir.origin_id` dan `rajaongkir.kurir_aktif` berformat JSON) menang, fallback `config/services` + `.env`. **API key tidak pernah dikirim balik** — hanya indikator `api_key_terisi`.
-
-### 16.1. Baca Konfigurasi Pengiriman
-- **Method / Path**: `GET /api/admin/shipping/config`
-- **Akses**: admin
-
-Respons `200` (aktual):
-
-```json
-{
-  "success": true,
-  "message": "Konfigurasi pengiriman berhasil diambil.",
-  "data": { "origin_id": "82935", "sumber_origin": "env", "base_url": "https://rajaongkir.komerce.id/api/v1", "api_key_terisi": true, "kurir_aktif": ["jne", "pos", "tiki", "sicepat", "jnt", "anteraja", "jxpress", "lex", "lion", "ninja"] }
-}
-```
-
-`sumber_origin` = `settings` bila admin pernah mengubah origin, selain itu `env`.
-
-### 16.2. Ubah Origin Pengiriman
-- **Method / Path**: `PUT /api/admin/shipping/config`
-- **Akses**: admin
-- Body: `{ "origin_id": "99999" }` — wajib, hanya angka, maks 20 karakter.
-- Tersimpan ke `settings` (`sumber_origin` berubah jadi `settings`) dan **langsung dipakai** perhitungan ongkir (cache `settings:shipping.*` di-flush).
-- `422` bila tidak valid (tidak ada data yang ditulis).
-
-Respons `200` (aktual): `{ "success": true, "message": "Konfigurasi pengiriman berhasil diperbarui.", "data": { "origin_id": "99999", "sumber_origin": "settings", "base_url": "...", "api_key_terisi": true, "kurir_aktif": [...] } }`
-
-### 16.3. Health Check Pengiriman
-- **Method / Path**: `GET /api/admin/shipping/health`
-- **Akses**: admin
-- **Deskripsi**: Mengecek kelengkapan konfigurasi + koneksi HTTPS ke host RajaOngkir. **Tidak memanggil API RajaOngkir** (tanpa konsumsi kuota) — `memakai_kuota_api` selalu `false`.
-
-Respons `200` (aktual):
-
-```json
-{
-  "success": true,
-  "message": "Kesehatan konfigurasi pengiriman berhasil diperiksa.",
-  "data": { "status": "ok", "checks": { "api_key_terisi": true, "base_url_valid": true, "origin_terisi": true, "konektivitas_https": true }, "base_url": "https://rajaongkir.komerce.id/api/v1", "origin_id": "82935", "jumlah_kurir_aktif": 10, "memakai_kuota_api": false }
-}
-```
-
-`status`: `belum_terkonfigurasi` (API key/origin kosong) → `degraded` (koneksi gagal) → `ok` (semua pemeriksaan lulus).
-
-### 16.4. Daftar Kurir
-- **Method / Path**: `GET /api/admin/shipping/couriers`
-- **Akses**: admin
-
-Respons `200` (aktual):
-
-```json
-{
-  "success": true,
-  "message": "Daftar kurir berhasil diambil.",
-  "data": [ { "kode": "jne", "aktif": true }, { "kode": "pos", "aktif": true }, { "kode": "tiki", "aktif": true }, { "kode": "sicepat", "aktif": true }, { "kode": "jnt", "aktif": true }, { "kode": "anteraja", "aktif": true }, { "kode": "jxpress", "aktif": true }, { "kode": "lex", "aktif": true }, { "kode": "lion", "aktif": true }, { "kode": "ninja", "aktif": true } ],
-  "meta": { "total": 10, "aktif": 10 }
-}
-```
-
-### 16.5. Ubah Status Kurir
-- **Method / Path**: `PUT /api/admin/shipping/couriers/{code}`
-- **Akses**: admin
-- Body: `{ "aktif": true }` (boolean wajib).
-- `404` `"Kurir tidak ditemukan."` bila kode di luar 10 kurir yang didukung.
-- `422` `"Minimal satu kurir harus tetap aktif."` bila menonaktifkan kurir terakhir.
-- Kurir nonaktif langsung ditolak `POST /api/shipping/cost` dan checkout (`422` — pesan validasi `The selected courier is invalid.`).
-
-Respons `200` (aktual): `{ "success": true, "message": "Status kurir berhasil diperbarui.", "data": { "kode": "pos", "aktif": false, "kurir_aktif": ["jne", "tiki", "sicepat", "jnt", "anteraja", "jxpress", "lex", "lion", "ninja"] } }`
-
-### 16.6. Simulasi Ongkos Kirim
-- **Method / Path**: `POST /api/admin/shipping/simulate`
-- **Akses**: admin
-- **Deskripsi**: Cek ongkir multi-kurir sekaligus. **Memakai kuota RajaOngkir** (1 panggilan per kurir).
-
-Body:
-
-| Field | Tipe | Wajib | Keterangan |
-|---|---|---|---|
-| destination | integer | ya | ID tujuan dari 14.1, min 1 |
-| weight | integer | ya | gram, 1-30000 |
-| couriers | array of string | tidak | harus kurir aktif; kosong = semua kurir aktif |
-
-Respons `200` (aktual):
-
-```json
-{
-  "success": true,
-  "message": "Simulasi ongkos kirim selesai.",
-  "data": {
-    "origin_id": "82935",
-    "destination": 61622,
-    "weight": 1000,
-    "memakai_kuota_api": 2,
-    "hasil": [
-      { "kurir": "jne", "berhasil": true, "error": null, "layanan": [ { "name": "JNE", "code": "jne", "service": "REG", "description": "Layanan Reguler", "cost": 9000, "etd": "2-3" } ] },
-      { "kurir": "sicepat", "berhasil": true, "error": null, "layanan": [ { "name": "SICEPAT", "code": "sicepat", "service": "REG", "description": "Layanan Reguler", "cost": 9000, "etd": "2-3" } ] }
-    ]
-  }
-}
-```
-
-Aturan:
-- Kegagalan per kurir tidak menggagalkan permintaan: entri menjadi `berhasil: false`, `error` berisi kode (mis. `RAJAONGKIR_UPSTREAM_ERROR`), `layanan: []`.
-- `memakai_kuota_api` = jumlah panggilan API yang benar-benar dilakukan.
-- Tanpa origin → `502` `RAJAONGKIR_NOT_CONFIGURED` tanpa panggilan API sama sekali.
-- Kurir nonaktif yang diminta → `422` `"Tidak ada kurir aktif yang diminta."`.
-- Input tidak valid (`destination`/`weight`/`couriers`) → `422`.
-
----
-
-## 17. Inventaris (Admin)
+## 15. Inventaris (Admin)
 
 Semua endpoint di bawah ini memerlukan akses **admin** (`peran = admin`). Setiap
 perubahan stok tercatat di `inventory_movements`.
 
-### 17.1. Daftar Inventaris
+### 15.1. Daftar Inventaris
 - **Method / Path**: `GET /api/admin/inventory`
 - **Akses**: admin
 - **Deskripsi**: Daftar varian beserta stok, harga modal, dan status stok.
@@ -1529,14 +1260,14 @@ Query: `search`, `category`, `status_stok` (`semua|aman|menipis|kritis`), `sort`
 (`stok|stok_minimum|harga|sku|dibuat_pada`), `order` (`asc|desc`), `page`,
 `per_page` (maks 100).
 
-### 17.2. Detail Inventaris Varian
+### 15.2. Detail Inventaris Varian
 - **Method / Path**: `GET /api/admin/inventory/{variant_id}`
 - **Akses**: admin
 - **Deskripsi**: Detail satu varian + 50 pergerakan stok terakhir. `404` bila
   varian tidak ada. (Route statis lain didaftarkan lebih dulu agar tidak
   tertangkap wildcard ini.)
 
-### 17.3. Riwayat Pergerakan Stok
+### 15.3. Riwayat Pergerakan Stok
 - **Method / Path**: `GET /api/admin/inventory/movements`
 - **Akses**: admin
 - **Deskripsi**: Riwayat `inventory_movements`.
@@ -1545,7 +1276,7 @@ Query: `id_variant`, `jenis_pergerakan`
 (`masuk|keluar|penyesuaian_masuk|penyesuaian_keluar`), `dari`, `sampai`,
 `search`, `page`, `per_page` (maks 100).
 
-### 17.4. Penyesuaian Stok
+### 15.4. Penyesuaian Stok
 - **Method / Path**: `POST /api/admin/inventory/adjustments`
 - **Akses**: admin
 - **Deskripsi**: Menambah/mengurangi stok satu varian dan mencatat pergerakan.
@@ -1563,7 +1294,7 @@ Body:
 Aturan: pengurangan melebihi stok tersedia → `422` dan tidak ada perubahan
 (transaksi dibatalkan).
 
-### 17.5. Stok Menipis / Kritis
+### 15.5. Stok Menipis / Kritis
 - **Method / Path**: `GET /api/admin/inventory/low-stock`
 - **Akses**: admin
 - **Deskripsi**: Varian berstatus kritis (stok 0) atau menipis
@@ -1571,13 +1302,13 @@ Aturan: pengurangan melebihi stok tersedia → `422` dan tidak ada perubahan
 
 Query: `level` (`menipis|kritis`), `search`, `page`, `per_page` (maks 100).
 
-### 17.6. Ringkasan Inventaris
+### 15.6. Ringkasan Inventaris
 - **Method / Path**: `GET /api/admin/inventory/summary`
 - **Akses**: admin
 - **Deskripsi**: Agregat jumlah SKU/varian/produk, total unit stok, dan
   hitungan varian kritis/menipis/aman.
 
-### 17.7. Valuasi Persediaan
+### 15.7. Valuasi Persediaan
 - **Method / Path**: `GET /api/admin/inventory/valuation`
 - **Akses**: admin
 - **Deskripsi**: Nilai persediaan (`stok x harga_modal`) total dan per produk.
@@ -1585,7 +1316,7 @@ Query: `level` (`menipis|kritis`), `search`, `page`, `per_page` (maks 100).
 
 Query: `category`.
 
-### 17.8. Ekspor Inventaris (CSV)
+### 15.8. Ekspor Inventaris (CSV)
 - **Method / Path**: `GET /api/admin/inventory/export`
 - **Akses**: admin
 - **Deskripsi**: Unduh CSV seluruh hasil filter (tanpa paginasi). Nilai yang
@@ -1595,7 +1326,7 @@ Query: `search`, `category`, `status_stok`.
 
 ---
 
-## 18. Stock Opname (Admin)
+## 16. Stock Opname (Admin)
 
 Pemeriksaan stok fisik gudang. Membuat opname **tidak** mengubah stok; stok
 baru diterapkan saat finalisasi (atau lewat penyesuaian inventaris per varian).
@@ -1609,7 +1340,7 @@ diterapkan).
 > **baru ditambahkan** pada pekerjaan ini dan tidak termasuk dalam hitungan
 > 56 endpoint pada header dokumen.
 
-### 18.1. Daftar Stock Opname
+### 16.1. Daftar Stock Opname
 - **Method / Path**: `GET /api/admin/stock-opnames`
 - **Akses**: admin
 - **Deskripsi**: Daftar catatan opname + jumlah item.
@@ -1617,7 +1348,7 @@ diterapkan).
 Query: `status_opname` (`draf|selesai`), `dari`, `sampai`, `search`, `page`,
 `per_page` (maks 100).
 
-### 18.2. Buat Stock Opname
+### 16.2. Buat Stock Opname
 - **Method / Path**: `POST /api/admin/stock-opnames`
 - **Akses**: admin
 - **Deskripsi**: Membuat opname baru berisi hasil hitung. `stok_sistem` diambil
@@ -1638,13 +1369,13 @@ Aturan: varian ganda dalam satu daftar → `422`.
 Respons `201` memuat `status_opname: "draf"`, `total_item`, `total_selisih`
 (jumlah aljabar selisih `stok_fisik - stok_sistem`), dan kode `OPN-YYYYMMDD-NNNN`.
 
-### 18.3. Detail Stock Opname
+### 16.3. Detail Stock Opname
 - **Method / Path**: `GET /api/admin/stock-opnames/{id}`
 - **Akses**: admin
 - **Deskripsi**: Detail opname + seluruh item beserta varian produknya. `404`
   bila tidak ada.
 
-### 18.4. Tambah Item Stock Opname
+### 16.4. Tambah Item Stock Opname
 - **Method / Path**: `POST /api/admin/stock-opnames/{id}/items`
 - **Akses**: admin
 - **Deskripsi**: Menambah satu item hitung ke opname berstatus `draf`.
@@ -1662,7 +1393,7 @@ Body:
 Respons `201`. Aturan: opname tidak ada → `404`; status bukan `draf` → `422`;
 varian sudah tercatat pada opname → `422`.
 
-### 18.5. Finalisasi Stock Opname
+### 16.5. Finalisasi Stock Opname
 - **Method / Path**: `POST /api/admin/stock-opnames/{id}/complete`
 - **Akses**: admin
 - **Deskripsi**: Menerapkan seluruh selisih ke `product_variants.stok` dan
@@ -1691,13 +1422,13 @@ mencatat pergerakan (`selisih_diterapkan` hanya menghitung yang berselisih).
 
 ---
 
-## 19. Konten CMS (Banner Hero, Kategori, Promo, Galeri, Profil, Fasilitas)
+## 17. Konten CMS (Banner Hero, Kategori, Promo, Galeri, Profil, Fasilitas)
 
 Konten yang dikelola admin tanpa mengubah kode frontend. Semua endpoint baca
 bersifat publik; endpoint tulis wajib `admin`. Respons selalu memakai amplop
 `{success, message, data}`. Kolom `urutan_tampilan` mengatur urutan kemunculan.
 
-### 19.1. Agregat Beranda
+### 17.1. Agregat Beranda
 - **Method / Path**: `GET /api/cms/homepage`
 - **Akses**: publik
 - **Deskripsi**: Menggabungkan seluruh konten beranda dalam satu panggilan:
@@ -1721,46 +1452,62 @@ bersifat publik; endpoint tulis wajib `admin`. Respons selalu memakai amplop
 Bagian tanpa data bernilai `null` (galeri/profil/promo) atau `[]` (hero,
 kategori, fasilitas). `url_gambar`/`url_logo` dihasilkan dari disk `public`.
 
-### 19.2. Promo Beranda
+### 17.2. Promo Beranda
 - **Method / Path**: `GET /api/cms/promo`
 - **Akses**: publik
-- **Deskripsi**: Mengambil **satu** voucher unggulan untuk Banner Promo. Memakai
-  tabel `vouchers` (kolom `gambar`, `nama_voucher`, `deskripsi`), bukan tabel
-  terpisah. Voucher dipilih dari yang `status_voucher = aktif` dan tanggal
-  berjalan; diutamakan yang memiliki gambar, lalu yang paling baru dibuat.
-  Tanpa voucher aktif → `data: null`.
+- **Deskripsi**: Endpoint kompatibilitas yang mengembalikan **satu** voucher
+  promo sebagai objek (atau `data: null`). Pemilihan tetap mengikuti aturan
+  sebelumnya: promo konfigurasi dengan ID `1` jika voucher aktif dan dalam
+  periode, atau fallback ke pemilihan otomatis lama.
+- Data promo memuat informasi voucher dan field `badge`, `tautan_tujuan`,
+  `gambar`, `url_gambar`, `id_product_peruntukan`, dan
+  `nama_produk_peruntukan`. `url_gambar` memakai gambar konfigurasi promo bila
+  tersedia, jika tidak memakai gambar voucher. Untuk voucher terikat produk,
+  respons juga menyertakan `harga_mulai_peruntukan` (harga varian aktif
+  termurah) dan `url_gambar_peruntukan`; keduanya `null` bila tidak tersedia.
 
-### 19.3. Banner Hero (Publik)
+- **Method / Path**: `GET /api/cms/promos`
+- **Akses**: publik
+- **Deskripsi**: Mengembalikan array promo yang dikonfigurasi dan voucher-nya
+  berstatus `aktif` serta masih dalam periode (`tanggal_mulai` dan
+  `tanggal_selesai` mencakup waktu saat ini). Hanya promo yang memenuhi syarat
+  yang ditampilkan, berurutan menurut `urutan_tampilan`, lalu ID promo. Tidak
+  ada promo aktif → HTTP `200` dengan `data: []`. Setiap item menyertakan field
+  promo dan voucher, termasuk `id_voucher`, `badge`, `tautan_tujuan`, `gambar`,
+  `url_gambar`, dan `urutan_tampilan`; informasi peruntukan produk serta harga
+  dan gambar produk juga disertakan bila tersedia.
+
+### 17.3. Banner Hero (Publik)
 - **Method / Path**: `GET /api/cms/hero`
 - **Akses**: publik
 - **Deskripsi**: Daftar slide `status_aktif = 1`, diurutkan `urutan_tampilan`.
 
-### 19.4. Kategori CMS (Publik)
+### 17.4. Kategori CMS (Publik)
 - **Method / Path**: `GET /api/cms/kategori`
 - **Akses**: publik
 - **Deskripsi**: Daftar kartu kategori beranda (`cms_kategori`) yang aktif,
   terurut. Berbeda dari kategori produk (`/api/categories`).
 
-### 19.5. Galeri (Publik)
+### 17.5. Galeri (Publik)
 - **Method / Path**: `GET /api/cms/galeri`
 - **Akses**: publik
 - **Deskripsi**: Info galeri (`cms_galeri`, satu baris `id_galeri = 1`) beserta
   seluruh gambar (`cms_gambar_galeri`) terurut. Bila galeri tidak ada/nonaktif →
   `data: null`.
 
-### 19.6. Profil Usaha (Publik)
+### 17.6. Profil Usaha (Publik)
 - **Method / Path**: `GET /api/cms/profil-usaha`
 - **Akses**: publik
 - **Deskripsi**: Identitas toko (`profil_usaha`, satu baris `id_profil_usaha = 1`):
   nama, deskripsi, logo, email, telepon/WhatsApp, alamat, Google Maps, dan
   `jam_operasional` (array hari/jam). Bila belum diisi → `data: null`.
 
-### 19.7. Fasilitas Usaha (Publik)
+### 17.7. Fasilitas Usaha (Publik)
 - **Method / Path**: `GET /api/cms/fasilitas`
 - **Akses**: publik
 - **Deskripsi**: Daftar fasilitas aktif, diurutkan `urutan_tampilan`.
 
-### 19.8. Banner Hero — Kelola (Admin)
+### 17.8. Banner Hero — Kelola (Admin)
 - **Method / Path**: `GET /api/admin/cms/hero`, `POST /api/admin/cms/hero`,
   `PUT /api/admin/cms/hero/{id}`, `DELETE /api/admin/cms/hero/{id}`
 - **Akses**: admin
@@ -1769,14 +1516,14 @@ kategori, fasilitas). `url_gambar`/`url_logo` dihasilkan dari disk `public`.
   `tautan_tombol`, `gambar`. `gambar` divalidasi `image|mimes:jpg,jpeg,png,webp|max:2048`.
   Mengganti gambar menghapus berkas lama; DELETE menghapus baris + berkas.
 
-### 19.9. Kategori CMS — Kelola (Admin)
+### 17.9. Kategori CMS — Kelola (Admin)
 - **Method / Path**: `GET /api/admin/cms/kategori`, `POST /api/admin/cms/kategori`,
   `PUT /api/admin/cms/kategori/{id}`, `DELETE /api/admin/cms/kategori/{id}`
 - **Akses**: admin
 - **Deskripsi**: CRUD kartu kategori beranda. Saat buat: `nama_kategori`
   (unik), `judul`, `tautan_tujuan`, `gambar` wajib. `gambar` multipart.
 
-### 19.10. Galeri — Kelola (Admin)
+### 17.10. Galeri — Kelola (Admin)
 - **Method / Path**:
   - `GET /api/admin/cms/galeri` — info galeri + gambar
   - `PUT /api/admin/cms/galeri` — buat/ubah info galeri (`judul` wajib saat pertama)
@@ -1787,7 +1534,7 @@ kategori, fasilitas). `url_gambar`/`url_logo` dihasilkan dari disk `public`.
 - **Deskripsi**: `cms_galeri` dirancang satu baris (`id_galeri = 1`). Unggah
   gambar sebelum galeri dibuat → `404`.
 
-### 19.11. Profil Usaha — Kelola (Admin)
+### 17.11. Profil Usaha — Kelola (Admin)
 - **Method / Path**: `GET /api/admin/cms/profil-usaha`, `PUT /api/admin/cms/profil-usaha`
 - **Akses**: admin
 - **Deskripsi**: Baca/ubah profil. PUT bersifat parsial (`multipart/form-data`
@@ -1795,14 +1542,14 @@ kategori, fasilitas). `url_gambar`/`url_logo` dihasilkan dari disk `public`.
   → `422`. `jam_operasional` berupa array objek, mis.
   `[{"hari":"Senin","jam_buka":"08:00","jam_tutup":"17:00"},{"hari":"Minggu","tutup":true}]`.
 
-### 19.12. Fasilitas Usaha — Kelola (Admin)
+### 17.12. Fasilitas Usaha — Kelola (Admin)
 - **Method / Path**: `GET /api/admin/cms/fasilitas`, `POST /api/admin/cms/fasilitas`,
   `PUT /api/admin/cms/fasilitas/{id}`, `DELETE /api/admin/cms/fasilitas/{id}`
 - **Akses**: admin
 - **Deskripsi**: CRUD fasilitas. Field: `nama_fasilitas` (wajib),
   `deskripsi`, `urutan_tampilan`, `status_aktif`.
 
-### 19.13. Gambar Voucher
+### 17.13. Gambar Voucher
 - **Method / Path**: `DELETE /api/vouchers/{id}/gambar`
 - **Akses**: admin
 - **Deskripsi**: Menghapus gambar voucher (mengosongkan kolom `gambar` dan
@@ -1810,9 +1557,31 @@ kategori, fasilitas). `url_gambar`/`url_logo` dihasilkan dari disk `public`.
   lewat `POST /api/vouchers` dan `PUT /api/vouchers/{id}` (field multipart
   `gambar`). Respons voucher kini menyertakan `url_gambar`.
 
+### 17.14. Promo CMS — Kelola (Admin)
+- **Method / Path**:
+  - `GET /api/admin/cms/promos` — daftar semua konfigurasi promo
+  - `POST /api/admin/cms/promos` — buat promo
+  - `PUT /api/admin/cms/promos/{id}` — ubah promo secara parsial
+  - `DELETE /api/admin/cms/promos/{id}` — hapus konfigurasi promo
+- **Akses**: admin
+- **Deskripsi**: Promo disimpan sebagai beberapa baris dengan `id_cms_promo`
+  auto-increment, `id_voucher` (FK nullable ke voucher, `ON DELETE SET NULL`),
+  `badge`, `tautan_tujuan`, `gambar`, dan `urutan_tampilan`.
+- Saat POST, `id_voucher` wajib dan harus ada; `badge` maksimal 40 karakter;
+  `tautan_tujuan` maksimal 500 karakter; `urutan_tampilan` bilangan bulat
+  `0–65535` (jika tidak dikirim, promo baru diletakkan setelah urutan tertinggi).
+  `gambar` opsional dalam multipart, berupa JPG/JPEG/PNG/WEBP maksimal 2 MB.
+  PUT menerima field yang sama secara parsial; gambar lama dipertahankan jika
+  tidak ada berkas baru. POST multipart dapat memakai `_method=PUT` untuk
+  method spoofing pada perubahan.
+- DELETE menghapus baris konfigurasi dan berkas gambar promo, tetapi **tidak**
+  menghapus voucher. Endpoint tunggal lama `GET/POST /api/admin/cms/promo` dan
+  `DELETE /api/admin/cms/promo/gambar` tetap tersedia untuk kompatibilitas dan
+  bekerja pada promo dengan ID `1`.
+
 ---
 
-## 20. Panduan Ukuran (Size Guide)
+## 18. Panduan Ukuran (Size Guide)
 
 Gambar panduan ukuran disimpan pada tabel `gambar_ukuran`. Kolomnya:
 `id_gambar_ukuran` (BIGINT UNSIGNED, primary key, auto increment), `gambar`
@@ -1820,7 +1589,7 @@ Gambar panduan ukuran disimpan pada tabel `gambar_ukuran`. Kolomnya:
 dan `diperbarui_pada`. Berkas diunggah lewat `multipart/form-data` dan hanya
 gambar `jpg`/`jpeg`/`png`/`webp` maksimal 2 MB (2048 KB) yang diterima.
 
-### 20.1. Daftar Gambar Panduan Ukuran (Publik)
+### 18.1. Daftar Gambar Panduan Ukuran (Publik)
 - **Method / Path**: `GET /api/gambar-ukuran`
 - **Akses**: publik
 - **Deskripsi**: Menampilkan seluruh gambar panduan ukuran, diurutkan menurut
@@ -1847,12 +1616,12 @@ Respons `200`:
 
 Bila belum ada data → `200` dengan `data: []`.
 
-### 20.2. Daftar Gambar Panduan Ukuran (Admin)
+### 18.2. Daftar Gambar Panduan Ukuran (Admin)
 - **Method / Path**: `GET /api/admin/gambar-ukuran`
 - **Akses**: admin
 - **Deskripsi**: Sama seperti 20.1 (semua gambar), khusus untuk panel admin.
 
-### 20.3. Unggah Gambar Panduan Ukuran (Admin)
+### 18.3. Unggah Gambar Panduan Ukuran (Admin)
 - **Method / Path**: `POST /api/admin/gambar-ukuran`
 - **Akses**: admin
 - **Deskripsi**: Mengunggah satu gambar baru (`multipart/form-data`).
@@ -1879,7 +1648,7 @@ Respons `201`:
 }
 ```
 
-### 20.4. Ganti Gambar Panduan Ukuran (Admin)
+### 18.4. Ganti Gambar Panduan Ukuran (Admin)
 - **Method / Path**: `PUT /api/admin/gambar-ukuran/{id}`
 - **Akses**: admin
 - **Deskripsi**: Mengganti gambar lama dengan gambar baru (`multipart/form-data`,
@@ -1889,7 +1658,7 @@ Respons `201`:
 - **Respons**: `200` (objek gambar terbaru), `404` bila `{id}` tidak ada,
   `422` bila berkas tidak valid.
 
-### 20.5. Hapus Gambar Panduan Ukuran (Admin)
+### 18.5. Hapus Gambar Panduan Ukuran (Admin)
 - **Method / Path**: `DELETE /api/admin/gambar-ukuran/{id}`
 - **Akses**: admin
 - **Deskripsi**: Menghapus baris + berkasnya. Berkas hanya dihapus bila tidak
@@ -1901,7 +1670,7 @@ gagal, `404` data tidak ditemukan.
 
 ---
 
-## 21. Laporan Keuangan (Admin)
+## 19. Laporan Keuangan (Admin)
 
 Semua angka pada modul ini dihitung oleh `PaymentMetricService` yang sama
 dengan `GET /api/admin/dashboard/*`, sehingga hasil laporan selalu konsisten
@@ -1912,7 +1681,7 @@ dengan dashboard untuk filter yang sama. Sumber data: tabel `payments` dan
 > bersih** — data biaya/pengeluaran belum tersedia dan refund belum didukung
 > skema saat ini.
 
-### 21.1. Ringkasan Laporan
+### 19.1. Ringkasan Laporan
 - **Method / Path**: `GET /api/admin/reports/summary`
 - **Akses**: admin
 - **Deskripsi**: Ringkasan pendapatan, sebaran status pembayaran, dan nilai
@@ -1945,7 +1714,7 @@ Respons `200` (`data`):
 }
 ```
 
-### 21.2. Buku Kas Transaksi
+### 19.2. Buku Kas Transaksi
 - **Method / Path**: `GET /api/admin/reports/transactions`
 - **Akses**: admin
 - **Deskripsi**: Daftar transaksi pembayaran dengan paginasi dan filter.
@@ -1971,7 +1740,7 @@ Respons `200` berisi `data` (array transaksi) + `meta` (`current_page`,
 `jumlah_pembayaran`, `provider`, `metode_pembayaran`, `provider_transaction_id`,
 `dibuat_pada`.
 
-### 21.3. Detail Transaksi
+### 19.3. Detail Transaksi
 - **Method / Path**: `GET /api/admin/reports/transactions/{id}`
 - **Akses**: admin
 - **Deskripsi**: Detail satu transaksi pembayaran beserta ringkasan pesanan dan
@@ -1984,7 +1753,7 @@ Respons `200` berisi `id_payment`, `id_order`, `nomor_pesanan`, `waktu`,
 
 `404` bila transaksi tidak ada. `payment_url` tidak diekspos (rahasia pelanggan).
 
-### 21.4. Ekspor Laporan PDF
+### 19.4. Ekspor Laporan PDF
 - **Method / Path**: `GET /api/admin/reports/export/pdf`
 - **Akses**: admin
 - **Deskripsi**: Unduh laporan keuangan sebagai PDF berisi ringkasan periode +
@@ -2005,7 +1774,7 @@ Jumlah baris transaksi pada PDF dibatasi oleh `ReportPdfService::MAX_TRANSACTION
 
 ## Ringkasan Cepat
 
-Seluruh **149 endpoint** yang aktif pada `routes/api.php`. Kolom *Akses*:
+Seluruh **154 endpoint** yang aktif pada `routes/api.php`. Kolom *Akses*:
 `publik` (tanpa token), `login` (Bearer token Sanctum, data milik sendiri),
 `admin` (Bearer token + `peran = admin`).
 
@@ -2041,9 +1810,6 @@ Seluruh **149 endpoint** yang aktif pada `routes/api.php`. Kolom *Akses*:
 | 28 | GET | /api/vouchers/available | login | Daftar voucher yang bisa dipakai sekarang |
 | 29 | POST | /api/vouchers/validate | login | Validasi kode voucher + hitung diskon |
 | 30 | GET | /api/voucher-usages/me | login | Riwayat pemakaian voucher sendiri |
-| 31 | GET | /api/shipping/destinations | login | Daftar kota/provinsi tujuan (RajaOngkir) |
-| 32 | POST | /api/shipping/cost | login | Hitung ongkos kirim ke tujuan |
-| 33 | POST | /api/rajaongkir/check-all | login | Cek ongkos JNE/J&T/POS sekaligus (cache 7 hari) |
 | 34 | POST | /api/checkout | login | Buat pesanan dari isi keranjang |
 | 35 | GET | /api/orders | login | Daftar pesanan sendiri |
 | 36 | GET | /api/orders/{id} | login | Detail pesanan sendiri |
@@ -2133,12 +1899,6 @@ Seluruh **149 endpoint** yang aktif pada `routes/api.php`. Kolom *Akses*:
 | 120 | GET | /api/admin/payments/summary | admin | Ringkasan pembayaran |
 | 121 | GET | /api/admin/shipments | admin | Daftar pengiriman |
 | 122 | PUT | /api/admin/shipments/{id}/status | admin | Ubah status pengiriman |
-| 123 | GET | /api/admin/shipping/config | admin | Ambil konfigurasi RajaOngkir (origin, kurir) |
-| 124 | PUT | /api/admin/shipping/config | admin | Ubah konfigurasi ongkos kirim |
-| 125 | GET | /api/admin/shipping/health | admin | Health check koneksi RajaOngkir |
-| 126 | GET | /api/admin/shipping/couriers | admin | Daftar kurir aktif |
-| 127 | PUT | /api/admin/shipping/couriers/{code} | admin | Aktifkan/nonaktifkan kurir |
-| 128 | POST | /api/admin/shipping/simulate | admin | Simulasi hitung ongkos kirim |
 | 129 | GET | /api/admin/inventory | admin | Daftar inventaris/stok varian |
 | 130 | GET | /api/admin/inventory/movements | admin | Riwayat pergerakan stok |
 | 131 | POST | /api/admin/inventory/adjustments | admin | Penyesuaian stok (masuk/keluar) |
@@ -2160,3 +1920,8 @@ Seluruh **149 endpoint** yang aktif pada `routes/api.php`. Kolom *Akses*:
 | 147 | GET | /api/admin/reports/transactions | admin | Buku kas transaksi + paginasi/filter |
 | 148 | GET | /api/admin/reports/transactions/{id} | admin | Detail satu transaksi pembayaran |
 | 149 | GET | /api/admin/reports/export/pdf | admin | Unduh laporan keuangan (PDF) |
+| 150 | GET | /api/cms/promos | publik | Daftar promo beranda yang aktif |
+| 151 | GET | /api/admin/cms/promos | admin | Daftar konfigurasi promo |
+| 152 | POST | /api/admin/cms/promos | admin | Buat konfigurasi promo |
+| 153 | PUT | /api/admin/cms/promos/{id} | admin | Ubah konfigurasi promo |
+| 154 | DELETE | /api/admin/cms/promos/{id} | admin | Hapus konfigurasi promo tanpa menghapus voucher |

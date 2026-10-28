@@ -30,7 +30,6 @@ class UserAddress extends Model
         'kode_pos',
         'alamat_lengkap',
         'alamat_utama',
-        'id_tujuan_rajaongkir',
     ];
 
     protected function casts(): array

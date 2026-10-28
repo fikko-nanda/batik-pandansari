@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Http\Middleware\EnsureUserIsTeknisi;
+use App\Http\Middleware\RecordApiAuditLog;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -19,8 +22,24 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(fn () => null);
 
+        // Percayai reverse proxy/load balancer agar IP klien asli dipakai untuk
+        // rate limiting dan audit log. Batasi lewat TRUSTED_PROXIES.
+        // Callback ini berjalan sebelum container config siap, jadi env()
+        // dipakai langsung (bukan config()).
+        $middleware->trustProxies(at: array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('TRUSTED_PROXIES', '127.0.0.1,::1'))
+        ))));
+
+        $middleware->append(SecurityHeaders::class);
+
+        $middleware->api(append: [
+            RecordApiAuditLog::class,
+        ]);
+
         $middleware->alias([
             'admin' => EnsureUserIsAdmin::class,
+            'teknisi' => EnsureUserIsTeknisi::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

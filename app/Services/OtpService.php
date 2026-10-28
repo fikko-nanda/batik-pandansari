@@ -8,6 +8,7 @@ use App\Models\PasswordResetOtp;
 use App\Models\PasswordResetTokenCustom;
 use App\Models\RegistrationOtp;
 use App\Models\User;
+use App\Services\Logging\NotificationLogger;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -20,6 +21,8 @@ class OtpService
     public const OTP_RESEND_COOLDOWN_SECONDS = 300;
 
     public const MAX_ATTEMPTS = 5;
+
+    public function __construct(private NotificationLogger $notificationLogger) {}
 
     public function generateOtp(): string
     {
@@ -84,13 +87,26 @@ class OtpService
             'used' => false,
         ]);
 
+        $log = $this->notificationLogger->queued(
+            'registration_otp',
+            $user->id_user,
+            $user->email,
+            'user',
+            $user->id_user
+        );
+
+        $mailable = (new RegistrationOtpMail($otp, $user->nama_pengguna ?? '', $isResend))
+            ->withNotificationLog($log);
+
         try {
-            Mail::to($user->email)->queue(
-                new RegistrationOtpMail($otp, $user->nama_pengguna ?? '', $isResend)
-            );
+            Mail::to($user->email)->queue($mailable);
 
             return true;
         } catch (\Throwable $e) {
+            $this->notificationLogger->markFailed(
+                $log?->id_notification_log,
+                $e
+            );
             report($e);
 
             return false;
@@ -119,13 +135,26 @@ class OtpService
             'used' => false,
         ]);
 
+        $log = $this->notificationLogger->queued(
+            'password_reset_otp',
+            $user->id_user,
+            $user->email,
+            'user',
+            $user->id_user
+        );
+
+        $mailable = (new PasswordResetOtpMail($otp, $user->nama_pengguna ?? '', $isResend))
+            ->withNotificationLog($log);
+
         try {
-            Mail::to($user->email)->queue(
-                new PasswordResetOtpMail($otp, $user->nama_pengguna ?? '', $isResend)
-            );
+            Mail::to($user->email)->queue($mailable);
 
             return true;
         } catch (\Throwable $e) {
+            $this->notificationLogger->markFailed(
+                $log?->id_notification_log,
+                $e
+            );
             report($e);
 
             return false;

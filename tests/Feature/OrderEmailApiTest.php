@@ -11,10 +11,15 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use App\Models\Voucher;
+use App\Models\VoucherUsage;
 use App\Services\InvoiceService;
 use App\Services\MidtransService;
 use App\Services\OrderMailService;
+use App\Services\OrderService;
+use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -93,7 +98,6 @@ class OrderEmailApiTest extends TestCase
             $table->string('kode_pos');
             $table->text('alamat_lengkap');
             $table->boolean('alamat_utama')->default(false);
-            $table->string('id_tujuan_rajaongkir')->nullable();
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });
@@ -110,6 +114,7 @@ class OrderEmailApiTest extends TestCase
             $table->decimal('maksimal_diskon', 12, 2)->nullable();
             $table->unsignedInteger('kuota_total')->nullable();
             $table->unsignedInteger('kuota_per_pengguna')->default(1);
+            $table->string('id_product_peruntukan', 36)->nullable();
             $table->dateTime('tanggal_mulai');
             $table->dateTime('tanggal_selesai');
             $table->string('status_voucher')->default('aktif');
@@ -126,6 +131,7 @@ class OrderEmailApiTest extends TestCase
             $table->decimal('subtotal', 12, 2)->default(0);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);
             $table->decimal('diskon', 12, 2)->default(0);
+            $table->decimal('pph', 12, 2)->default(0);
             $table->decimal('total_pembayaran', 12, 2)->default(0);
             $table->string('nama_penerima');
             $table->string('nomor_telepon_penerima');
@@ -359,6 +365,106 @@ class OrderEmailApiTest extends TestCase
         $this->assertSame('dibayar', $order->fresh()->status_pesanan);
     }
 
+    public function test_payment_window_is_twelve_hours(): void
+    {
+        $base = Carbon::parse('2026-10-23 10:00:00');
+
+        $service = app(OrderService::class);
+
+        $this->assertSame(
+            '2026-10-23 22:00:00',
+            $service->expiryFrom($base)->format('Y-m-d H:i:s')
+        );
+        $this->assertSame(33000.0, $service->pphFrom(300000));
+        $this->assertSame(11000.0, $service->pphFrom(100001), 'Dibulatkan ke rupiah terdekat.');
+    }
+
+    public function test_settlement_sends_paid_order_to_admin_whatsapp(): void
+    {
+        Mail::fake();
+        Http::fake([
+            'api.fonnte.com/*' => Http::response(['status' => true, 'id' => 'wa-test-1'], 200),
+        ]);
+        config([
+            'services.fonnte.token' => 'fonnte-test-token',
+            'services.fonnte.admin_numbers' => ['081234567890'],
+        ]);
+
+        $user = $this->makeUser();
+        $variant = $this->makeVariant();
+        $order = $this->makeOrder($user, $variant);
+        $this->makePendingPayment($order);
+
+        $this->mockNotification([
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'fraud_status' => 'accept',
+            'payment_type' => 'qris',
+            'transaction_id' => 'trx-wa',
+            'gross_amount' => '100000.00',
+            'status_code' => '200',
+        ]);
+
+        $this->postJson('/api/payments/midtrans/notification', [
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'gross_amount' => '100000.00',
+            'status_code' => '200',
+            'signature_key' => 'whatever',
+        ])->assertStatus(200);
+
+        Http::assertSent(function ($request) use ($order) {
+            $message = (string) $request['message'];
+
+            return $request->url() === 'https://api.fonnte.com/send'
+                && (string) $request['target'] === '6281234567890'
+                && $request->hasHeader('Authorization', 'fonnte-test-token')
+                && str_contains($message, 'Nama Pemesan: Budi')
+                && str_contains($message, 'Barang Dipesan:')
+                && str_contains($message, 'Batik Parang')
+                && str_contains($message, 'ID Pesanan: '.$order->nomor_pesanan)
+                && str_contains($message, 'Alamat Pengiriman: Jl. Contoh No. 10, Surakarta')
+                && str_contains($message, 'Total Harga: Rp 100.000,00');
+        });
+    }
+
+    public function test_whatsapp_failure_does_not_cancel_successful_payment(): void
+    {
+        Mail::fake();
+        Http::fake([
+            'api.fonnte.com/*' => Http::response(['status' => false, 'reason' => 'device disconnected'], 500),
+        ]);
+        config([
+            'services.fonnte.token' => 'fonnte-test-token',
+            'services.fonnte.admin_numbers' => ['081234567890'],
+        ]);
+
+        $user = $this->makeUser();
+        $variant = $this->makeVariant();
+        $order = $this->makeOrder($user, $variant, 1, 200000);
+        $this->makePendingPayment($order);
+
+        $this->mockNotification([
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'fraud_status' => 'accept',
+            'payment_type' => 'qris',
+            'transaction_id' => 'trx-wa-fail',
+            'gross_amount' => '200000.00',
+            'status_code' => '200',
+        ]);
+
+        $this->postJson('/api/payments/midtrans/notification', [
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'gross_amount' => '200000.00',
+            'status_code' => '200',
+            'signature_key' => 'whatever',
+        ])->assertStatus(200)->assertJsonPath('success', true);
+
+        $this->assertSame('dibayar', $order->fresh()->status_pesanan);
+    }
+
     // 2. Webhook ganda tidak mengirim email dua kali.
     public function test_duplicate_settlement_sends_email_once(): void
     {
@@ -585,6 +691,19 @@ class OrderEmailApiTest extends TestCase
         $this->assertStringNotContainsString('@endif', $html);
     }
 
+    public function test_order_paid_view_shows_pph_line(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeVariant();
+        $order = $this->makeOrder($user, $variant, 1, 111000);
+        $order->update(['subtotal' => 100000, 'pph' => 11000]);
+
+        $html = (new OrderPaidMail($order->id_order))->render();
+
+        $this->assertStringContainsString('PPh 11%', $html);
+        $this->assertStringContainsString('111.000,00', $html);
+    }
+
     // 14. View email "Pembayaran Berhasil" harus dirender benar saat ada
     // diskon + voucher (kondisi yang dulu memicu ParseError di baris Diskon).
     public function test_order_paid_view_renders_with_discount_and_voucher(): void
@@ -595,9 +714,14 @@ class OrderEmailApiTest extends TestCase
         $voucher = Voucher::create([
             'id_voucher' => (string) Str::uuid(),
             'kode_voucher' => 'HEMAT10',
+            'nama_voucher' => 'Hemat 10 Persen',
             'tipe_diskon' => 'persen',
             'nilai_diskon' => 10,
-            'status_aktif' => true,
+            'minimal_pembelian' => 0,
+            'kuota_per_pengguna' => 1,
+            'tanggal_mulai' => Carbon::now()->subDay(),
+            'tanggal_selesai' => Carbon::now()->addDay(),
+            'status_voucher' => 'aktif',
         ]);
 
         $order = $this->makeOrder($user, $variant);

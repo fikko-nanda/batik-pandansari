@@ -10,11 +10,8 @@ use App\Models\Payment;
 use App\Models\User;
 use App\Models\VoucherUsage;
 use App\Models\WebhookLog;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Midtrans\Config;
-use Tests\Feature\Endpoints\Concerns\FakesRajaOngkir;
 
 /**
  * Endpoint checkout, pesanan (pelanggan), pembayaran (Midtrans),
@@ -22,8 +19,6 @@ use Tests\Feature\Endpoints\Concerns\FakesRajaOngkir;
  */
 class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 {
-    use FakesRajaOngkir;
-
     protected static string $group = 'Checkout & Pesanan';
 
     protected function setUp(): void
@@ -73,21 +68,14 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $catalog = $this->seedCatalog(10, 150000);
         $address = $this->makeAddress($user);
         $this->addToCart($user, $catalog['variant'], 2);
-        $this->fakeRajaOngkirCost(20000);
 
-        $this->note(
-            'Ongkir dihitung backend lewat RajaOngkir (fake 20.000, berat 2 x 500 gram = 1.000 gram); '
-            .'biaya_pengiriman 11.111 yang dikirim klien sengaja dipalsukan dan harus diabaikan.'
-        );
+        $this->note('Checkout tanpa ongkir: total = (subtotal - diskon) + PPh 11%.');
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout sukses (ongkir dihitung backend, biaya_pengiriman klien diabaikan)',
+            'label' => 'Checkout sukses (tanpa ongkir)',
             'json' => [
                 'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
-                'biaya_pengiriman' => 11111,
                 'catatan' => 'Tolong dikemas aman.',
             ],
             'expected' => 201,
@@ -96,19 +84,13 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertSame('menunggu_pembayaran', $data['status_pesanan'] ?? null);
         $this->assertSame(300000.0, (float) ($data['subtotal'] ?? 0), 'Subtotal 2 x 150.000.');
-        $this->assertSame(20000.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Ongkir dari RajaOngkir, bukan nilai klien 11.111.');
+        $this->assertSame(0.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Tidak ada ongkir.');
         $this->assertSame(0.0, (float) ($data['diskon'] ?? 0));
-        $this->assertSame(320000.0, (float) ($data['total_pembayaran'] ?? 0));
+        $this->assertSame(33000.0, (float) ($data['pph'] ?? 0), 'PPh 11% x 300.000.');
+        $this->assertSame(333000.0, (float) ($data['total_pembayaran'] ?? 0));
+        $this->assertSame('Tolong dikemas aman.', $data['catatan'] ?? null);
         $this->assertCount(1, $data['items'] ?? []);
         $this->assertMatchesRegularExpression('/^ORD-\d{8}-\d{4}$/', (string) ($data['nomor_pesanan'] ?? ''));
-
-        Http::assertSent(function (Request $request) {
-            return str_contains($request->url(), '/calculate/domestic-cost')
-                && $request['origin'] == '82935'
-                && $request['destination'] == '61622'
-                && $request['weight'] == 1000
-                && $request['courier'] === 'jne';
-        });
 
         $this->assertSame(
             [
@@ -129,158 +111,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
-    public function test_checkout_dengan_tarif_manual(): void
-    {
-        $user = $this->actingAsRole('pelanggan');
-        $catalog = $this->seedCatalog(10, 150000);
-        $address = $this->makeAddress($user);
-        $this->addToCart($user, $catalog['variant'], 2);
-
-        // Tidak ada fake RajaOngkir: pembuktian bahwa API tidak dipanggil.
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout dengan tarif manual (RajaOngkir dilewati)',
-            'json' => [
-                'id_user_address' => $address->id_user_address,
-                'is_manual_shipping' => true,
-                'shipping_cost' => 22000,
-                'shipping_courier' => 'JNE Reguler (Manual)',
-            ],
-            'expected' => 201,
-        ]);
-
-        $data = $this->recorded[0]['response']['data'] ?? [];
-        $this->assertSame('menunggu_pembayaran', $data['status_pesanan'] ?? null);
-        $this->assertSame(300000.0, (float) ($data['subtotal'] ?? 0), 'Subtotal 2 x 150.000.');
-        $this->assertSame(22000.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Ongkir manual 22.000 dipakai apa adanya.');
-        $this->assertSame(322000.0, (float) ($data['total_pembayaran'] ?? 0), '300.000 + 22.000.');
-        $this->assertStringContainsString('JNE Reguler (Manual)', (string) ($data['catatan'] ?? ''), 'Label kurir manual terekam.');
-
-        Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'rajaongkir'));
-
-        $this->assertSame(
-            [
-                'orders' => '0 -> 1 (+1)',
-                'order_items' => '0 -> 1 (+1)',
-                'order_status_histories' => '0 -> 1 (+1)',
-            ],
-            $this->recorded[0]['db_effect']
-        );
-
-        $this->assertSame(2, (int) $catalog['variant']->fresh()->stok_dipesan, 'Stok tetap direservasi.');
-
-        $this->assertRecorded();
-    }
-
-    public function test_checkout_tarif_manual_tanpa_destination_rajaongkir(): void
-    {
-        $user = $this->actingAsRole('pelanggan');
-        $catalog = $this->seedCatalog(10, 150000);
-        $address = $this->makeAddress($user);
-        // Alamat tanpa tujuan RajaOngkir: mode otomatis akan gagal, mode manual lolos.
-        $address->update(['id_tujuan_rajaongkir' => null]);
-        $this->addToCart($user, $catalog['variant'], 1);
-        $this->fakeRajaOngkirCost(20000);
-
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout tarif manual tanpa id_tujuan_rajaongkir (tetap sukses)',
-            'json' => [
-                'id_user_address' => $address->id_user_address,
-                'is_manual_shipping' => true,
-                'shipping_cost' => 18000,
-                'shipping_courier' => 'J&T Manual',
-            ],
-            'expected' => 201,
-        ]);
-
-        $data = $this->recorded[0]['response']['data'] ?? [];
-        $this->assertSame(18000.0, (float) ($data['biaya_pengiriman'] ?? 0));
-
-        $this->assertRecorded();
-    }
-
-    public function test_checkout_tarif_manual_wajib_shipping_cost(): void
-    {
-        $user = $this->actingAsRole('pelanggan');
-        $catalog = $this->seedCatalog(10, 150000);
-        $address = $this->makeAddress($user);
-        $this->addToCart($user, $catalog['variant'], 1);
-
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout tarif manual tanpa shipping_cost (422)',
-            'json' => [
-                'id_user_address' => $address->id_user_address,
-                'is_manual_shipping' => true,
-            ],
-            'expected' => 422,
-        ]);
-        $this->assertArrayHasKey('shipping_cost', $this->recorded[0]['response']['errors'] ?? []);
-
-        $this->assertSame(0, (int) $catalog['variant']->fresh()->stok_dipesan);
-
-        $this->assertRecorded();
-    }
-
-    public function test_checkout_fallback_manual_saat_kuota_rajaongkir_habis(): void
-    {
-        $user = $this->actingAsRole('pelanggan');
-        $catalog = $this->seedCatalog(10, 150000);
-        $address = $this->makeAddress($user);
-        $this->addToCart($user, $catalog['variant'], 2);
-
-        // RajaOngkir membalas kuota habis (429)...
-        $this->fakeRajaOngkirError(429, 429);
-
-        // ...tetapi klien mengirim tarif manual sebagai fallback.
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout otomatis saat kuota habis -> fallback tarif manual (tetap sukses)',
-            'json' => [
-                'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
-                'shipping_cost' => 25000,
-                'shipping_courier' => 'JNE Reguler (Fallback Manual)',
-            ],
-            'expected' => 201,
-        ]);
-
-        $data = $this->recorded[0]['response']['data'] ?? [];
-        $this->assertSame(25000.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Fallback memakai ongkir manual klien.');
-        $this->assertSame(325000.0, (float) ($data['total_pembayaran'] ?? 0), '300.000 + 25.000.');
-
-        $this->assertRecorded();
-    }
-
-    public function test_checkout_kuota_habis_tanpa_fallback_tetap_429(): void
-    {
-        $user = $this->actingAsRole('pelanggan');
-        $catalog = $this->seedCatalog(10, 150000);
-        $address = $this->makeAddress($user);
-        $this->addToCart($user, $catalog['variant'], 2);
-
-        $this->fakeRajaOngkirError(429, 429);
-
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout otomatis saat kuota habis tanpa tarif manual (429)',
-            'json' => [
-                'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
-            ],
-            'expected' => 429,
-        ]);
-
-        $this->assertSame('RAJAONGKIR_QUOTA_EXCEEDED', $this->recorded[0]['response']['message'] ?? null);
-        $this->assertSame(0, (int) $catalog['variant']->fresh()->stok_dipesan, 'Tidak ada reservasi saat gagal.');
-
-        $this->assertRecorded();
-    }
-
-    public function test_checkout_dengan_voucher_dan_ongkir(): void
+    public function test_checkout_dengan_voucher(): void
     {
         $user = $this->actingAsRole('pelanggan');
         $catalog = $this->seedCatalog(10, 150000);
@@ -293,15 +124,12 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
             'minimal_pembelian' => 0,
             'kuota_per_pengguna' => 5,
         ]);
-        $this->fakeRajaOngkirCost(25000);
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout dengan voucher persen 10% + ongkir backend 25.000',
+            'label' => 'Checkout dengan voucher persen 10% (tanpa ongkir)',
             'json' => [
                 'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
                 'kode_voucher' => 'COCHK10',
             ],
             'expected' => 201,
@@ -310,7 +138,8 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertSame(450000.0, (float) ($data['subtotal'] ?? 0), 'Subtotal 3 x 150.000.');
         $this->assertSame(45000.0, (float) ($data['diskon'] ?? 0), 'Diskon 10% x 450.000.');
-        $this->assertSame(430000.0, (float) ($data['total_pembayaran'] ?? 0), '450.000 + 25.000 - 45.000.');
+        $this->assertSame(44550.0, (float) ($data['pph'] ?? 0), 'PPh 11% x 405.000.');
+        $this->assertSame(449550.0, (float) ($data['total_pembayaran'] ?? 0), '405.000 + 44.550.');
 
         $this->assertSame(
             [
@@ -329,6 +158,48 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_checkout_dengan_voucher_per_produk(): void
+    {
+        $user = $this->actingAsRole('pelanggan');
+        $this->seedCategory();
+        $productA = $this->makeProduct('Batik Peruntukan A');
+        $variantA = $this->makeVariant($productA, 10, 'aktif', 150000);
+        $productB = $this->makeProduct('Batik Lain B');
+        $variantB = $this->makeVariant($productB, 10, 'aktif', 200000);
+        $address = $this->makeAddress($user);
+        $this->addToCart($user, $variantA, 2);
+        $this->addToCart($user, $variantB, 1);
+        $voucher = $this->makeVoucher([
+            'kode_voucher' => 'COPRODUK10',
+            'tipe_diskon' => 'persentase',
+            'nilai_diskon' => 10,
+            'minimal_pembelian' => 0,
+            'kuota_per_pengguna' => 5,
+            'id_product_peruntukan' => $productA->id_product,
+        ]);
+
+        $this->hit('POST', '/api/checkout', [
+            'endpoint' => 'POST /api/checkout',
+            'label' => 'Checkout voucher per produk: diskon hanya dari subtotal produk peruntukan',
+            'json' => [
+                'id_user_address' => $address->id_user_address,
+                'kode_voucher' => 'COPRODUK10',
+            ],
+            'expected' => 201,
+        ]);
+
+        $data = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame(500000.0, (float) ($data['subtotal'] ?? 0), 'Subtotal 2 x 150.000 + 1 x 200.000.');
+        $this->assertSame(30000.0, (float) ($data['diskon'] ?? 0), 'Diskon 10% x 300.000 (produk A saja).');
+        $this->assertSame(51700.0, (float) ($data['pph'] ?? 0), 'PPh 11% x 470.000.');
+        $this->assertSame(521700.0, (float) ($data['total_pembayaran'] ?? 0), '470.000 + 51.700.');
+
+        $usage = VoucherUsage::where('id_voucher', $voucher->id_voucher)->first();
+        $this->assertSame(30000.0, (float) ($usage->jumlah_diskon ?? 0));
+
+        $this->assertRecorded();
+    }
+
     public function test_checkout_gagal(): void
     {
         $user = $this->actingAsRole('pelanggan');
@@ -336,7 +207,6 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $address = $this->makeAddress($user);
         $lain = $this->makeUser('pelanggan');
         $alamatLain = $this->makeAddress($lain);
-        $this->fakeRajaOngkirCost(20000);
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
@@ -345,16 +215,12 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
             'expected' => 422,
         ]);
         $this->assertArrayHasKey('id_user_address', $this->recorded[0]['response']['errors'] ?? []);
-        $this->assertArrayHasKey('kurir', $this->recorded[0]['response']['errors'] ?? [], 'kurir kini wajib.');
-        $this->assertArrayHasKey('layanan', $this->recorded[0]['response']['errors'] ?? [], 'layanan kini wajib.');
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
             'label' => 'Checkout dengan alamat milik pengguna lain',
             'json' => [
                 'id_user_address' => $alamatLain->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
             ],
             'expected' => 404,
         ]);
@@ -364,8 +230,6 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
             'label' => 'Checkout dengan keranjang kosong',
             'json' => [
                 'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
             ],
             'expected' => 422,
         ]);
@@ -377,8 +241,6 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
             'label' => 'Checkout saat stok tidak mencukupi (50 dari stok 10)',
             'json' => [
                 'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
             ],
             'expected' => 422,
         ]);
@@ -390,25 +252,11 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
             'label' => 'Checkout dengan kode voucher tidak dikenal',
             'json' => [
                 'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
                 'kode_voucher' => 'TIDAKADA',
             ],
             'expected' => 422,
         ]);
         $this->assertStringContainsString('Kode voucher tidak ditemukan.', implode(' ', (array) ($this->recorded[4]['response']['errors']['kode_voucher'] ?? [])));
-
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout dengan biaya pengiriman negatif',
-            'json' => [
-                'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
-                'biaya_pengiriman' => -1,
-            ],
-            'expected' => 422,
-        ]);
 
         foreach ($this->recorded as $entry) {
             $this->assertArrayNotHasKey('orders', $entry['db_effect'], 'Pesanan tidak boleh terbentuk: '.$entry['label']);
@@ -427,15 +275,12 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $variant = $this->makeVariant($product, 10, 'aktif');
         $address = $this->makeAddress($user);
         $this->addToCart($user, $variant, 1);
-        $this->fakeRajaOngkirCost(20000);
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
             'label' => 'Checkout berisi varian produk nonaktif (ditolak, transaksi dibatalkan)',
             'json' => [
                 'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
             ],
             'expected' => 422,
         ]);
@@ -447,71 +292,6 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $this->assertSame([], $this->recorded[0]['db_effect'], 'Tidak boleh ada baris pesanan sama sekali.');
         $this->assertSame(10, (int) $variant->fresh()->stok);
         $this->assertSame('aktif', $this->currentCartStatus($user), 'Keranjang tidak boleh ditutup saat checkout gagal.');
-
-        $this->assertRecorded();
-    }
-
-    public function test_checkout_gagal_ongkir(): void
-    {
-        $user = $this->actingAsRole('pelanggan');
-        $catalog = $this->seedCatalog(10, 150000);
-        $address = $this->makeAddress($user);
-        $this->addToCart($user, $catalog['variant'], 1);
-
-        $payload = [
-            'id_user_address' => $address->id_user_address,
-            'kurir' => 'jne',
-            'layanan' => 'CTC',
-        ];
-
-        $this->fakeRajaOngkirError(500, 500);
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout saat RajaOngkir upstream error (502, order tidak dibuat)',
-            'json' => $payload,
-            'expected' => 502,
-        ]);
-        $this->assertSame('RAJAONGKIR_UPSTREAM_ERROR', $this->recorded[0]['response']['message'] ?? null);
-
-        $this->fakeRajaOngkirConnectionError();
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout saat koneksi RajaOngkir gagal (503, order tidak dibuat)',
-            'json' => $payload,
-            'expected' => 503,
-        ]);
-        $this->assertSame('RAJAONGKIR_UNAVAILABLE', $this->recorded[1]['response']['message'] ?? null);
-
-        $this->fakeRajaOngkirCost(20000, 'CTC');
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout dengan layanan yang tidak tersedia pada kurir (422)',
-            'json' => ['id_user_address' => $address->id_user_address, 'kurir' => 'jne', 'layanan' => 'KILAT-SPESIAL'],
-            'expected' => 422,
-        ]);
-        $this->assertSame('LAYANAN_TIDAK_TERSEDIA', $this->recorded[2]['response']['message'] ?? null);
-
-        $address->update(['id_tujuan_rajaongkir' => null]);
-        $this->hit('POST', '/api/checkout', [
-            'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout dengan alamat tanpa tujuan RajaOngkir (422)',
-            'json' => $payload,
-            'expected' => 422,
-        ]);
-        $this->assertSame('ALAMAT_TANPA_TUJUAN_RAJAONGKIR', $this->recorded[3]['response']['message'] ?? null);
-
-        foreach ($this->recorded as $entry) {
-            $this->assertArrayNotHasKey('orders', $entry['db_effect'], 'Pesanan tidak boleh terbentuk: '.$entry['label']);
-            $this->assertArrayNotHasKey('order_items', $entry['db_effect'], 'Order item tidak boleh terbentuk: '.$entry['label']);
-        }
-
-        $this->assertSame(10, (int) $catalog['variant']->fresh()->stok, 'Stok berubah walau checkout ongkir gagal.');
-        $this->assertSame('aktif', $this->currentCartStatus($user), 'Keranjang tidak boleh ditutup saat ongkir gagal.');
-
-        $this->note(
-            'Semua kegagalan ongkir (502 upstream, 503 koneksi, 422 layanan/tujuan) terjadi '
-            .'sebelum transaksi database sehingga order, item, stok, dan keranjang tidak berubah.'
-        );
 
         $this->assertRecorded();
     }
@@ -694,15 +474,12 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $catalog = $this->seedCatalog(10, 150000);
         $address = $this->makeAddress($user);
         $this->addToCart($user, $catalog['variant'], 2);
-        $this->fakeRajaOngkirCost(20000);
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
             'label' => 'Checkout sebagai persiapan pembuatan Snap',
             'json' => [
                 'id_user_address' => $address->id_user_address,
-                'kurir' => 'jne',
-                'layanan' => 'CTC',
             ],
             'expected' => 201,
         ]);
@@ -730,7 +507,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $this->assertStringContainsString('sandbox', (string) ($data['redirect_url'] ?? ''), 'redirect_url menuju sandbox Midtrans.');
         $this->assertSame('menunggu', $data['status_pembayaran'] ?? null);
         $this->assertSame((string) config('services.midtrans.client_key'), (string) ($data['client_key'] ?? ''));
-        $this->assertSame(320000.0, (float) ($data['jumlah_pembayaran'] ?? 0));
+        $this->assertSame(333000.0, (float) ($data['jumlah_pembayaran'] ?? 0));
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9._-]+$/', (string) ($data['snap_token'] ?? ''));
 
         $this->note(
@@ -1067,14 +844,24 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 
         $this->hit('POST', '/api/payments/midtrans/notification', [
             'endpoint' => 'POST /api/payments/midtrans/notification',
-            'label' => 'Webhook tanpa signature_key (ditolak 403, tidak menyentuh database)',
+            'label' => 'Webhook tanpa signature_key (403, dicatat sebagai rejected)',
             'group' => 'Webhook Midtrans',
             'raw' => $payload,
             'expected' => 403,
         ]);
 
-        $this->assertSame([], $this->recorded[0]['db_effect'], 'Signature invalid tidak boleh menulis webhook_logs.');
-        $this->assertSame(0, WebhookLog::count());
+        $this->assertSame(
+            ['webhook_logs' => '0 -> 1 (+1)'],
+            $this->recorded[0]['db_effect'],
+            'Percobaan signature invalid dicatat untuk audit.'
+        );
+        $this->assertSame(1, WebhookLog::count());
+
+        $log = WebhookLog::first();
+        $this->assertFalse($log->signature_valid);
+        $this->assertSame('rejected', $log->processing_status);
+        $this->assertSame('ditolak', $log->status);
+        $this->assertSame(403, (int) $log->http_status);
 
         $this->assertRecorded();
     }
@@ -1094,14 +881,25 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 
         $this->hit('POST', '/api/payments/midtrans/notification', [
             'endpoint' => 'POST /api/payments/midtrans/notification',
-            'label' => 'Webhook dengan signature_key salah (403, tidak menyentuh database)',
+            'label' => 'Webhook dengan signature_key salah (403, dicatat sebagai rejected)',
             'group' => 'Webhook Midtrans',
             'raw' => $payload,
             'expected' => 403,
         ]);
 
-        $this->assertSame([], $this->recorded[0]['db_effect'], 'Signature invalid tidak boleh menulis webhook_logs.');
-        $this->assertSame(0, WebhookLog::count());
+        $this->assertSame(
+            ['webhook_logs' => '0 -> 1 (+1)'],
+            $this->recorded[0]['db_effect'],
+            'Percobaan signature invalid dicatat untuk audit.'
+        );
+        $this->assertSame(1, WebhookLog::count());
+
+        $log = WebhookLog::first();
+        $this->assertFalse($log->signature_valid);
+        $this->assertSame('rejected', $log->processing_status);
+        $this->assertSame('ditolak', $log->status);
+        $this->assertSame(403, (int) $log->http_status);
+        $this->assertStringNotContainsString('signature_key', (string) $log->catatan);
 
         $this->assertRecorded();
     }
