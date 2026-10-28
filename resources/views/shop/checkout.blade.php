@@ -26,7 +26,7 @@
         busyVoucher: false,
 
         // Nomor WhatsApp admin untuk konfirmasi
-        waNumber: '6282210516993',
+        waNumber: '6283820380977',
 
         get selectedAddress() {
             return this.addresses.find(a => (a.id_user_address || a.id) === this.selectedAddressId) ?? null;
@@ -64,7 +64,7 @@
         },
         priceOf(i) { return Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1); },
         imageOf(i) {
-            return PandansariAPI.coverUrl(i.variant?.product?.images) || this.fallbackImage;
+            return PandansariAPI.getProductImage(i) || PandansariAPI.coverUrl(i.variant?.product?.images) || this.fallbackImage;
         },
 
         // === Loader ===
@@ -224,6 +224,14 @@
         },
 
         async init() {
+            try {
+                if (typeof PandansariAPI?.loadCatalogImages === 'function') {
+                    const p = PandansariAPI.loadCatalogImages();
+                    if (p && typeof p.then === 'function') {
+                        p.then(() => { this.items = [...this.items]; }).catch(() => {});
+                    }
+                }
+            } catch (_) {}
             await Promise.all([this.loadCart(), this.loadAddresses()]);
             this.muatVoucher();
             this.loading = false;
@@ -379,7 +387,7 @@
                         <div class="divide-y divide-slate-100 max-h-60 overflow-y-auto pr-1">
                             <template x-for="item in items" :key="item.id_cart_item || item.id">
                                 <div class="py-3 flex gap-3 items-center">
-                                    <img :src="imageOf(item)" :alt="titleOf(item)" class="w-12 h-12 rounded-lg object-cover border border-slate-100 flex-shrink-0">
+                                    <img :src="imageOf(item)" :alt="titleOf(item)" class="w-12 h-12 rounded-lg object-cover border border-slate-100 flex-shrink-0 bg-slate-50" :onerror="`this.src='${fallbackImage}'`">
                                     <div class="flex-1 min-w-0">
                                         <h3 class="text-xs font-semibold text-[#0F1A24] truncate" x-text="titleOf(item)"></h3>
                                         <p class="text-[10px] text-slate-500" x-text="variantLabel(item)"></p>

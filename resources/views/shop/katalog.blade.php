@@ -8,7 +8,7 @@
             selectedCategory: '',
             searchQuery: '',
             sortBy: 'terpopuler',
-            viewMode: 'grid',
+
 
             // --- State dari API ---
             categories: [],       // GET /api/categories → [{ id_category, nama_kategori }]
@@ -298,16 +298,10 @@
                     </div>
                     
                     <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50 shrink-0">
-                        <button @click="viewMode = 'grid'" 
-                                type="button" 
-                                class="p-1.5 transition"
-                                :class="viewMode === 'grid' ? 'bg-white text-slate-900 border-r border-slate-200 shadow-sm' : 'text-slate-400 hover:text-slate-900'">
+    
                             <i class="fa-solid fa-table-cells-large text-xs"></i>
                         </button>
-                        <button @click="viewMode = 'list'" 
-                                type="button" 
-                                class="p-1.5 transition"
-                                :class="viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-900'">
+
                             <i class="fa-solid fa-list text-xs"></i>
                         </button>
                     </div>
@@ -317,7 +311,7 @@
 
             <!-- 5. Grid Produk (2 Kolom di HP / Smartphone, 4 Kolom di Desktop) -->
             <div class="grid gap-3 sm:gap-6 mb-10"
-                 :class="viewMode === 'grid' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'">
+class="grid-cols-2 sm:grid-cols-2 lg:grid-cols-4">
 
             <!-- State API: Skeleton / Error / Kosong -->
             <template x-if="loading">

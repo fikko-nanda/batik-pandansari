@@ -17,7 +17,7 @@
                 <div class="flex gap-2 pt-1">
                     <a href="https://www.instagram.com/_pandansari_/" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-instagram"></i></a>
                     <a href="https://www.tiktok.com/@batikpandansari" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-tiktok"></i></a>
-                    <a href="https://wa.me/6282210516993" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-whatsapp"></i></a>
+                    <a href="https://wa.me/6283820380977" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-whatsapp"></i></a>
                 </div>
             </div>
 

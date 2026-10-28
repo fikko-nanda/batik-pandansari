@@ -72,7 +72,7 @@
                             </span>
                         </a>
                 <!-- WhatsApp CS Button -->
-                <a href="https://wa.me/6282210516993?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi" 
+                <a href="https://wa.me/6283820380977?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi" 
                    target="_blank" 
                    rel="noopener noreferrer"
                    class="hidden md:inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-sm font-['Plus_Jakarta_Sans']">

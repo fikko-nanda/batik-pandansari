@@ -81,7 +81,7 @@
 
             <div>
                 <h2 class="text-base font-bold text-[#0F1A24] mb-2">9. Kontak</h2>
-                <p>Pertanyaan terkait Ketentuan Layanan dapat dikirim ke <a href="https://wa.me/6282210516993"
+                <p>Pertanyaan terkait Ketentuan Layanan dapat dikirim ke <a href="https://wa.me/6283820380977"
                     target="_blank" rel="noopener noreferrer" class="text-[#0369A1] hover:underline">WhatsApp CS
                     Batik Pandansari</a>.</p>
             </div>

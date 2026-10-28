@@ -25,10 +25,11 @@
             busyPay: false,
             fallbackImage: '{{ asset('images/katalog1.webp') }}',
 
-            // Banner sukses pembayaran + hitung mundur pengalihan halaman
+            // Banner sukses pembayaran
             isPaidSuccess: false,
-            countdown: 8,
-            _countdownTimer: null,
+            // Status sinkronisasi pembayaran: idle | syncing | paid-pending
+            statusSync: 'idle',
+            _pollTimer: null,
 
             get subtotal() {
                 return this.items.reduce((s, it) => s + Number(it.price ?? 0), 0);
@@ -45,18 +46,33 @@
             statusLabel(s) {
                 const labels = {
                     'menunggu_pembayaran': 'Menunggu Pembayaran',
+                    'menunggu_verifikasi': 'Menunggu Verifikasi',
                     'dibayar': 'Dibayar', 'diproses': 'Diproses', 'dikirim': 'Sedang Dikirim',
                     'selesai': 'Selesai', 'dibatalkan': 'Dibatalkan'
                 };
                 return labels[s] ?? (s || '-');
             },
             statusBadgeClass(s) {
-                if (s === 'menunggu_pembayaran') return 'bg-amber-100 text-amber-700';
+                if (s === 'menunggu_pembayaran' || s === 'menunggu_verifikasi') return 'bg-amber-100 text-amber-700';
                 if (s === 'dibatalkan') return 'bg-rose-100 text-rose-600';
                 if (s === 'selesai') return 'bg-slate-100 text-slate-600';
                 return 'bg-[#BAE6FD] text-[#0369A1]';
             },
-            canPay() { return this.status === 'menunggu_pembayaran'; },
+            // Status yang ditampilkan: jika pembayaran sudah sukses tapi backend belum
+            // memperbarui status pesanan, tampilkan 'Menunggu Verifikasi' (bukan
+            // 'Menunggu Pembayaran' yang menyesatkan).
+            statusTampil() {
+                const belumSinkron = this.isPaidSuccess || this.statusSync === 'paid-pending';
+                if (this.status === 'menunggu_pembayaran' && belumSinkron) return 'menunggu_verifikasi';
+                return this.status;
+            },
+            // Tombol bayar disembunyikan bila transaksi sudah lunas tapi status pesanan
+            // belum tersinkron (mencegah pembayaran ganda).
+            canPay() {
+                return this.status === 'menunggu_pembayaran'
+                    && !this.isPaidSuccess
+                    && this.statusSync !== 'paid-pending';
+            },
 
             tanggalPesan() {
                 try {
@@ -65,40 +81,79 @@
             },
             formatRupiah(n) { return PandansariAPI.formatRp(n); },
 
+            /** Terapkan data pesanan dari API ke state Alpine. */
+            applyOrder(o) {
+                if (!o) return;
+                this.nomorPesanan = o.nomor_pesanan ?? o.id_order ?? this.orderId;
+                this.status = o.status_pesanan ?? o.status ?? '';
+                this.dibuatPada = o.dibuat_pada ?? o.created_at ?? '';
+                this.totalBayar = Number(o.total_pembayaran ?? o.total ?? 0);
+                this.ongkir = Number(o.ongkir ?? o.biaya_pengiriman ?? 0);
+                this.diskon = Number(o.diskon_voucher ?? o.diskon ?? 0);
+                this.ppn = Number(o.ppn ?? o.ppn_amount ?? o.pajak_ppn ?? 0);
+                // Items backend bersifat FLAT (nama_produk, warna, ukuran, harga_satuan,
+                // jumlah, id_variant) — fallback ke bentuk nested bila ada
+                this.items = (o.items ?? []).map(it => {
+                    const v = it.variant ?? {};
+                    const p = v.product ?? it.product ?? {};
+                    const harga = Number(v.harga ?? it.harga_satuan ?? it.harga ?? 0);
+                    const ukuran = v.ukuran ?? it.ukuran;
+                    const warna = v.warna ?? it.warna;
+                    const jumlah = Number(it.jumlah ?? 1);
+                    return {
+                        name: p.nama_produk ?? it.nama_produk ?? 'Produk',
+                        variant: [ukuran && ('Ukuran ' + ukuran), warna, jumlah > 1 && (jumlah + ' pcs')].filter(Boolean).join(' • '),
+                        price: harga * jumlah,
+                        image: PandansariAPI.getProductImage(it) || PandansariAPI.getProductImage(v) || PandansariAPI.coverUrl(p.images) || this.fallbackImage,
+                        raw: it,
+                    };
+                });
+            },
+
+            refreshItemImages() {
+                this.items.forEach(it => {
+                    const resolved = PandansariAPI.getProductImage(it.raw ?? it);
+                    if (resolved) it.image = resolved;
+                });
+                this.items = [...this.items];
+            },
+
             async load() {
                 this.loading = true;
                 this.errorMsg = '';
                 if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
+
+                // Deteksi redirect dari gateway pembayaran Midtrans
+                const urlParams = new URLSearchParams(window.location.search);
+                const trxStatus = (urlParams.get('transaction_status') || '').toLowerCase();
+                const statusCode = urlParams.get('status_code');
+                if (['settlement', 'capture', 'success'].includes(trxStatus) || statusCode === '200') {
+                    PandansariAPI.toast('Pembayaran berhasil! Mengalihkan ke Pesanan Saya...', true);
+                    setTimeout(() => { window.location.href = '/orders'; }, 1200);
+                    return;
+                }
+
+                try {
+                    if (typeof PandansariAPI?.loadCatalogImages === 'function') {
+                        const p = PandansariAPI.loadCatalogImages();
+                        if (p && typeof p.then === 'function') {
+                            p.then(() => { this.refreshItemImages(); }).catch(() => {});
+                        }
+                    }
+                } catch (_) {}
 
                 // Detail pesanan berdasarkan ID dari URL: GET /api/orders/{id}
                 const res = await PandansariAPI.fetch('/orders/' + this.orderId);
                 this.loading = false;
 
                 if (res.ok && res.data) {
-                    const o = res.data;
-                    this.nomorPesanan = o.nomor_pesanan ?? o.id_order ?? this.orderId;
-                    this.status = o.status_pesanan ?? o.status ?? '';
-                    this.dibuatPada = o.dibuat_pada ?? o.created_at ?? '';
-                    this.totalBayar = Number(o.total_pembayaran ?? o.total ?? 0);
-                    this.ongkir = Number(o.ongkir ?? o.biaya_pengiriman ?? 0);
-                    this.diskon = Number(o.diskon_voucher ?? o.diskon ?? 0);
-                    this.ppn = Number(o.ppn ?? o.ppn_amount ?? o.pajak_ppn ?? 0);
-                    // Items backend bersifat FLAT (nama_produk, warna, ukuran, harga_satuan,
-                    // jumlah, id_variant) — fallback ke bentuk nested bila ada
-                    this.items = (o.items ?? []).map(it => {
-                        const v = it.variant ?? {};
-                        const p = v.product ?? {};
-                        const harga = Number(v.harga ?? it.harga_satuan ?? it.harga ?? 0);
-                        const ukuran = v.ukuran ?? it.ukuran;
-                        const warna = v.warna ?? it.warna;
-                        const jumlah = Number(it.jumlah ?? 1);
-                        return {
-                            name: p.nama_produk ?? it.nama_produk ?? 'Produk',
-                            variant: [ukuran && ('Ukuran ' + ukuran), warna, jumlah > 1 && (jumlah + ' pcs')].filter(Boolean).join(' • '),
-                            price: harga * jumlah,
-                            image: PandansariAPI.coverUrl(p.images) || this.fallbackImage,
-                        };
-                    });
+                    this.applyOrder(res.data);
+                    this.refreshItemImages();
+                    // Transaksi sudah dibayar tapi status pesanan belum berubah di backend?
+                    // Cek status pembayaran terakhir lalu sinkronkan ulang beberapa kali.
+                    if (this.status === 'menunggu_pembayaran') {
+                        this.cekTersimpan();
+                    }
                 } else if (res.status === 401) {
                     this.needLogin = true;
                 } else if (res.status === 404) {
@@ -106,6 +161,56 @@
                 } else {
                     this.errorMsg = res.message;
                 }
+            },
+
+            /** Muat ulang data pesanan tanpa skeleton loading (dipakai polling status). */
+            async refresh() {
+                const res = await PandansariAPI.fetch('/orders/' + this.orderId);
+                if (res.ok && res.data) this.applyOrder(res.data);
+                return this.status;
+            },
+
+            /**
+             * Polling status pesanan setelah pembayaran Midtrans.
+             * Webhook backend butuh waktu beberapa detik, jadi UI menunggu
+             * sampai status berubah dari `menunggu_pembayaran`.
+             */
+            pollStatus(maxTries = 12, delay = 2500) {
+                clearTimeout(this._pollTimer);
+                this.statusSync = 'syncing';
+                let tries = 0;
+                const tick = async () => {
+                    tries += 1;
+                    const status = await this.refresh().catch(() => this.status);
+                    if (status && status !== 'menunggu_pembayaran') {
+                        this.statusSync = 'idle';
+                        this.isPaidSuccess = true;
+                        PandansariAPI.toast('Pembayaran berhasil! Mengalihkan ke Pesanan Saya...', true);
+                        setTimeout(() => { window.location.href = '/orders'; }, 1200);
+                        return;
+                    }
+                    if (tries >= maxTries) {
+                        // Belum tersinkron juga — beri tahu pembeli pembayaran sedang diverifikasi.
+                        this.statusSync = 'paid-pending';
+                        return;
+                    }
+                    this._pollTimer = setTimeout(tick, delay);
+                };
+                this._pollTimer = setTimeout(tick, delay);
+            },
+
+            /** Cek apakah sudah ada transaksi pembayaran lunas tapi status pesanan masih pending. */
+            async cekTersimpan() {
+                try {
+                    const res = await PandansariAPI.lastPayment(this.orderId);
+                    if (!res.ok || !res.data) return;
+                    const p = Array.isArray(res.data) ? res.data[0] : res.data;
+                    const st = String(p.status_transaksi ?? p.transaction_status ?? p.status_pembayaran ?? p.status ?? '').toLowerCase();
+                    if (['settlement', 'capture', 'paid', 'lunas', 'dibayar', 'success', 'berhasil'].includes(st)) {
+                        this.statusSync = 'paid-pending';
+                        this.pollStatus(6, 2500);
+                    }
+                } catch (e) { /* abaikan: transaksi belum ada */ }
             },
 
             // Buka popup Midtrans Snap (QRIS/VA/e-wallet) untuk menyelesaikan pembayaran.
@@ -119,15 +224,25 @@
                     // Response: { snap_token, redirect_url, client_key } — bayarSnap
                     // otomatis fallback ke redirect_url bila popup Snap gagal dimuat.
                     await PandansariAPI.bayarSnap(res.data ?? {}, {
-                        // Pembayaran sukses → tandai status dibayar, tampilkan banner, lalu
-                        // hitung mundur 8 detik dan alihkan pengguna ke Halaman Utama.
+                        // Pembayaran sukses → langsung alihkan ke /orders (Pesanan Saya)
                         onSuccess: () => {
-                            this.status = 'dibayar';
                             this.isPaidSuccess = true;
-                            this.mulaiCountdown();
+                            PandansariAPI.toast('Pembayaran berhasil! Mengalihkan ke Pesanan Saya...', true);
+                            setTimeout(() => {
+                                window.location.href = '/orders';
+                            }, 1200);
                         },
-                        onPending: () => this.load(),
-                        onClose: () => this.load(),
+                        onPending: () => {
+                            PandansariAPI.toast('Menunggu penyelesaian pembayaran. Mengalihkan ke Pesanan Saya...', true);
+                            setTimeout(() => {
+                                window.location.href = '/orders';
+                            }, 1500);
+                        },
+                        // Jangan menimpa status setelah pembayaran sukses (Snap memicu
+                        // onClose juga setelah onSuccess).
+                        onClose: () => {
+                            if (!this.isPaidSuccess && this.statusSync === 'idle') this.refresh();
+                        },
                     });
                 } catch (e) {
                     PandansariAPI.toast(e?.message ?? 'Pembayaran gagal dibuka, silakan coba lagi.', false);
@@ -136,39 +251,53 @@
                 }
             },
 
-            // Hitung mundur 8 detik → window.location.href = '/'
-            mulaiCountdown() {
-                this.countdown = 8;
-                clearInterval(this._countdownTimer);
-                this._countdownTimer = setInterval(() => {
-                    this.countdown -= 1;
-                    if (this.countdown <= 0) {
-                        clearInterval(this._countdownTimer);
-                        window.location.href = '/';
-                    }
-                }, 1000);
-            },
          }"
          x-init="load()">
 
         <div class="max-w-3xl mx-auto px-4 sm:px-6">
 
-            <!-- Banner Sukses Pembayaran + hitung mundur pengalihan halaman -->
-            <div x-show="isPaidSuccess" x-cloak
-                 class="mb-6 bg-emerald-50 border border-emerald-200/90 rounded-2xl p-5 sm:p-6 flex items-start gap-3 shadow-sm">
-                <div class="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                    <i class="fa-solid fa-circle-check text-emerald-600"></i>
+            <!-- Banner status pembayaran -->
+            <div x-show="isPaidSuccess || statusSync !== 'idle'" x-cloak
+                 class="mb-6 rounded-2xl p-5 sm:p-6 flex items-start gap-3 shadow-sm border"
+                 :class="statusSync === 'paid-pending'
+                    ? 'bg-amber-50 border-amber-200/90'
+                    : 'bg-emerald-50 border-emerald-200/90'">
+                <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                     :class="statusSync === 'paid-pending' ? 'bg-amber-100' : 'bg-emerald-100'">
+                    <i class="fa-solid"
+                       :class="statusSync === 'paid-pending'
+                            ? 'fa-clock text-amber-600'
+                            : (statusSync === 'syncing' ? 'fa-circle-notch fa-spin text-emerald-600' : 'fa-circle-check text-emerald-600')"></i>
                 </div>
                 <div>
-                    <h3 class="text-sm font-extrabold text-emerald-800">Pembayaran Berhasil!</h3>
-                    <p class="text-xs text-emerald-800/90 leading-relaxed mt-1">
-                        Terima kasih, pembayaran pesanan Anda telah kami terima dan sedang diproses.
-                    </p>
-                    <p class="text-[11px] text-emerald-700/90 mt-2 font-semibold">
-                        <i class="fa-solid fa-house mr-1"></i>
-                        Dialihkan ke Halaman Utama dalam
-                        <span class="font-extrabold text-emerald-700" x-text="countdown"></span> detik…
-                    </p>
+                    <h3 class="text-sm font-extrabold"
+                        :class="statusSync === 'paid-pending' ? 'text-amber-800' : 'text-emerald-800'"
+                        x-text="statusSync === 'paid-pending'
+                            ? 'Pembayaran Diterima, Menunggu Verifikasi'
+                            : (statusSync === 'syncing' ? 'Menyinkronkan Status Pembayaran…' : 'Pembayaran Berhasil!')"></h3>
+                    <p class="text-xs leading-relaxed mt-1"
+                       :class="statusSync === 'paid-pending' ? 'text-amber-800/90' : 'text-emerald-800/90'"
+                       x-text="statusSync === 'paid-pending'
+                            ? 'Pembayaran Anda sudah tercatat oleh Midtrans, namun status pesanan belum diperbarui di server. Silakan muat ulang halaman ini beberapa saat lagi atau hubungi admin via WhatsApp.'
+                            : (statusSync === 'syncing'
+                                ? 'Pembayaran berhasil. Mohon tunggu, status pesanan sedang diperbarui…'
+                                : 'Terima kasih, pembayaran pesanan Anda telah kami terima dan sedang diproses.')"></p>
+                    <div class="flex flex-wrap items-center gap-2 mt-3">
+                        <button type="button" @click="load()"
+                                class="inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg border transition cursor-pointer"
+                                :class="statusSync === 'paid-pending'
+                                    ? 'border-amber-300 text-amber-800 hover:bg-amber-100'
+                                    : 'border-emerald-300 text-emerald-800 hover:bg-emerald-100'">
+                            <i class="fa-solid fa-rotate-right text-[10px]"></i> Muat Ulang Status
+                        </button>
+                        <a href="/orders"
+                           class="inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg border transition"
+                           :class="statusSync === 'paid-pending'
+                               ? 'border-amber-300 text-amber-800 hover:bg-amber-100'
+                               : 'border-emerald-300 text-emerald-800 hover:bg-emerald-100'">
+                            <i class="fa-solid fa-receipt text-[10px]"></i> Lihat Riwayat Pesanan
+                        </a>
+                    </div>
                 </div>
             </div>
 
@@ -231,8 +360,8 @@
                                 <p class="mt-1 text-xs text-slate-500" x-text="tanggalPesan()"></p>
                             </div>
                             <div class="flex items-center gap-2">
-                                <span class="px-3 py-1.5 rounded-full text-xs font-bold" x-text="statusLabel(status)"
-                                      :class="statusBadgeClass(status)"></span>
+                                <span class="px-3 py-1.5 rounded-full text-xs font-bold" x-text="statusLabel(statusTampil())"
+                                      :class="statusBadgeClass(statusTampil())"></span>
                                 <button @click="load()" title="Muat ulang status terbaru"
                                         class="w-8 h-8 rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-[#0F1A24] transition flex items-center justify-center cursor-pointer">
                                     <i class="fa-solid fa-rotate-right text-xs"></i>
@@ -254,7 +383,7 @@
                         <ul class="space-y-4" x-show="items.length > 0">
                             <template x-for="(it, i) in items" :key="i">
                                 <li class="flex gap-4 items-center">
-                                    <img :src="it.image" :alt="it.name" class="w-16 h-16 rounded-xl object-cover border border-slate-100 bg-[#FAF8F5]" />
+                                    <img :src="it.image" :alt="it.name" class="w-16 h-16 rounded-xl object-cover border border-slate-100 bg-[#FAF8F5]" :onerror="`this.src='${fallbackImage}'`" />
                                     <div class="min-w-0 flex-1">
                                         <p class="text-sm font-bold text-[#0F1A24] truncate" x-text="it.name"></p>
                                         <p class="text-xs text-slate-500 mt-0.5" x-text="it.variant || '—'"></p>
@@ -311,12 +440,18 @@
                             </div>
                         </template>
 
-                        <!-- Info bila tidak lagi menunggu pembayaran -->
+                        <!-- Info bila pembayaran sudah masuk / tidak lagi menunggu pembayaran -->
                         <template x-if="!canPay()">
-                            <p class="mt-4 text-xs text-slate-500 bg-[#FAF8F5] rounded-xl px-4 py-3">
-                                <i class="fa-solid fa-circle-info text-[#0369A1] mr-1"></i>
-                                Pembayaran digital hanya tersedia saat status pesanan
-                                <span class="font-bold">Menunggu Pembayaran</span>.
+                            <p class="mt-4 text-xs rounded-xl px-4 py-3"
+                               :class="statusSync === 'paid-pending' ? 'text-amber-800 bg-amber-50' : 'text-slate-500 bg-[#FAF8F5]'">
+                                <i class="fa-solid mr-1"
+                                   :class="statusSync === 'paid-pending' ? 'fa-clock text-amber-600' : 'fa-circle-info text-[#0369A1]'"></i>
+                                <template x-if="statusSync === 'paid-pending'">
+                                    <span>Pembayaran sudah diterima dan sedang diverifikasi admin. Tidak perlu membayar ulang.</span>
+                                </template>
+                                <template x-if="statusSync !== 'paid-pending'">
+                                    <span>Pembayaran digital hanya tersedia saat status pesanan <span class="font-bold">Menunggu Pembayaran</span>.</span>
+                                </template>
                             </p>
                         </template>
 

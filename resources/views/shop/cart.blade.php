@@ -6,6 +6,7 @@
     <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
          x-data="{
             items: [],
+            isLoading: true,
             loadingCart: true,
             errorMsg: '',
             needLogin: false,
@@ -38,6 +39,12 @@
             get totalTagihan() {
                 return Math.max(0, this.subtotal - this.discountAmount);
             },
+            get isCheckoutDisabled() {
+                return this.isLoading || this.needLogin || !this.items.length || !!this.errorMsg;
+            },
+            get isActionDisabled() {
+                return this.isLoading || !this.items.length || !!this.errorMsg || this.needLogin;
+            },
 
             // --- Helper render ---
             productTitle(i) { return i.variant?.product?.nama_produk ?? 'Produk'; },
@@ -48,68 +55,131 @@
                 return [v.nama_varian, v.warna && ('Warna: ' + v.warna), v.ukuran && ('Ukuran: ' + v.ukuran)].filter(Boolean).join(' • ');
             },
             imageOf(i) {
-                return PandansariAPI.coverUrl(i.variant?.product?.images) || this.fallbackImage;
+                if (typeof PandansariAPI?.getProductImage === 'function') {
+                    const img = PandansariAPI.getProductImage(i);
+                    if (img) return img;
+                }
+                if (typeof PandansariAPI?.coverUrl === 'function') {
+                    const cover = PandansariAPI.coverUrl(i.variant?.product?.images);
+                    if (cover) return cover;
+                }
+                return this.fallbackImage;
             },
-            formatRupiah(n) { return PandansariAPI.formatRp(n); },
+            formatRupiah(n) {
+                return typeof PandansariAPI?.formatRp === 'function' ? PandansariAPI.formatRp(n) : ('Rp ' + Number(n ?? 0).toLocaleString('id-ID'));
+            },
 
             // === Loader ===
             async load() {
+                this.isLoading = true;
                 this.loadingCart = true;
                 this.needLogin = false;
                 this.errorMsg = '';
-                const res = await PandansariAPI.cart();
-                this.loadingCart = false;
-                if (res.ok) {
-                    const cart = res.data ?? {};
-                    this.items = cart.items ?? (Array.isArray(cart) ? cart : []);
-                    if (!this.items.length) this.msg = '';
-                } else if (res.status === 401) {
-                    this.needLogin = true;
-                } else {
-                    this.errorMsg = res.message;
+                try {
+                    const res = await PandansariAPI.cart();
+                    if (res && res.ok) {
+                        const cart = res.data ?? {};
+                        this.items = cart.items ?? (Array.isArray(cart) ? cart : []);
+                        if (!this.items.length) this.msg = '';
+                    } else if (res && res.status === 401) {
+                        this.needLogin = true;
+                    } else {
+                        this.errorMsg = res?.message || 'Gagal memuat keranjang belanja. Silakan coba lagi.';
+                    }
+                    return res;
+                } catch (err) {
+                    console.error('[Cart] Error loading cart:', err);
+                    this.errorMsg = 'Terjadi kesalahan saat memuat data keranjang belanja.';
+                    return { ok: false, message: this.errorMsg };
+                } finally {
+                    this.isLoading = false;
+                    this.loadingCart = false;
                 }
-                return res;
             },
 
             // === Aksi item ===
             async ubahQty(item, delta) {
-                const next = Math.min(Math.max(1, Number(item.jumlah || 1) + delta), item.variant?.stok ?? 99);
-                if (next === item.jumlah) {
-                    if (delta > 0) this.tampil('Stok tidak mencukupi. Stok tersedia: ' + (item.variant?.stok ?? 0) + '.', false);
+                if (this.isLoading || this.busy) return;
+                const currentQty = Number(item.jumlah || 1);
+                const maxStok = item.variant?.stok != null ? Number(item.variant.stok) : 99;
+                const next = Math.min(Math.max(1, currentQty + delta), maxStok);
+                if (next === currentQty) {
+                    if (delta > 0) this.tampil('Stok tidak mencukupi. Stok tersedia: ' + maxStok + '.', false);
                     return;
                 }
-                const res = await PandansariAPI.updateCartItem(item.id_cart_item, next);
-                if (res.ok) item.jumlah = next;
-                else this.tampil(res.message, false); // mis. 422 stok / varian nonaktif
+                this.busy = true;
+                try {
+                    const res = await PandansariAPI.updateCartItem(item.id_cart_item, next);
+                    if (res && res.ok) {
+                        item.jumlah = next;
+                    } else {
+                        this.tampil(res?.message || 'Gagal memperbarui kuantitas.', false);
+                    }
+                } catch (e) {
+                    this.tampil('Gagal memperbarui kuantitas.', false);
+                } finally {
+                    this.busy = false;
+                }
             },
             async hapusItem(index) {
+                if (this.isLoading || this.busy) return;
                 const item = this.items[index];
-                const res = await PandansariAPI.removeCartItem(item.id_cart_item);
-                if (res.ok) this.items.splice(index, 1);
-                else this.tampil(res.message, false);
+                if (!item) return;
+                this.busy = true;
+                try {
+                    const res = await PandansariAPI.removeCartItem(item.id_cart_item);
+                    if (res && res.ok) {
+                        this.items.splice(index, 1);
+                        this.tampil('Item berhasil dihapus.', true);
+                    } else {
+                        this.tampil(res?.message || 'Gagal menghapus item.', false);
+                    }
+                } catch (e) {
+                    this.tampil('Gagal menghapus item.', false);
+                } finally {
+                    this.busy = false;
+                }
             },
             async kosongkan() {
+                if (this.isLoading || this.busy || !this.items.length) return;
                 this.busy = true;
-                const res = await PandansariAPI.clearCart();
-                this.busy = false;
-                if (res.ok) { this.items = []; this.voucher = null; this.tampil('Keranjang berhasil dikosongkan.', true); }
-                else this.tampil(res.message, false);
+                try {
+                    const res = await PandansariAPI.clearCart();
+                    if (res && res.ok) {
+                        this.items = [];
+                        this.voucher = null;
+                        this.tampil('Keranjang berhasil dikosongkan.', true);
+                    } else {
+                        this.tampil(res?.message || 'Gagal mengosongkan keranjang.', false);
+                    }
+                } catch (e) {
+                    this.tampil('Gagal mengosongkan keranjang.', false);
+                } finally {
+                    this.busy = false;
+                }
             },
 
             // === Voucher ===
             async applyVoucher() {
-                if (!this.couponCode.trim()) return;
+                if (this.isActionDisabled || this.busyVoucher || !this.couponCode.trim()) return;
                 this.busyVoucher = true;
-                const res = await PandansariAPI.validateVoucher(this.couponCode.trim().toUpperCase(), this.subtotal);
-                this.busyVoucher = false;
-                if (res.ok) {
-                    this.voucher = res.data;
-                    this.voucherOk = true;
-                    this.voucherMsg = res.message;
-                } else {
+                try {
+                    const res = await PandansariAPI.validateVoucher(this.couponCode.trim().toUpperCase(), this.subtotal);
+                    if (res && res.ok) {
+                        this.voucher = res.data;
+                        this.voucherOk = true;
+                        this.voucherMsg = res.message;
+                    } else {
+                        this.voucher = null;
+                        this.voucherOk = false;
+                        this.voucherMsg = res?.message || 'Kode voucher tidak valid.';
+                    }
+                } catch (e) {
                     this.voucher = null;
                     this.voucherOk = false;
-                    this.voucherMsg = res.message;
+                    this.voucherMsg = 'Gagal memvalidasi voucher.';
+                } finally {
+                    this.busyVoucher = false;
                 }
             },
             hapusVoucher() {
@@ -122,9 +192,23 @@
             },
 
             async init() {
-                const res = await this.load();
-                // Detail pesan gagal tidak blok UI — cukup banner
-                if (res.ok && this.voucherMsg === '') { /* silent */ }
+                // Panggil loadCatalogImages dengan aman (pengecekan method + try/catch agar tidak unhandled error)
+                try {
+                    if (typeof PandansariAPI?.loadCatalogImages === 'function') {
+                        const p = PandansariAPI.loadCatalogImages();
+                        if (p && typeof p.then === 'function') {
+                            p.then(() => {
+                                this.items = [...this.items];
+                            }).catch(err => {
+                                console.warn('[Cart] loadCatalogImages warning:', err);
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Cart] Error invoking loadCatalogImages:', e);
+                }
+
+                await this.load();
             }
          }">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
@@ -186,9 +270,14 @@
                         </div>
                     </template>
                     <template x-if="errorMsg">
-                        <div class="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl px-4 py-3 flex items-center gap-2">
-                            <i class="fa-solid fa-triangle-exclamation"></i>
-                            <span x-text="errorMsg"></span>
+                        <div class="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl px-4 py-3 flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                <span x-text="errorMsg"></span>
+                            </div>
+                            <button type="button" @click="load()" class="text-[11px] font-bold text-rose-800 underline hover:no-underline cursor-pointer">
+                                Coba Lagi
+                            </button>
                         </div>
                     </template>
 
@@ -198,7 +287,7 @@
                             <span x-text="items.length"></span> Item Produksi (<span x-text="selectedCount"></span> total kuantitas)
                         </span>
 
-                        <button type="button" :disabled="busy || !items.length" @click="kosongkan()"
+                        <button type="button" :disabled="busy || isLoading || !items.length" @click="kosongkan()"
                                 class="text-xs font-semibold text-slate-500 hover:text-rose-600 transition flex items-center gap-1 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed">
                             <i class="fa-regular fa-trash-can text-xs"></i>
                             <span class="hidden sm:inline">Kosongkan Keranjang</span>
@@ -212,8 +301,8 @@
                         <span x-text="msg"></span>
                     </div>
 
-                    <!-- Cart Item List -->
-                    <template x-if="!needLogin && !errorMsg && !loadingCart && !items.length">
+                    <!-- Cart Item List: Empty State -->
+                    <template x-if="!needLogin && !errorMsg && !isLoading && !items.length">
                         <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm py-16 text-center">
                             <i class="fa-regular fa-face-frown text-3xl text-slate-300 block mb-3"></i>
                             <p class="text-sm font-bold text-[#0F1A24]">Keranjang Anda masih kosong</p>
@@ -222,7 +311,23 @@
                         </div>
                     </template>
 
-                    <template x-if="loadingCart && !needLogin">
+                    <!-- Error State (Saat keranjang kosong karena error) -->
+                    <template x-if="!needLogin && errorMsg && !isLoading && !items.length">
+                        <div class="bg-white rounded-2xl border border-rose-200 shadow-sm py-12 px-6 text-center">
+                            <div class="w-12 h-12 mx-auto rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mb-3">
+                                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+                            </div>
+                            <p class="text-sm font-bold text-[#0F1A24]">Gagal Memuat Keranjang</p>
+                            <p class="text-xs text-slate-500 mt-1" x-text="errorMsg"></p>
+                            <button type="button" @click="load()" class="inline-flex items-center gap-2 mt-4 bg-[#0F1A24] hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition cursor-pointer">
+                                <i class="fa-solid fa-rotate-right text-xs"></i>
+                                <span>Coba Muat Ulang</span>
+                            </button>
+                        </div>
+                    </template>
+
+                    <!-- Loading State -->
+                    <template x-if="isLoading && !needLogin">
                         <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm py-16 text-center">
                             <i class="fa-solid fa-circle-notch fa-spin text-xl text-sky-500"></i>
                             <p class="text-xs text-slate-500 mt-3 font-semibold">Memuat keranjang dari server…</p>
@@ -230,7 +335,7 @@
                     </template>
 
                     <template x-for="(item, index) in items" :key="item.id_cart_item">
-                        <div class="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm transition hover:border-slate-300">
+                        <div x-data="{ isExpanded: false }" class="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-sm transition hover:border-slate-300">
                             <div class="flex items-start gap-3 sm:gap-4">
                                 <!-- Product Image -->
                                 <div class="w-20 h-24 sm:w-28 sm:h-32 bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-100">
@@ -240,16 +345,25 @@
                                 <!-- Product Details -->
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-start justify-between gap-2">
-                                        <div>
-                                            <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block mb-0.5" x-text="productCat(item)"></span>
-                                            <a :href="'/detail/' + (item.variant?.product?.id_product ?? '')" class="hover:underline">
-                                                <h3 class="font-bold text-[#0F1A24] text-xs sm:text-base leading-snug truncate" x-text="productTitle(item)"></h3>
-                                            </a>
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center gap-1.5 mb-0.5">
+                                                <span class="text-[8px] sm:text-[9px] font-bold text-[#0369A1] uppercase tracking-wider block truncate" x-text="productCat(item)"></span>
+                                                <a :href="'/detail/' + (item.variant?.product?.id_product ?? '')" class="text-slate-400 hover:text-sky-600 transition text-[10px] inline-flex items-center shrink-0" title="Buka detail produk">
+                                                    <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                                                </a>
+                                            </div>
+                                            <!-- Product Title (Truncate 1 baris dengan Interactive Expand on Click) -->
+                                            <h3 @click="isExpanded = !isExpanded"
+                                                :title="productTitle(item) + (isExpanded ? ' (Klik untuk ringkas)' : ' (Klik untuk lihat nama lengkap)')"
+                                                :class="isExpanded ? 'whitespace-normal break-words' : 'truncate block overflow-hidden text-ellipsis whitespace-nowrap'"
+                                                class="font-bold text-[#0F1A24] text-xs sm:text-base leading-snug cursor-pointer hover:text-[#0369A1] transition select-none"
+                                                x-text="productTitle(item)">
+                                            </h3>
                                             <p class="text-[10px] sm:text-xs text-slate-500 mt-1 leading-relaxed line-clamp-2" x-text="specLine(item)"></p>
                                         </div>
 
                                         <!-- Delete Single Item -->
-                                        <button @click="hapusItem(index)" type="button" class="text-slate-400 hover:text-rose-500 p-1 transition shrink-0 cursor-pointer">
+                                        <button @click="hapusItem(index)" :disabled="busy || isLoading" type="button" class="text-slate-400 hover:text-rose-500 p-1 transition shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed" title="Hapus dari keranjang">
                                             <i class="fa-regular fa-trash-can text-xs sm:text-sm"></i>
                                         </button>
                                     </div>
@@ -267,9 +381,9 @@
                                         <div class="flex items-center gap-2">
                                             <span class="text-[10px] sm:text-xs text-slate-500 font-medium hidden sm:inline">Kuantitas:</span>
                                             <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
-                                                <button @click="ubahQty(item, -1)" type="button" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition text-xs font-bold cursor-pointer">-</button>
+                                                <button @click="ubahQty(item, -1)" :disabled="busy || isLoading || Number(item.jumlah || 1) <= 1" type="button" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">-</button>
                                                 <span class="w-8 sm:w-10 text-center text-xs font-bold text-[#0F1A24]" x-text="item.jumlah ?? 1"></span>
-                                                <button @click="ubahQty(item, +1)" type="button" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition text-xs font-bold cursor-pointer">+</button>
+                                                <button @click="ubahQty(item, +1)" :disabled="busy || isLoading || (item.variant?.stok != null && Number(item.jumlah || 1) >= Number(item.variant.stok))" type="button" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">+</button>
                                             </div>
                                             <span class="text-[10px] text-slate-400" x-show="item.variant?.stok != null" x-text="'Stok ' + item.variant?.stok"></span>
                                         </div>
@@ -290,10 +404,10 @@
                         <div class="flex items-center gap-2">
                             <div class="relative flex-1">
                                 <i class="fa-solid fa-tag absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                                <input type="text" x-model="couponCode" @keydown.enter="applyVoucher()" placeholder="Masukkan kode voucher..." class="w-full pl-9 pr-3 py-2.5 text-xs font-mono uppercase font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                <input type="text" x-model="couponCode" @keydown.enter="if (!isActionDisabled) applyVoucher()" :disabled="isActionDisabled" placeholder="Masukkan kode voucher..." class="w-full pl-9 pr-3 py-2.5 text-xs font-mono uppercase font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed">
                             </div>
-                            <button @click="applyVoucher()" type="button" :disabled="busyVoucher"
-                                    class="bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold px-4 sm:px-6 py-2.5 rounded-xl transition shrink-0 cursor-pointer disabled:opacity-60">
+                            <button @click="applyVoucher()" type="button" :disabled="busyVoucher || isActionDisabled || !couponCode.trim()"
+                                    class="bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold px-4 sm:px-6 py-2.5 rounded-xl transition shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                                 <span x-show="!busyVoucher">GUNAKAN</span>
                                 <span x-show="busyVoucher"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
                             </button>
@@ -366,10 +480,22 @@
                         </div>
 
                         <!-- Checkout Button -->
-                        <a href="/checkout" class="w-full inline-flex items-center justify-center gap-2 bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold py-3.5 px-4 rounded-xl transition shadow-sm">
-                            <span>LANJUT KE PENGIRIMAN</span>
-                            <i class="fa-solid fa-arrow-right text-xs"></i>
-                        </a>
+                        <button type="button"
+                                @click="if (!isCheckoutDisabled) window.location.href = '/checkout'"
+                                :disabled="isCheckoutDisabled"
+                                :class="isCheckoutDisabled 
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60 shadow-none pointer-events-none' 
+                                    : 'bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] cursor-pointer shadow-sm active:scale-[0.99]'"
+                                class="w-full inline-flex items-center justify-center gap-2 text-xs font-bold py-3.5 px-4 rounded-xl transition duration-150">
+                            <span x-show="isLoading" class="inline-flex items-center gap-2">
+                                <i class="fa-solid fa-circle-notch fa-spin text-xs"></i>
+                                <span>MEMUAT KERANJANG...</span>
+                            </span>
+                            <span x-show="!isLoading" class="inline-flex items-center gap-2">
+                                <span>LANJUT KE PENGIRIMAN</span>
+                                <i class="fa-solid fa-arrow-right text-xs"></i>
+                            </span>
+                        </button>
 
                         <!-- Security Assurance -->
                         <div class="flex items-center justify-center gap-1.5 text-[10px] text-slate-500 pt-1">
@@ -386,7 +512,7 @@
                         <div class="flex-1 min-w-0">
                             <h4 class="font-bold text-[#0F1A24] text-xs">Butuh Panduan Ukuran & Fitting?</h4>
                             <p class="text-[10px] text-slate-500 truncate">Konsultasikan postur</p>
-                            <a href="https://wa.me/6282210516993?text=Halo%20Batik%20Pandansari,%20saya%20butuh%20panduan%20ukuran%20baju" target="_blank" class="inline-block mt-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold px-3 py-1.5 rounded-lg transition w-full text-center">
+                            <a href="https://wa.me/6283820380977?text=Halo%20Batik%20Pandansari,%20saya%20butuh%20panduan%20ukuran%20baju" target="_blank" class="inline-block mt-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold px-3 py-1.5 rounded-lg transition w-full text-center">
                                 Konsultasi WhatsApp Atelier
                             </a>
                         </div>

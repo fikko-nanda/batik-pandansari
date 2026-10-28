@@ -85,9 +85,10 @@ function buildUrl(path = '') {
 window.PandansariAPI = {
     url: API_URL,
     buildUrl,
-    // Log kecil untuk verifikasi di console bahwa layer ini termuat
-    // (jika tidak muncul → app.js gagal dimuat, biasanya Vite dev server tidak jalan)
-    _init() { console.debug('[PandansariAPI] aktif →', API_URL); },
+    _init() {
+        this._initImageCache();
+        console.debug('[PandansariAPI] aktif →', API_URL);
+    },
 
     /* ---------- Token & Profil ---------- */
     getToken() { return localStorage.getItem(TOKEN_KEY); },
@@ -480,15 +481,38 @@ window.PandansariAPI = {
     cmsPromosPublik() { return this.fetch('/cms/promos'); },
     categories() { return this.fetch('/categories'); },
     category(id) { return this.fetch(`/categories/${id}`); },
-    products(params = {}) {
+    async products(params = {}) {
         const q = new URLSearchParams();
         for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') q.set(k, v);
         const qs = q.toString();
-        return this.fetch(`/products${qs ? '?' + qs : ''}`);
+        const res = await this.fetch(`/products${qs ? '?' + qs : ''}`);
+        if (res.ok && Array.isArray(res.data)) {
+            this.cacheProductImages(res.data);
+        }
+        return res;
     },
-    product(id) { return this.fetch(`/products/${id}`); },
-    productVariants(productId) { return this.fetch(`/products/${productId}/variants`); },
-    productImages(productId) { return this.fetch(`/products/${productId}/images`); },
+    async product(id) {
+        const res = await this.fetch(`/products/${id}`);
+        if (res.ok && res.data) {
+            this.cacheProductImages([res.data]);
+        }
+        return res;
+    },
+    async productVariants(productId) {
+        const res = await this.fetch(`/products/${productId}/variants`);
+        if (res.ok && Array.isArray(res.data)) {
+            this.cacheVariantsForProduct(productId, res.data);
+        }
+        return res;
+    },
+    async productImages(productId) {
+        const res = await this.fetch(`/products/${productId}/images`);
+        if (res.ok && Array.isArray(res.data)) {
+            const cover = this.coverUrl(res.data);
+            if (cover) this.cacheImageForProduct(productId, cover);
+        }
+        return res;
+    },
 
     /* ---------- Keranjang ---------- */
     cart() { return this.fetch('/cart'); },
@@ -686,9 +710,9 @@ window.PandansariAPI = {
         try {
             const snap = await this._pastikanSnapScript(key);
             snap.pay(token, {
-                // 1) Pembayaran sukses → backend sudah diperbarui webhook → muat/refresh data UI
-                onSuccess: (r) => { onSuccess ? onSuccess(r) : window.location.reload(); },
-                onPending: (r) => { onPending ? onPending(r) : null; },
+                // 1) Pembayaran sukses → default redirect ke /orders (Pesanan Saya)
+                onSuccess: (r) => { onSuccess ? onSuccess(r) : (window.location.href = '/orders'); },
+                onPending: (r) => { onPending ? onPending(r) : (window.location.href = '/orders'); },
                 onError: (r) => { onError ? onError(r) : this.toast(r?.message ?? 'Pembayaran gagal, silakan coba lagi.', false); },
                 // 2) Popup ditutup user (tanpa selesai bayar) → pemanggil menentukan re-fetch status
                 onClose: () => { onClose ? onClose() : null; },
@@ -1120,9 +1144,193 @@ window.PandansariAPI = {
      * Utama = is_primary true, fallback elemen pertama. Kosong '' jika belum ada gambar.
      */
     coverUrl(images) {
+        if (!images) return '';
+        if (typeof images === 'string') return this.imgUrl(images);
+        if (typeof images === 'object' && !Array.isArray(images)) {
+            if (images.path_gambar || images.url) return this.imgUrl(images.path_gambar ?? images.url);
+        }
         const list = Array.isArray(images) ? images : [];
         const img = list.find(x => x && x.is_primary) ?? list[0];
         return this.imgUrl(img?.path_gambar ?? img?.url ?? '');
+    },
+
+    /* ---------- Cache & Resolver Gambar Produk Terpusat ---------- */
+    _productImageCache: {
+        byId: {},
+        byName: {},
+        byVariant: {},
+        bySku: {},
+    },
+    _catalogLoadingPromise: null,
+
+    _normalizeName(name) {
+        return String(name ?? '')
+            .toLowerCase()
+            .replace(/[_\-\/\\]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    },
+
+    _initImageCache() {
+        try {
+            const raw = localStorage.getItem('pandansari_product_images');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') {
+                    this._productImageCache.byId = { ...this._productImageCache.byId, ...(parsed.byId || {}) };
+                    this._productImageCache.byName = { ...this._productImageCache.byName, ...(parsed.byName || {}) };
+                    this._productImageCache.byVariant = { ...this._productImageCache.byVariant, ...(parsed.byVariant || {}) };
+                    this._productImageCache.bySku = { ...this._productImageCache.bySku, ...(parsed.bySku || {}) };
+                }
+            }
+        } catch (_) {}
+    },
+
+    _persistImageCache() {
+        try {
+            localStorage.setItem('pandansari_product_images', JSON.stringify(this._productImageCache));
+        } catch (_) {}
+    },
+
+    cacheProductImages(products) {
+        const list = Array.isArray(products) ? products : [products];
+        let changed = false;
+        list.forEach(p => {
+            if (!p) return;
+            const cover = this.coverUrl(p.images);
+            if (cover) {
+                if (p.id_product) {
+                    this._productImageCache.byId[p.id_product] = cover;
+                    changed = true;
+                }
+                if (p.nama_produk) {
+                    this._productImageCache.byName[this._normalizeName(p.nama_produk)] = cover;
+                    changed = true;
+                }
+                if (p.sku) {
+                    this._productImageCache.bySku[String(p.sku).trim().toLowerCase()] = cover;
+                    changed = true;
+                }
+                if (Array.isArray(p.variants)) {
+                    p.variants.forEach(v => {
+                        if (v?.id_variant) {
+                            this._productImageCache.byVariant[v.id_variant] = cover;
+                            if (v.sku) this._productImageCache.bySku[String(v.sku).trim().toLowerCase()] = cover;
+                            changed = true;
+                        }
+                    });
+                }
+            }
+        });
+        if (changed) this._persistImageCache();
+    },
+
+    cacheVariantsForProduct(productId, variants) {
+        const cover = this._productImageCache.byId[productId];
+        if (!cover || !Array.isArray(variants)) return;
+        let changed = false;
+        variants.forEach(v => {
+            if (v?.id_variant) {
+                this._productImageCache.byVariant[v.id_variant] = cover;
+                if (v.sku) this._productImageCache.bySku[String(v.sku).trim().toLowerCase()] = cover;
+                changed = true;
+            }
+        });
+        if (changed) this._persistImageCache();
+    },
+
+    cacheImageForProduct(productId, coverUrl) {
+        if (!productId || !coverUrl) return;
+        this._productImageCache.byId[productId] = coverUrl;
+        this._persistImageCache();
+    },
+
+    async loadCatalogImages() {
+        if (this._catalogLoadingPromise) return this._catalogLoadingPromise;
+        this._catalogLoadingPromise = (async () => {
+            try {
+                const res = await this.fetch('/products?per_page=100');
+                if (res.ok && Array.isArray(res.data)) {
+                    this.cacheProductImages(res.data);
+                }
+            } catch (_) {
+            } finally {
+                this._catalogLoadingPromise = null;
+            }
+        })();
+        return this._catalogLoadingPromise;
+    },
+
+    /**
+     * Resolusi URL gambar produk dari berbagai bentuk data (item keranjang, checkout, pesanan, dsb).
+     * Mengecek direct image, nested variant/product, lalu cache berdasarkan id_product, id_variant, sku, atau nama_produk.
+     */
+    getProductImage(item) {
+        if (!item) return '';
+
+        // 1. Gambar string langsung
+        if (typeof item === 'string' && item.trim()) {
+            return this.imgUrl(item);
+        }
+
+        // 2. Properti gambar pada item
+        if (item.image && typeof item.image === 'string' && !item.image.includes('katalog1.webp')) {
+            return this.imgUrl(item.image);
+        }
+        if (item.images) {
+            const c = this.coverUrl(item.images);
+            if (c) return c;
+        }
+        if (item.product?.images) {
+            const c = this.coverUrl(item.product.images);
+            if (c) return c;
+        }
+        if (item.variant?.product?.images) {
+            const c = this.coverUrl(item.variant.product.images);
+            if (c) return c;
+        }
+        if (item.variant?.images) {
+            const c = this.coverUrl(item.variant.images);
+            if (c) return c;
+        }
+
+        // 3. Berdasarkan id_variant
+        const vid = item.id_variant ?? item.variant?.id_variant;
+        if (vid && this._productImageCache.byVariant[vid]) {
+            return this._productImageCache.byVariant[vid];
+        }
+
+        // 4. Berdasarkan id_product
+        const pid = item.id_product ?? item.product?.id_product ?? item.variant?.product?.id_product ?? item.variant?.id_product;
+        if (pid && this._productImageCache.byId[pid]) {
+            return this._productImageCache.byId[pid];
+        }
+
+        // 5. Berdasarkan SKU
+        const sku = item.sku ?? item.variant?.sku;
+        if (sku) {
+            const cleanSku = String(sku).trim().toLowerCase();
+            if (this._productImageCache.bySku[cleanSku]) {
+                return this._productImageCache.bySku[cleanSku];
+            }
+        }
+
+        // 6. Berdasarkan nama produk
+        const name = item.nama_produk ?? item.name ?? item.product?.nama_produk ?? item.variant?.product?.nama_produk;
+        if (name) {
+            const norm = this._normalizeName(name);
+            if (this._productImageCache.byName[norm]) {
+                return this._productImageCache.byName[norm];
+            }
+            // Fuzzy substring match
+            for (const [cachedName, url] of Object.entries(this._productImageCache.byName)) {
+                if (norm.length > 4 && (norm.includes(cachedName) || cachedName.includes(norm))) {
+                    return url;
+                }
+            }
+        }
+
+        return '';
     },
 };
 

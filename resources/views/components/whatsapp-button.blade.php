@@ -8,7 +8,7 @@
         Chat WhatsApp Pandansari
     </span>
 
-    <a href="https://wa.me/6282210516993?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi%20produk"
+    <a href="https://wa.me/6283820380977?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi%20produk"
        target="_blank"
        rel="noopener noreferrer"
        class="w-12 h-12 sm:w-14 sm:h-14 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-2xl hover:bg-[#20ba5a] hover:scale-110 active:scale-95 transition-all duration-300 shrink-0">

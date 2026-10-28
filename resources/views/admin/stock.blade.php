@@ -252,12 +252,12 @@
          x-text="notice"></div>
 
     <!-- 2. SUMMARY CARDS (dari API) -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
 
-        <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
+        <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-4 sm:p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
                 <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">TOTAL PRODUK TERCATAT</span>
-                <div class="text-3xl sm:text-4xl font-black text-slate-900"><span x-text="meta ? num(meta.total) : '…'"></span> SKU</div>
+                <div class="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900"><span x-text="meta ? num(meta.total) : '…'"></span> SKU</div>
             </div>
 
             <div class="relative z-10 mt-6 flex items-center gap-2 text-xs font-bold text-slate-700">
@@ -273,10 +273,10 @@
             </div>
         </div>
 
-        <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
+        <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-4 sm:p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
                 <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">TOTAL UNIT DI HALAMAN INI</span>
-                <div class="text-3xl sm:text-4xl font-black text-slate-900"><span x-text="num(products.reduce((s, p) => s + totalStok(p), 0))"></span> <span class="text-xl font-bold text-slate-700">unit</span></div>
+                <div class="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900"><span x-text="num(products.reduce((s, p) => s + totalStok(p), 0))"></span> <span class="text-lg sm:text-xl font-bold text-slate-700">unit</span></div>
             </div>
 
             <div class="relative z-10 mt-6 flex items-center gap-2 text-xs font-bold text-slate-700">
@@ -293,10 +293,10 @@
         </div>
 
         <!-- Stok Kritis (Low Stock) -->
-        <div class="bg-rose-50 border border-rose-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
+        <div class="bg-rose-50 border border-rose-200/80 rounded-2xl p-4 sm:p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
                 <span class="text-[10px] font-extrabold text-rose-700 uppercase tracking-widest">STOK KRITIS (≤3)</span>
-                <div class="text-3xl sm:text-4xl font-black text-rose-600" x-text="loadingSummary ? '…' : num(lowStockCount)"></div>
+                <div class="text-2xl sm:text-3xl lg:text-4xl font-black text-rose-600" x-text="loadingSummary ? '…' : num(lowStockCount)"></div>
             </div>
 
             <div class="relative z-10 mt-6 flex items-center gap-2 text-xs font-bold text-rose-700">
@@ -304,39 +304,8 @@
                 <span x-text="lowStockCount + ' varian butuh restock segera'"></span>
             </div>
 
-            <a href="/admin/stock-opname" class="relative z-10 mt-4 inline-flex items-center gap-1.5 text-[10px] font-extrabold text-rose-700 hover:underline">
-                <span>Buat Opname</span>
-                <i class="fa-solid fa-arrow-right text-[9px]"></i>
-            </a>
-
             <div class="absolute right-4 top-4 w-9 h-9 bg-rose-200/80 rounded-xl flex items-center justify-center text-rose-600 text-sm">
                 <i class="fa-solid fa-triangle-exclamation"></i>
-            </div>
-            <div class="absolute right-2 -bottom-6 z-0 opacity-30 pointer-events-none">
-                <img src="{{ asset('images/wayang.png') }}" alt="Wayang" class="h-36 w-auto object-contain">
-            </div>
-        </div>
-
-        <!-- Nilai Persediaan (Valuation) -->
-        <div class="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
-            <div class="relative z-10 space-y-1">
-                <span class="text-[10px] font-extrabold text-emerald-700 uppercase tracking-widest">NILAI PERSEDIAAN</span>
-                <div class="text-2xl sm:text-3xl font-black text-emerald-800" x-text="loadingSummary ? '…' : (valuation ? fmt(valuation.total_nilai_jual) : '—')"></div>
-            </div>
-
-            <div class="relative z-10 mt-4 space-y-1 text-xs font-bold text-emerald-700">
-                <div class="flex items-center justify-between">
-                    <span>Modal:</span>
-                    <span x-text="valuation ? fmt(valuation.total_nilai_modal) : '—'"></span>
-                </div>
-                <div class="flex items-center justify-between">
-                    <span>Margin Potensial:</span>
-                    <span x-text="valuation ? fmt(valuation.margin_potensial) : '—'"></span>
-                </div>
-            </div>
-
-            <div class="absolute right-4 top-4 w-9 h-9 bg-emerald-200/80 rounded-xl flex items-center justify-center text-emerald-600 text-sm">
-                <i class="fa-solid fa-sack-dollar"></i>
             </div>
             <div class="absolute right-2 -bottom-6 z-0 opacity-30 pointer-events-none">
                 <img src="{{ asset('images/wayang.png') }}" alt="Wayang" class="h-36 w-auto object-contain">

@@ -1,25 +1,32 @@
 <!-- TOP NAVBAR ADMIN -->
-<header class="bg-white border-b border-slate-200/80 py-3.5 px-6 sticky top-0 z-30 flex items-center justify-between gap-4">
+<header class="bg-white border-b border-slate-200/80 py-2 sm:py-2.5 md:py-3.5 px-3 sm:px-4 md:px-6 sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-3 md:gap-4">
     
-    <!-- Search Input Header -->
-    <div class="relative w-full max-w-md">
-        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-        <input type="text" 
-               placeholder="Cari wastra, no. resi, ID pesanan, atau kolektor..." 
-               class="w-full text-xs font-medium border border-slate-200 rounded-xl pl-9 pr-3 py-2 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+    <div class="flex items-center gap-2 sm:gap-2.5 md:gap-3 flex-1 min-w-0">
+        <!-- Hamburger Menu -->
+        <button type="button" @click="sidebarOpen = true" class="lg:hidden w-9 h-9 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 active:scale-[0.98] transition flex items-center justify-center shrink-0" aria-label="Buka menu">
+            <i class="fa-solid fa-bars text-sm"></i>
+        </button>
+
+        <!-- Search Input Header -->
+        <div class="relative w-full max-w-[220px] xs:max-w-[260px] sm:max-w-xs md:max-w-sm lg:max-w-md">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[11px] sm:text-xs"></i>
+            <input type="text" 
+                   placeholder="Cari wastra, no. resi, ID pesanan..." 
+                   class="w-full text-[11px] sm:text-xs font-medium border border-slate-200 rounded-xl pl-8 sm:pl-9 pr-3 py-1.5 sm:py-2 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+        </div>
     </div>
 
     <!-- Right Action Items -->
-    <div class="flex items-center gap-3 shrink-0 text-xs">
+    <div class="flex items-center gap-1.5 sm:gap-2 md:gap-2.5 lg:gap-3 shrink-0 text-[11px] sm:text-xs">
         
         <!-- Month Selector -->
-        <div class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5">
+        <div class="hidden md:flex bg-slate-100 text-slate-700 px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-xl font-bold items-center gap-1.5">
             <i class="fa-regular fa-calendar text-slate-500"></i>
             <span>{{ now()->locale('id')->translatedFormat('M Y') }}</span>
         </div>
 
         <!-- Live Midtrans Status Badge -->
-        <div class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl font-bold flex items-center gap-2">
+        <div class="hidden xl:flex bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl font-bold items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
             <span class="text-[11px]">Midtrans Live</span>
         </div>
@@ -210,13 +217,13 @@
         <button type="button"
                 onclick="window.PandansariAPI ? PandansariAPI.keluarPanel() : (window.location.href = '/login')"
                 title="Keluar dari panel admin"
-                class="h-9 px-3 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl font-bold flex items-center gap-2 hover:bg-rose-100 hover:text-rose-700 transition cursor-pointer">
-            <i class="fa-solid fa-arrow-right-from-bracket text-xs"></i>
-            <span class="text-[11px] hidden sm:inline">Keluar</span>
+                class="h-8 sm:h-9 px-2 sm:px-2.5 lg:px-3 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl font-bold flex items-center gap-1.5 sm:gap-2 hover:bg-rose-100 hover:text-rose-700 active:scale-[0.98] transition cursor-pointer">
+            <i class="fa-solid fa-arrow-right-from-bracket text-[11px] sm:text-xs"></i>
+            <span class="text-[10px] sm:text-[11px] hidden sm:inline">Keluar</span>
         </button>
 
         <!-- Profile Avatar -->
-        <div class="w-9 h-9 bg-black text-white rounded-full flex items-center justify-center font-bold text-xs" title="Admin Pandansari">
+        <div class="w-8 h-8 sm:w-9 sm:h-9 bg-black text-white rounded-full flex items-center justify-center font-bold text-[10px] sm:text-xs" title="Admin Pandansari">
             <i class="fa-solid fa-user"></i>
         </div>
     </div>
