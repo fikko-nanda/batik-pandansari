@@ -8,13 +8,9 @@ export default defineConfig({
             refresh: true,
         }),
     ],
-    // Gunakan loopback IPv4 agar public/hot tidak berisi http://[::1]:5173
-    // (Chrome menolak host IPv6 ber-bracket sebagai source CSP).
-    // server: {
-    //     host: '127.0.0.1',
-    //     port: 5173,
-    //     strictPort: true,
-    //     hmr: { host: '127.0.0.1' },
-    // },
+    server: {
+        watch: {
+            ignored: ['**/storage/framework/views/**'],
+        },
+    },
 });
-
