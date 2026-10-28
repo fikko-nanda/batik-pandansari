@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\GoogleAuthException;
+use Firebase\JWT\JWT;
 use Google_Client;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -30,6 +31,8 @@ use UnexpectedValueException;
  */
 class GoogleTokenVerifier
 {
+    public const CLOCK_SKEW_LEEWAY_SECONDS = 60;
+
     private const JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 
     private const TOKENINFO_URL = 'https://www.googleapis.com/oauth2/v3/tokeninfo';
@@ -45,7 +48,12 @@ class GoogleTokenVerifier
     {
         $clientId = (string) config('services.google.client_id');
 
-        $client = new Google_Client;
+        $jwt = new class extends JWT
+        {
+            public static $leeway = GoogleTokenVerifier::CLOCK_SKEW_LEEWAY_SECONDS;
+        };
+
+        $client = new Google_Client(['jwt' => $jwt]);
         $client->setClientId($clientId);
 
         try {
@@ -74,7 +82,11 @@ class GoogleTokenVerifier
             return null;
         }
 
-        if (isset($payload['exp']) && time() >= (int) $payload['exp']) {
+        if (
+            ! isset($payload['exp'])
+            || ! is_numeric($payload['exp'])
+            || time() >= (int) $payload['exp'] + self::CLOCK_SKEW_LEEWAY_SECONDS
+        ) {
             return null;
         }
 

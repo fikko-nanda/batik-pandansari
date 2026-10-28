@@ -63,6 +63,12 @@ class ShoppingApiTest extends TestCase
             $table->timestamp('diperbarui_pada')->nullable();
         });
 
+        Schema::create('product_categories', function (Blueprint $table) {
+            $table->string('id_product');
+            $table->string('id_category');
+            $table->primary(['id_product', 'id_category']);
+        });
+
         Schema::create('product_variants', function (Blueprint $table) {
             $table->string('id_variant')->primary();
             $table->string('id_product');
@@ -127,6 +133,7 @@ class ShoppingApiTest extends TestCase
             $table->decimal('maksimal_diskon', 12, 2)->nullable();
             $table->unsignedInteger('kuota_total')->nullable();
             $table->unsignedInteger('kuota_per_pengguna')->default(1);
+            $table->string('id_product_peruntukan', 36)->nullable();
             $table->dateTime('tanggal_mulai');
             $table->dateTime('tanggal_selesai');
             $table->string('status_voucher')->default('aktif');
@@ -170,7 +177,7 @@ class ShoppingApiTest extends TestCase
 
     private function makeProduct(string $nama, string $status = 'aktif'): Product
     {
-        return Product::create([
+        $product = Product::create([
             'id_product' => (string) Str::uuid(),
             'id_category' => 'cat-1',
             'nama_produk' => $nama,
@@ -178,6 +185,10 @@ class ShoppingApiTest extends TestCase
             'deskripsi' => "Deskripsi {$nama}",
             'status_produk' => $status,
         ]);
+
+        $product->categories()->sync(['cat-1']);
+
+        return $product;
     }
 
     private function makeVariant(Product $product, int $stok = 10, string $status = 'aktif'): ProductVariant

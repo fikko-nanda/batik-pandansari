@@ -119,20 +119,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Batas Laju Email Keluar
-    |--------------------------------------------------------------------------
-    |
-    | Jeda minimum (detik) antar pengiriman email oleh worker queue. Berguna
-    | untuk penyedia SMTP yang membatasi email per detik. Mailtrap plan testing
-    | sangat ketat (sering menolak walau hanya 1 email/detik), jadi default 10
-    | detik agar tiap email besar peluang berhasil pada percobaan pertama.
-    |
-    */
-
-    'outbound_rate_seconds' => env('MAIL_OUTBOUND_RATE_SECONDS', 10),
-
-    /*
-    |--------------------------------------------------------------------------
     | Branding Email Transaksional
     |--------------------------------------------------------------------------
     |

@@ -30,6 +30,7 @@ class Voucher extends Model
         'maksimal_diskon',
         'kuota_total',
         'kuota_per_pengguna',
+        'id_product_peruntukan',
         'tanggal_mulai',
         'tanggal_selesai',
         'status_voucher',
@@ -54,6 +55,15 @@ class Voucher extends Model
             VoucherUsage::class,
             'id_voucher',
             'id_voucher'
+        );
+    }
+
+    public function productPeruntukan()
+    {
+        return $this->belongsTo(
+            Product::class,
+            'id_product_peruntukan',
+            'id_product'
         );
     }
 }

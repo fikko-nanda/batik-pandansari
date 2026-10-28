@@ -10,15 +10,23 @@ use Illuminate\Validation\ValidationException;
 class VoucherService
 {
     /**
-     * Validate a voucher code against a subtotal for a given user and return
-     * the voucher together with the discount amount.
-     *
-     * @return array{voucher: Voucher, diskon: float}
+     * @param  array<int, array{id_product: string, harga: float|int, jumlah: int}>  $eligibleLines
+     * @return array{
+     *     voucher: Voucher,
+     *     diskon: float,
+     *     id_product_peruntukan: string|null,
+     *     nama_produk_peruntukan: string|null,
+     *     subtotal_peruntukan: float|null
+     * }
      *
      * @throws ValidationException
      */
-    public function resolve(string $kodeVoucher, float $subtotal, string $idUser): array
-    {
+    public function resolve(
+        string $kodeVoucher,
+        float $subtotal,
+        string $idUser,
+        array $eligibleLines = []
+    ): array {
         $voucher = Voucher::where('kode_voucher', $kodeVoucher)->first();
 
         if (! $voucher) {
@@ -39,10 +47,67 @@ class VoucherService
             $this->invalid('Voucher sudah kedaluwarsa.');
         }
 
-        if ($subtotal < (float) $voucher->minimal_pembelian) {
+        if ($voucher->id_product_peruntukan === null) {
+            if ($subtotal < (float) $voucher->minimal_pembelian) {
+                $minimal = number_format((float) $voucher->minimal_pembelian, 0, ',', '.');
+
+                $this->invalid("Minimal pembelian untuk voucher ini adalah Rp{$minimal}.");
+            }
+
+            if (! $this->passesQuota($voucher, $idUser)) {
+                $this->invalid('Kuota voucher sudah habis atau sudah Anda gunakan.');
+            }
+
+            return [
+                'voucher' => $voucher,
+                'diskon' => $this->calculateDiscount($voucher, $subtotal),
+                'id_product_peruntukan' => null,
+                'nama_produk_peruntukan' => null,
+                'subtotal_peruntukan' => null,
+            ];
+        }
+
+        $voucher->loadMissing('productPeruntukan');
+        $product = $voucher->productPeruntukan;
+        $namaProduk = $product?->nama_produk;
+
+        if (! $product || $product->status_produk !== 'aktif') {
+            $this->invalid(
+                $namaProduk !== null
+                    ? "Voucher hanya berlaku untuk produk {$namaProduk}."
+                    : 'Produk peruntukan voucher tidak ditemukan.'
+            );
+        }
+
+        $subtotalPeruntukan = 0.0;
+
+        foreach ($eligibleLines as $line) {
+            if (($line['id_product'] ?? null) !== $voucher->id_product_peruntukan) {
+                continue;
+            }
+
+            $harga = (float) ($line['harga'] ?? 0);
+            $jumlah = (int) ($line['jumlah'] ?? 0);
+
+            if ($harga <= 0 || $jumlah <= 0) {
+                continue;
+            }
+
+            $subtotalPeruntukan += $harga * $jumlah;
+        }
+
+        $subtotalPeruntukan = round($subtotalPeruntukan, 2);
+
+        if ($subtotalPeruntukan <= 0) {
+            $this->invalid("Voucher hanya berlaku untuk produk {$namaProduk}.");
+        }
+
+        if ($subtotalPeruntukan < (float) $voucher->minimal_pembelian) {
             $minimal = number_format((float) $voucher->minimal_pembelian, 0, ',', '.');
 
-            $this->invalid("Minimal pembelian untuk voucher ini adalah Rp{$minimal}.");
+            $this->invalid(
+                "Minimal belanja untuk produk {$namaProduk} adalah Rp {$minimal}."
+            );
         }
 
         if (! $this->passesQuota($voucher, $idUser)) {
@@ -51,7 +116,10 @@ class VoucherService
 
         return [
             'voucher' => $voucher,
-            'diskon' => $this->calculateDiscount($voucher, $subtotal),
+            'diskon' => $this->calculateDiscount($voucher, $subtotalPeruntukan),
+            'id_product_peruntukan' => $voucher->id_product_peruntukan,
+            'nama_produk_peruntukan' => $namaProduk,
+            'subtotal_peruntukan' => $subtotalPeruntukan,
         ];
     }
 

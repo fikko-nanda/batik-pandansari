@@ -10,7 +10,7 @@ return new class extends Migration
      * Kolom pendukung reservasi stok & batas waktu pembayaran:
      * - product_variants.stok_dipesan : jumlah unit yang sedang direservasi
      *   oleh pesanan yang menunggu pembayaran. Stok tersedia = stok - stok_dipesan.
-     * - orders.kedaluwarsa_pada : batas waktu pembayaran (10 menit sejak pesanan
+     * - orders.kedaluwarsa_pada : batas waktu pembayaran (12 jam sejak pesanan
      *   dibuat). Setelah lewat, pesanan menunggu pembayaran di-expire dan
      *   reservasi stok dilepas.
      */

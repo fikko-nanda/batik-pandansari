@@ -25,14 +25,20 @@ class OrderService
     ];
 
     /**
-     * Batas waktu pembayaran (menit) sejak pesanan dibuat. Berlaku untuk
-     * seluruh metode pembayaran Midtrans.
+     * Batas waktu pembayaran sejak pesanan dibuat. Berlaku untuk seluruh
+     * metode pembayaran Midtrans.
      */
-    public const PAYMENT_WINDOW_MINUTES = 10;
+    public const PAYMENT_WINDOW_HOURS = 12;
+
+    /**
+     * Tarif PPh yang dibebankan ke pembeli.
+     */
+    public const PPH_PERCENTAGE = 11.0;
 
     public function __construct(
         private readonly StockReservationService $reservations,
-        private readonly OrderMailService $orderMail
+        private readonly OrderMailService $orderMail,
+        private readonly WhatsAppService $whatsApp
     ) {}
 
     /**
@@ -42,7 +48,15 @@ class OrderService
     {
         $base = $base ?? now();
 
-        return CarbonImmutable::instance($base)->addMinutes(self::PAYMENT_WINDOW_MINUTES);
+        return CarbonImmutable::instance($base)->addHours(self::PAYMENT_WINDOW_HOURS);
+    }
+
+    /**
+     * PPh dihitung dari nilai setelah diskon dan dibulatkan ke rupiah terdekat.
+     */
+    public function pphFrom(float $dasarPengenaan): float
+    {
+        return (float) round(max(0, $dasarPengenaan) * self::PPH_PERCENTAGE / 100);
     }
 
     /**
@@ -87,7 +101,7 @@ class OrderService
                 $locked,
                 'dibatalkan',
                 null,
-                'Pembayaran melewati batas waktu '.self::PAYMENT_WINDOW_MINUTES.' menit.'
+                'Pembayaran melewati batas waktu '.self::PAYMENT_WINDOW_HOURS.' jam.'
             );
 
             return true;
@@ -199,6 +213,7 @@ class OrderService
         if ($transisi) {
             if ($newStatus === 'dibayar') {
                 $this->orderMail->sendPaid($fresh);
+                $this->whatsApp->sendOrderPaid($fresh);
             } elseif ($newStatus === 'dibatalkan') {
                 $this->orderMail->sendCancelled($fresh);
             }

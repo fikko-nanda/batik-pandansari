@@ -22,6 +22,7 @@ trait CreatesApiSchema
         'users',
         'categories',
         'products',
+        'product_categories',
         'product_images',
         'product_variants',
         'carts',
@@ -96,6 +97,12 @@ trait CreatesApiSchema
             $table->timestamp('diperbarui_pada')->nullable();
         });
 
+        Schema::create('product_categories', function (Blueprint $table) {
+            $table->string('id_product', 36);
+            $table->string('id_category', 36);
+            $table->primary(['id_product', 'id_category']);
+        });
+
         Schema::create('product_images', function (Blueprint $table) {
             $table->string('id_image')->primary();
             $table->string('id_product', 36);
@@ -155,6 +162,7 @@ trait CreatesApiSchema
             $table->decimal('maksimal_diskon', 12, 2)->nullable();
             $table->unsignedInteger('kuota_total')->nullable();
             $table->unsignedInteger('kuota_per_pengguna')->default(1);
+            $table->string('id_product_peruntukan', 36)->nullable();
             $table->dateTime('tanggal_mulai');
             $table->dateTime('tanggal_selesai');
             $table->string('status_voucher', 20)->default('aktif');
@@ -186,7 +194,6 @@ trait CreatesApiSchema
             $table->string('kode_pos', 10);
             $table->text('alamat_lengkap');
             $table->boolean('alamat_utama')->default(false);
-            $table->string('id_tujuan_rajaongkir', 20)->nullable();
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });
@@ -208,6 +215,7 @@ trait CreatesApiSchema
             $table->decimal('subtotal', 12, 2);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);
             $table->decimal('diskon', 12, 2)->default(0);
+            $table->decimal('pph', 12, 2)->default(0);
             $table->decimal('total_pembayaran', 12, 2);
             $table->string('nama_penerima', 150);
             $table->string('nomor_telepon_penerima', 25);
@@ -322,7 +330,7 @@ trait CreatesApiSchema
         Schema::create('shipments', function (Blueprint $table) {
             $table->string('id_shipment')->primary();
             $table->string('id_order', 36);
-            $table->string('provider', 50)->default('rajaongkir');
+            $table->string('provider', 50)->default('manual');
             $table->string('kurir', 100);
             $table->string('layanan_pengiriman', 100)->nullable();
             $table->string('kode_layanan', 100)->nullable();
@@ -439,21 +447,99 @@ trait CreatesApiSchema
             $table->timestamp('diperbarui_pada')->nullable();
         });
 
+        Schema::create('cms_promo', function (Blueprint $table) {
+            $table->id('id_cms_promo');
+            $table->string('id_voucher', 36)->nullable();
+            $table->string('badge', 40)->nullable();
+            $table->string('tautan_tujuan', 500)->nullable();
+            $table->string('gambar', 500)->nullable();
+            $table->unsignedInteger('urutan_tampilan')->default(0);
+            $table->timestamp('dibuat_pada')->nullable();
+            $table->timestamp('diperbarui_pada')->nullable();
+        });
+
         Schema::create('webhook_logs', function (Blueprint $table) {
             $table->string('id_webhook_log')->primary();
             $table->string('provider', 50);
+            $table->string('event_id', 100)->nullable();
+            $table->string('event_type', 100)->nullable();
             $table->string('provider_transaction_id', 150)->nullable();
+            $table->string('idempotency_key', 150)->nullable();
             $table->string('id_order', 36)->nullable();
             $table->string('endpoint', 255);
             $table->string('method', 10);
             $table->longText('payload');
             $table->string('signature', 255)->nullable();
+            $table->boolean('signature_valid')->nullable();
             $table->string('status', 30)->default('diterima');
+            $table->string('processing_status', 30)->default('received');
+            $table->json('payload_summary')->nullable();
+            $table->json('response_summary')->nullable();
+            $table->unsignedSmallInteger('attempt_count')->default(1);
+            $table->text('error_message')->nullable();
+            $table->timestamp('received_at')->nullable();
+            $table->timestamp('processed_at')->nullable();
             $table->unsignedSmallInteger('http_status')->nullable();
             $table->string('alamat_ip', 45)->nullable();
             $table->text('catatan')->nullable();
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
+        });
+
+        Schema::create('api_audit_logs', function (Blueprint $table) {
+            $table->bigIncrements('id_audit_log');
+            $table->string('correlation_id', 100)->nullable();
+            $table->char('id_pengguna', 36)->nullable();
+            $table->string('service_name', 50);
+            $table->string('http_method', 10);
+            $table->string('endpoint', 500);
+            $table->unsignedSmallInteger('http_status')->nullable();
+            $table->json('request_summary')->nullable();
+            $table->json('response_summary')->nullable();
+            $table->unsignedInteger('latency_ms')->nullable();
+            $table->string('ip_address', 45)->nullable();
+            $table->string('error_code', 100)->nullable();
+            $table->text('error_message')->nullable();
+            $table->timestamp('created_at')->nullable();
+        });
+
+        Schema::create('notification_logs', function (Blueprint $table) {
+            $table->bigIncrements('id_notification_log');
+            $table->char('id_pengguna', 36)->nullable();
+            $table->string('channel', 20);
+            $table->string('provider', 50);
+            $table->string('notification_type', 100);
+            $table->string('recipient_masked', 255)->nullable();
+            $table->string('reference_type', 50)->nullable();
+            $table->string('reference_id', 100)->nullable();
+            $table->string('provider_message_id', 150)->nullable();
+            $table->string('delivery_status', 30)->default('queued');
+            $table->unsignedSmallInteger('attempt_count')->default(0);
+            $table->string('error_code', 100)->nullable();
+            $table->text('error_message')->nullable();
+            $table->timestamp('sent_at')->nullable();
+            $table->timestamp('delivered_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('jobs', function (Blueprint $table) {
+            $table->id();
+            $table->string('queue')->index();
+            $table->longText('payload');
+            $table->unsignedSmallInteger('attempts');
+            $table->unsignedInteger('reserved_at')->nullable();
+            $table->unsignedInteger('available_at');
+            $table->unsignedInteger('created_at');
+        });
+
+        Schema::create('failed_jobs', function (Blueprint $table) {
+            $table->id();
+            $table->string('uuid')->unique();
+            $table->string('connection');
+            $table->string('queue');
+            $table->longText('payload');
+            $table->longText('exception');
+            $table->timestamp('failed_at')->useCurrent();
         });
 
         Schema::create('personal_access_tokens', function (Blueprint $table) {

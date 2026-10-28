@@ -2,8 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Exceptions\RajaOngkirException;
-use App\Services\RajaOngkirService;
 use App\Support\CaBundle;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\ConnectionException;
@@ -20,41 +18,12 @@ class ExternalCheckCommand extends Command
 {
     protected $signature = 'external:check';
 
-    protected $description = 'Cek konektivitas endpoint RajaOngkir (destinations & cost) dan Midtrans';
+    protected $description = 'Cek konektivitas endpoint Midtrans';
 
-    public function handle(RajaOngkirService $rajaOngkir): int
+    public function handle(): int
     {
         $rows = [];
         $failed = 0;
-
-        $apiKey = (string) config('services.rajaongkir.api_key');
-        $origin = $rajaOngkir->originId();
-
-        if ($apiKey !== '' && $origin !== null) {
-            $rows[] = ['RajaOngkir config', '<fg=green>OK</>', 'origin='.$origin];
-        } else {
-            $rows[] = ['RajaOngkir config', '<fg=red>GAGAL</>', 'RAJAONGKIR_API_KEY / RAJAONGKIR_ORIGIN_ID kosong'];
-            $failed++;
-        }
-
-        try {
-            $items = $rajaOngkir->destinations('surakarta');
-            $rows[] = ['RajaOngkir destinations', '<fg=green>OK</>', count($items).' tujuan ditemukan'];
-        } catch (RajaOngkirException $e) {
-            $rows[] = ['RajaOngkir destinations', '<fg=red>GAGAL</>', $e->getMessage().' (HTTP '.$e->statusCode().')'];
-            $failed++;
-        }
-
-        if ($origin !== null) {
-            try {
-                $costs = $rajaOngkir->cost($origin, 1000, 'jne');
-                $first = $costs[0];
-                $rows[] = ['RajaOngkir cost', '<fg=green>OK</>', count($costs).' layanan; '.$first['service'].'='.$first['cost']];
-            } catch (RajaOngkirException $e) {
-                $rows[] = ['RajaOngkir cost', '<fg=red>GAGAL</>', $e->getMessage().' (HTTP '.$e->statusCode().')'];
-                $failed++;
-            }
-        }
 
         $serverKey = (string) config('services.midtrans.server_key');
 

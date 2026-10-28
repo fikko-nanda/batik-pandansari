@@ -35,6 +35,15 @@ return [
         ],
     ],
 
+    'fonnte' => [
+        'token' => env('FONNTE_TOKEN'),
+        'url' => env('FONNTE_URL', 'https://api.fonnte.com/send'),
+        'admin_numbers' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('WA_ADMIN_NUMBER', ''))
+        ))),
+    ],
+
     'midtrans' => [
         'merchant_id' => env('MIDTRANS_MERCHANT_ID'),
         'client_key' => env('MIDTRANS_CLIENT_KEY'),
@@ -53,13 +62,6 @@ return [
             ?: rtrim((string) env('APP_URL', 'http://localhost:8000'), '/').'/pembayaran/tertunda',
         'error_redirect_url' => env('MIDTRANS_ERROR_REDIRECT_URL')
             ?: rtrim((string) env('APP_URL', 'http://localhost:8000'), '/').'/pembayaran/gagal',
-    ],
-
-    'rajaongkir' => [
-        'api_key' => env('RAJAONGKIR_API_KEY'),
-        'base_url' => env('RAJAONGKIR_BASE_URL', 'https://rajaongkir.komerce.id/api/v1'),
-        'origin_id' => env('RAJAONGKIR_ORIGIN_ID'),
-        'verify' => env('RAJAONGKIR_VERIFY'),
     ],
 
     // Client ID/Secret OAuth 2.0 dari Google Cloud Console → Credentials.

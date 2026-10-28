@@ -84,6 +84,14 @@ class InvoiceService
                 .'<td class="num">- '.$this->rupiah($diskon).'</td></tr>';
         }
 
+        $pphRow = '';
+        $pph = (float) $order->pph;
+
+        if ($pph > 0) {
+            $pphRow = '<tr><td class="label">PPh 11%</td>'
+                .'<td class="num">'.$this->rupiah($pph).'</td></tr>';
+        }
+
         $statusBayar = $payment?->status_pembayaran ?? 'menunggu';
         $metode = $payment?->metode_pembayaran;
         $dibayarPada = $payment?->paid_at;
@@ -170,7 +178,7 @@ HTML;
 <tbody>
 <tr><td class="label">Subtotal</td><td class="num">{$this->rupiah($order->subtotal)}</td></tr>
 {$diskonRow}
-<tr><td class="label">Biaya pengiriman</td><td class="num">{$this->rupiah($order->biaya_pengiriman)}</td></tr>
+{$pphRow}
 <tr class="grand"><td>Total pembayaran</td><td class="num">{$this->rupiah($order->total_pembayaran)}</td></tr>
 {$metodeRow}
 {$waktuBayarRow}

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\OrderCancelledMail;
 use App\Mail\OrderPaidMail;
 use App\Models\Order;
+use App\Services\Logging\NotificationLogger;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
@@ -21,6 +22,8 @@ use Throwable;
  */
 class OrderMailService
 {
+    public function __construct(private NotificationLogger $notificationLogger) {}
+
     /**
      * Kirim email konfirmasi pembayaran berhasil (dengan invoice PDF).
      */
@@ -45,9 +48,22 @@ class OrderMailService
             return;
         }
 
+        $log = $this->notificationLogger->queued(
+            $jenis === 'paid' ? 'order_paid' : 'order_cancelled',
+            $order->id_user,
+            $email,
+            'order',
+            $order->id_order
+        );
+
+        if (method_exists($mailable, 'withNotificationLog')) {
+            $mailable->withNotificationLog($log);
+        }
+
         try {
             Mail::to($email)->queue($mailable);
         } catch (Throwable $e) {
+            $this->notificationLogger->markFailed($log?->id_notification_log, $e);
             report($e);
         }
     }

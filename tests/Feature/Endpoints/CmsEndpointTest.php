@@ -131,6 +131,54 @@ class CmsEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_cms_promo_menyertakan_data_produk_peruntukan(): void
+    {
+        $this->seedCategory();
+        $product = $this->makeProduct('Batik Promo');
+        $this->makeVariant($product, 10, 'aktif', 125000);
+        $this->makeImage($product);
+        $this->makeVoucher([
+            'kode_voucher' => 'PRODUKPROMO',
+            'id_product_peruntukan' => $product->id_product,
+        ]);
+        $this->asGuest();
+
+        $this->hit('GET', '/api/cms/promo', [
+            'endpoint' => 'GET /api/cms/promo',
+            'label' => 'Promo per produk menyertakan nama, harga mulai, dan gambar produk',
+            'expected' => 200,
+        ]);
+
+        $data = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame($product->id_product, $data['id_product_peruntukan'] ?? null);
+        $this->assertSame('Batik Promo', $data['nama_produk_peruntukan'] ?? null);
+        $this->assertSame(125000.0, (float) ($data['harga_mulai_peruntukan'] ?? 0));
+        $this->assertNotEmpty($data['url_gambar_peruntukan'] ?? null);
+
+        $this->assertRecorded();
+    }
+
+    public function test_cms_promo_mengabaikan_produk_peruntukan_nonaktif(): void
+    {
+        $this->seedCategory();
+        $product = $this->makeProduct('Batik Nonaktif', 'nonaktif');
+        $this->makeVoucher([
+            'kode_voucher' => 'PRODUKNONAKTIF',
+            'id_product_peruntukan' => $product->id_product,
+        ]);
+        $this->asGuest();
+
+        $this->hit('GET', '/api/cms/promo', [
+            'endpoint' => 'GET /api/cms/promo',
+            'label' => 'Promo mengabaikan voucher yang produk peruntukannya nonaktif',
+            'expected' => 200,
+        ]);
+
+        $this->assertNull($this->recorded[0]['response']['data'] ?? null);
+
+        $this->assertRecorded();
+    }
+
     public function test_cms_promo_tanpa_voucher_aktif(): void
     {
         $this->makeVoucher(['kode_voucher' => 'NONAKTIF', 'status_voucher' => 'nonaktif']);

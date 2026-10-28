@@ -141,6 +141,87 @@ class AdminVoucherPromoEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_voucher_per_produk_store_dan_publish(): void
+    {
+        $this->actingAsRole('admin');
+        $this->seedCategory();
+        $product = $this->makeProduct('Batik Peruntukan');
+        $this->makeVariant($product, 10, 'aktif', 125000);
+        $productNonaktif = $this->makeProduct('Batik Nonaktif', 'nonaktif');
+
+        $payload = [
+            'kode_voucher' => 'PRODUKADM',
+            'nama_voucher' => 'Promo Produk',
+            'tipe_diskon' => 'persentase',
+            'nilai_diskon' => 10,
+            'minimal_pembelian' => 0,
+            'tanggal_mulai' => now()->toDateString(),
+            'tanggal_selesai' => now()->addDays(7)->toDateString(),
+            'id_product_peruntukan' => $product->id_product,
+        ];
+
+        $this->hit('POST', '/api/vouchers', [
+            'endpoint' => 'POST /api/vouchers',
+            'label' => 'Buat voucher untuk produk aktif (201)',
+            'json' => $payload,
+            'expected' => 201,
+        ]);
+
+        $data = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame($product->id_product, $data['id_product_peruntukan'] ?? null);
+        $this->assertSame('Batik Peruntukan', $data['nama_produk_peruntukan'] ?? null);
+        $this->assertSame('aktif', $data['status_produk_peruntukan'] ?? null);
+
+        $this->hit('POST', '/api/vouchers', [
+            'endpoint' => 'POST /api/vouchers',
+            'label' => 'Buat voucher untuk produk nonaktif (422)',
+            'json' => array_merge($payload, [
+                'kode_voucher' => 'PRODUKNON',
+                'id_product_peruntukan' => $productNonaktif->id_product,
+            ]),
+            'expected' => 422,
+        ]);
+
+        $this->assertStringContainsString(
+            'Voucher hanya berlaku untuk produk Batik Nonaktif.',
+            (string) ($this->recorded[1]['response']['message'] ?? '')
+        );
+
+        $this->hit('POST', '/api/vouchers', [
+            'endpoint' => 'POST /api/vouchers',
+            'label' => 'Buat voucher dengan id produk peruntukan tidak ditemukan (422)',
+            'json' => array_merge($payload, [
+                'kode_voucher' => 'PRODUKTIDAK',
+                'id_product_peruntukan' => (string) Str::uuid(),
+            ]),
+            'expected' => 422,
+        ]);
+
+        $this->assertStringContainsString(
+            'id_product_peruntukan tidak ditemukan.',
+            implode(' ', (array) ($this->recorded[2]['response']['errors']['id_product_peruntukan'] ?? []))
+        );
+
+        $voucher = $this->makeVoucher([
+            'status_voucher' => 'nonaktif',
+            'id_product_peruntukan' => $productNonaktif->id_product,
+        ]);
+
+        $this->hit('POST', "/api/vouchers/{$voucher->id_voucher}/publish", [
+            'endpoint' => 'POST /api/vouchers/{id}/publish',
+            'label' => 'Publikasikan voucher produk nonaktif ditolak (422)',
+            'expected' => 422,
+        ]);
+
+        $this->assertSame(
+            'nonaktif',
+            Voucher::whereKey($voucher->id_voucher)->value('status_voucher'),
+            'Voucher produk nonaktif tidak boleh dipublikasikan.'
+        );
+
+        $this->assertRecorded();
+    }
+
     // ------------------------------------------------------------------
     // GET /api/vouchers/summary
     // ------------------------------------------------------------------

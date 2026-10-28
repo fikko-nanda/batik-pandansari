@@ -126,7 +126,10 @@ class AdminProductEndpointTest extends EndpointTestCase
         $this->assertSame(600, $data['berat_produk'] ?? null);
         $this->assertSame('Katun', $data['bahan_kain'] ?? null);
         $this->assertNotEmpty($data['category'] ?? null);
-        $this->assertSame(['products' => '0 -> 1 (+1)'], $this->recorded[0]['db_effect']);
+        $this->assertSame([
+            'products' => '0 -> 1 (+1)',
+            'product_categories' => '0 -> 1 (+1)',
+        ], $this->recorded[0]['db_effect']);
 
         $this->assertRecorded();
     }

@@ -2,30 +2,20 @@
 
 namespace App\Mail;
 
+use App\Mail\Concerns\TracksNotificationLog;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\SerializesModels;
 
 class RegistrationOtpMail extends Mailable implements ShouldQueue
 {
-    use Queueable, SerializesModels;
+    use Queueable, SerializesModels, TracksNotificationLog;
 
     public int $tries = 10;
 
     /** @var array<int, int> */
     public array $backoff = [2, 5, 10, 20, 30];
-
-    /**
-     * Batasi laju pengiriman email agar tidak kena throttle penyedia SMTP.
-     *
-     * @return array<int, object>
-     */
-    public function middleware(): array
-    {
-        return [new RateLimited('email')];
-    }
 
     public function __construct(
         public string $otp,
@@ -35,14 +25,19 @@ class RegistrationOtpMail extends Mailable implements ShouldQueue
 
     public function build(): self
     {
-        $subject = $this->isResend ? 'Kode Verifikasi Ulang � Batik Pandansari' : 'Verifikasi Email Kamu � Batik Pandansari';
+        $this->attachNotificationLogHeader();
+
+        $subject = $this->isResend ? 'Kode Verifikasi Ulang - Batik Pandansari' : 'Verifikasi Email Kamu - Batik Pandansari';
+
+        $data = [
+            'otp' => $this->otp,
+            'name' => $this->name,
+            'isResend' => $this->isResend,
+            'expiresInMinutes' => 5,
+        ];
 
         return $this->subject($subject)
-            ->markdown('emails.registration-otp', [
-                'otp' => $this->otp,
-                'name' => $this->name,
-                'isResend' => $this->isResend,
-                'expiresInMinutes' => 5,
-            ]);
+            ->view('emails.registration-otp', $data)
+            ->text('emails.text.registration-otp', $data);
     }
 }
