@@ -42,6 +42,17 @@
                     <p class="text-xs text-slate-500 mt-1">Lengkapi rincian alamat penerima. Setelah konfirmasi via WhatsApp, Anda akan diarahkan ke pembayaran digital Midtrans.</p>
                 </div>
 
+                <!-- Alert Lokasi Asal Toko Belum Dikonfigurasi Admin -->
+                <div x-show="originNotConfigured" x-cloak class="bg-rose-50 border-2 border-rose-300 text-rose-800 p-4 sm:p-5 rounded-2xl flex items-start gap-3 shadow-sm">
+                    <i class="fa-solid fa-triangle-exclamation text-xl text-rose-600 mt-0.5 shrink-0"></i>
+                    <div class="flex-1">
+                        <h4 class="font-extrabold text-xs sm:text-sm text-rose-900 uppercase tracking-wide">Pengiriman Belum Dapat Diproses</h4>
+                        <p class="text-xs text-rose-700 leading-relaxed mt-1">
+                            Lokasi asal pengiriman belum dikonfigurasi oleh admin. Mohon hubungi admin toko agar koordinat asal toko diset sebelum pesanan dapat dibuat.
+                        </p>
+                    </div>
+                </div>
+
                 <!-- Box 1: Form Alamat Penerima -->
                 <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
                     <div class="flex items-center gap-2 text-xs font-bold text-[#0F1A24] border-b border-slate-100 pb-3">
@@ -60,11 +71,17 @@
                         <template x-for="a in addresses" :key="a.id_user_address || a.id">
                             <label class="flex items-start gap-3 p-3.5 rounded-xl border-2 transition cursor-pointer"
                                    :class="(selectedAddressId === (a.id_user_address || a.id)) ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-200' : 'border-slate-200 hover:border-slate-300 bg-white'">
-                                <input type="radio" name="alamat" :value="a.id_user_address || a.id" :checked="selectedAddressId === (a.id_user_address || a.id)" @change="selectedAddressId = (a.id_user_address || a.id); alamatAktif = a" class="mt-0.5 text-sky-600 focus:ring-sky-500">
+                                <input type="radio" name="alamat" :value="a.id_user_address || a.id" :checked="selectedAddressId === (a.id_user_address || a.id)" @change="onAddressChanged(a)" class="mt-0.5 text-sky-600 focus:ring-sky-500">
                                 <div class="flex-1 min-w-0">
-                                    <div class="flex items-center gap-2">
+                                    <div class="flex flex-wrap items-center gap-2">
                                         <span class="text-xs font-bold text-[#0F1A24]" x-text="a.label_alamat || 'Alamat'"></span>
                                         <span x-show="a.alamat_utama ?? a.is_primary" class="text-[9px] bg-sky-100 text-[#0369A1] font-bold px-1.5 py-0.5 rounded uppercase">UTAMA</span>
+                                        <span x-show="a.latitude && a.longitude" class="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                                            <i class="fa-solid fa-location-dot"></i> Koordinat OSM Tersimpan
+                                        </span>
+                                        <span x-show="!a.latitude || !a.longitude" class="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+                                            <i class="fa-solid fa-triangle-exclamation"></i> Belum Ada Titik Peta
+                                        </span>
                                     </div>
                                     <p class="text-[11px] text-slate-600 leading-relaxed mt-0.5">
                                         <strong x-text="a.nama_penerima"></strong> • <span x-text="a.nomor_telepon || a.telepon"></span><br>
@@ -73,6 +90,17 @@
                                 </div>
                             </label>
                         </template>
+
+                        <!-- Peringatan jika alamat terpilih belum memiliki koordinat OSM -->
+                        <div x-show="selectedAddress && !selectedAddressHasCoordinates" x-cloak class="bg-amber-50 border border-amber-200 text-amber-800 p-3 sm:p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                            <div class="flex items-center gap-2 font-medium">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-600 text-sm shrink-0"></i>
+                                <span>Alamat ini belum memiliki koordinat peta OpenStreetMap yang valid.</span>
+                            </div>
+                            <a href="/address" class="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-lg text-[11px] whitespace-nowrap self-start sm:self-auto transition">
+                                <i class="fa-solid fa-map-pin"></i> Perbarui Alamat di /address
+                            </a>
+                        </div>
 
                         <p class="text-[11px] text-slate-400 text-right">
                             Kelola daftar alamat di <a href="/address" class="text-sky-600 font-bold hover:underline">/address</a> →
@@ -96,29 +124,95 @@
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                         <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1">
                             <span class="font-extrabold text-sky-700 block">1. Buat Pesanan</span>
-                            <p class="text-[11px] text-slate-500 leading-normal">Klik tombol di samping untuk membuat pesanan resmi di website.</p>
+                            <p class="text-[11px] text-slate-500 leading-normal">Kalkulasi ongkir rute jalan otomatis dihitung dari koordinat OSM.</p>
                         </div>
                         <div class="p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl space-y-1">
                             <span class="font-extrabold text-emerald-700 block"><i class="fa-brands fa-whatsapp"></i> 2. Konfirmasi WA</span>
-                            <p class="text-[11px] text-emerald-800 leading-normal">Kirim detail pesanan & alamat ke Admin WhatsApp untuk konfirmasi stok & ongkir.</p>
+                            <p class="text-[11px] text-emerald-800 leading-normal">Kirim detail pesanan, rute pengiriman & ongkir ke WhatsApp Admin.</p>
                         </div>
                         <div class="p-3 bg-sky-50 border border-sky-200/80 rounded-xl space-y-1">
                             <span class="font-extrabold text-sky-700 block"><i class="fa-solid fa-credit-card"></i> 3. Bayar Midtrans</span>
-                            <p class="text-[11px] text-sky-800 leading-normal">Kembali ke halaman website untuk menyelesaikan pembayaran via Midtrans (QRIS/VA).</p>
+                            <p class="text-[11px] text-sky-800 leading-normal">Selesaikan pembayaran Midtrans resmi (termasuk ongkos kirim).</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Alert Info Ongkos Kirim -->
-                <div class="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-5 sm:p-6 flex items-start gap-3 shadow-sm">
-                    <i class="fa-solid fa-truck-ramp-box text-amber-600 text-base mt-0.5"></i>
-                    <div>
-                        <h3 class="text-xs font-extrabold text-amber-800">Informasi Ongkos Kirim</h3>
-                        <p class="text-[11px] text-amber-800/90 leading-relaxed mt-1">
-                            Seluruh biaya pengiriman (ongkir) sepenuhnya ditanggung oleh pembeli. Tarif ongkir akan dihitung
-                            secara akurat dan dikonfirmasikan langsung oleh Admin kami via WhatsApp sesuai alamat tujuan
-                            serta ekspedisi terpilih.
-                        </p>
+                <!-- Box 3: Kalkulasi Jarak Rute & Ongkos Kirim (OSRM & Zona) -->
+                <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div class="flex items-center gap-2 text-xs font-bold text-[#0F1A24]">
+                            <i class="fa-solid fa-truck-fast text-sky-600 text-sm"></i>
+                            <span>Kalkulasi Pengiriman Otomatis (OpenStreetMap & OSRM)</span>
+                        </div>
+                        <button type="button"
+                                @click="calculateShipping()"
+                                :disabled="loadingShipping || !selectedAddress || !selectedAddressHasCoordinates"
+                                class="text-[11px] text-sky-600 font-bold hover:underline flex items-center gap-1 disabled:opacity-40 cursor-pointer">
+                            <i class="fa-solid fa-rotate-right" :class="loadingShipping && 'fa-spin'"></i>
+                            <span>Hitung Ulang</span>
+                        </button>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div x-show="loadingShipping" class="py-5 text-center text-xs text-slate-500 font-medium flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-circle-notch fa-spin text-sky-600 text-base"></i>
+                        <span>Menghitung rute darat OSRM dan tarif zona pengiriman...</span>
+                    </div>
+
+                    <!-- Hasil Kalkulasi Sukses -->
+                    <div x-show="!loadingShipping && shippingQuote" class="space-y-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <!-- Jarak & Durasi -->
+                            <div class="p-3 bg-sky-50/70 border border-sky-100 rounded-xl space-y-1">
+                                <span class="text-[10px] font-bold text-sky-700 uppercase tracking-wider block">Jarak Rute Jalan (OSRM)</span>
+                                <div class="text-sm font-extrabold text-slate-900 flex items-baseline gap-1.5">
+                                    <span x-text="shippingQuote?.jarak_km ? Number(shippingQuote.jarak_km).toFixed(2) + ' km' : '-'"></span>
+                                    <span class="text-[10px] text-slate-500 font-medium" x-text="shippingQuote?.durasi_menit ? '(± ' + shippingQuote.durasi_menit + ' menit)' : ''"></span>
+                                </div>
+                                <p class="text-[10px] text-slate-500">Dihitung berdasarkan rute jalan darat ke koordinat tujuan.</p>
+                            </div>
+
+                            <!-- Berat Barang & Pembulatan -->
+                            <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Berat Paket & Pembulatan</span>
+                                <div class="text-sm font-extrabold text-slate-900 flex items-baseline gap-1.5">
+                                    <span x-text="(shippingQuote?.berat_dibulatkan_kg ?? 1) + ' kg'"></span>
+                                    <span class="text-[10px] text-slate-500 font-medium" x-text="'(' + (shippingQuote?.berat_gram ?? 0) + ' gram, min. 1 kg)'"></span>
+                                </div>
+                                <p class="text-[10px] text-slate-500">Dibulatkan ke atas per kilogram penuh.</p>
+                            </div>
+                        </div>
+
+                        <!-- Rincian Zona & Biaya -->
+                        <div class="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 text-xs">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-slate-800 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-layer-group text-sky-600"></i>
+                                    <span x-text="shippingQuote?.zona?.nama_zona || 'Zona Pengiriman'"></span>
+                                </span>
+                                <span class="text-sm font-extrabold text-slate-900" x-text="formatRupiah(shippingQuote?.biaya_pengiriman ?? 0)"></span>
+                            </div>
+                            <div class="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 border-t border-slate-200/60">
+                                <span>Biaya Dasar: <strong class="text-slate-700" x-text="formatRupiah(shippingQuote?.zona?.biaya_dasar ?? 0)"></strong></span>
+                                <span>Tarif per kg: <strong class="text-slate-700" x-text="formatRupiah(shippingQuote?.zona?.biaya_per_kg ?? 0) + ' / kg'"></strong></span>
+                                <span>Perhitungan: <span class="text-slate-600 font-mono text-[10px]">Dasar + (<span x-text="shippingQuote?.berat_dibulatkan_kg ?? 1"></span> kg × Tarif/kg)</span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Peringatan jika error kalkulasi -->
+                    <div x-show="!loadingShipping && shippingError && !originNotConfigured" class="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 space-y-1">
+                        <div class="font-bold flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-exclamation text-rose-600"></i>
+                            <span>Kalkulasi Ongkos Kirim Belum Berhasil</span>
+                        </div>
+                        <p x-text="shippingError"></p>
+                    </div>
+
+                    <!-- Peringatan jika belum ada alamat / belum ada koordinat -->
+                    <div x-show="!loadingShipping && (!selectedAddress || !selectedAddressHasCoordinates)" class="p-3.5 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-center text-xs text-slate-500">
+                        <i class="fa-solid fa-map-pin text-slate-400 mb-1 text-sm block"></i>
+                        <span x-text="!selectedAddress ? 'Pilih alamat pengiriman di atas untuk menghitung ongkir otomatis.' : 'Alamat belum memiliki koordinat peta. Perbarui alamat untuk menghitung ongkir.'"></span>
                     </div>
                 </div>
 
@@ -192,9 +286,15 @@
                                 <span>Pajak PPN (11%)</span>
                                 <span>+<span x-text="formatRupiah(ppnAmount)"></span></span>
                             </div>
+                            <div class="flex justify-between text-slate-600 font-medium">
+                                <span>Ongkos Kirim</span>
+                                <span x-show="loadingShipping" class="text-slate-400 text-[11px]"><i class="fa-solid fa-circle-notch fa-spin text-sky-500"></i> Menghitung...</span>
+                                <span x-show="!loadingShipping && shippingQuote" class="font-semibold text-slate-800" x-text="'+' + formatRupiah(shippingCost)"></span>
+                                <span x-show="!loadingShipping && !shippingQuote" class="text-amber-600 text-[11px] font-semibold">Belum terhitung</span>
+                            </div>
                             <div class="flex justify-between text-sm font-bold text-[#0F1A24] pt-2 border-t border-slate-100">
-                                <span>Total Sementara</span>
-                                <span class="text-sky-600" x-text="formatRupiah(totalPembayaran)"></span>
+                                <span>Total Pembayaran</span>
+                                <span class="text-sky-600 font-extrabold" x-text="formatRupiah(totalPembayaran)"></span>
                             </div>
                         </div>
 
@@ -202,13 +302,25 @@
                         <div x-show="submitMsg" class="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl" x-text="submitMsg"></div>
 
                         <!-- Tombol Buat Pesanan & Konfirmasi WA -->
-                        <button type="button" @click="handleCheckout()" :disabled="isLoading"
-                                class="w-full bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-500/20 transition cursor-pointer flex items-center justify-center gap-2 text-xs uppercase tracking-wider disabled:opacity-60">
-                            <span x-show="!isLoading" class="flex items-center gap-2">
-                                <i class="fa-brands fa-whatsapp text-base"></i> Buat Pesanan &amp; Konfirmasi WA
-                            </span>
+                        <button type="button" @click="handleCheckout()" :disabled="!canCheckout || isLoading"
+                                class="w-full bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-500/20 transition cursor-pointer flex items-center justify-center gap-2 text-xs uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed">
                             <span x-show="isLoading" class="flex items-center gap-2">
                                 <i class="fa-solid fa-circle-notch fa-spin"></i> Memproses Pesanan...
+                            </span>
+                            <span x-show="!isLoading && loadingShipping" class="flex items-center gap-2">
+                                <i class="fa-solid fa-circle-notch fa-spin"></i> Menghitung Ongkir...
+                            </span>
+                            <span x-show="!isLoading && !loadingShipping && originNotConfigured" class="flex items-center gap-2 text-amber-200">
+                                <i class="fa-solid fa-store-slash"></i> Lokasi Toko Belum Diset
+                            </span>
+                            <span x-show="!isLoading && !loadingShipping && !originNotConfigured && (!selectedAddress || !selectedAddressHasCoordinates)" class="flex items-center gap-2 text-amber-200">
+                                <i class="fa-solid fa-location-dot"></i> Lengkapi Koordinat Alamat
+                            </span>
+                            <span x-show="!isLoading && !loadingShipping && !originNotConfigured && selectedAddress && selectedAddressHasCoordinates && !shippingQuote" class="flex items-center gap-2 text-amber-200">
+                                <i class="fa-solid fa-triangle-exclamation"></i> Ongkir Belum Dihitung
+                            </span>
+                            <span x-show="!isLoading && !loadingShipping && canCheckout" class="flex items-center gap-2">
+                                <i class="fa-brands fa-whatsapp text-base"></i> Buat Pesanan &amp; Konfirmasi WA
                             </span>
                         </button>
 
@@ -253,6 +365,12 @@
             voucherOk: false,
             busyVoucher: false,
 
+            // === State Pengiriman & Ongkir ===
+            shippingQuote: null,
+            loadingShipping: false,
+            shippingError: '',
+            originNotConfigured: false,
+
             // Nomor WhatsApp admin untuk konfirmasi
             waNumber: '6283820380977',
 
@@ -262,6 +380,29 @@
             // === Getters & Komputasi ===
             get selectedAddress() {
                 return (this.addresses || []).find(a => (a.id_user_address || a.id) === this.selectedAddressId) ?? null;
+            },
+
+            get selectedAddressHasCoordinates() {
+                const a = this.selectedAddress;
+                if (!a) return false;
+                const lat = a.latitude != null ? String(a.latitude).trim() : '';
+                const lng = a.longitude != null ? String(a.longitude).trim() : '';
+                return lat !== '' && lng !== '';
+            },
+
+            get canCheckout() {
+                return !this.isLoading &&
+                       !this.loadingShipping &&
+                       !this.originNotConfigured &&
+                       Boolean(this.selectedAddress) &&
+                       this.selectedAddressHasCoordinates &&
+                       Boolean(this.shippingQuote) &&
+                       !this.shippingError &&
+                       this.items.length > 0;
+            },
+
+            get shippingCost() {
+                return Number(this.shippingQuote?.biaya_pengiriman ?? 0);
             },
 
             get subtotal() {
@@ -285,8 +426,8 @@
             },
 
             get totalPembayaran() {
-                // Subtotal − Diskon + PPN 11%
-                return Math.max(0, (this.subtotal - this.discountAmount) + this.ppnAmount);
+                // Subtotal − Diskon + PPN 11% + Ongkos Kirim
+                return Math.max(0, (this.subtotal - this.discountAmount) + this.ppnAmount + this.shippingCost);
             },
 
             get itemCount() {
@@ -379,6 +520,57 @@
                 }
             },
 
+            onAddressChanged(a) {
+                this.selectedAddressId = a.id_user_address || a.id;
+                this.alamatAktif = a;
+                this.calculateShipping();
+            },
+
+            async calculateShipping() {
+                this.shippingError = '';
+                this.originNotConfigured = false;
+
+                if (!this.selectedAddressId) {
+                    this.shippingQuote = null;
+                    return;
+                }
+
+                if (!this.selectedAddressHasCoordinates) {
+                    this.shippingQuote = null;
+                    return;
+                }
+
+                this.loadingShipping = true;
+                try {
+                    const res = await PandansariAPI.shippingQuote(this.selectedAddressId);
+                    if (res && res.ok && res.data) {
+                        this.shippingQuote = res.data;
+                        this.shippingError = '';
+                        this.originNotConfigured = false;
+                    } else {
+                        this.shippingQuote = null;
+                        const msg = res?.message || 'Gagal menghitung ongkos kirim.';
+                        const code = res?.code || '';
+
+                        if (code === 'SHIPPING_ORIGIN_NOT_CONFIGURED' || msg.includes('asal pengiriman belum dikonfigurasi')) {
+                            this.originNotConfigured = true;
+                            this.shippingError = 'Lokasi asal pengiriman belum dikonfigurasi oleh admin.';
+                        } else if (code === 'SHIPPING_ZONE_NOT_FOUND' || msg.includes('Zona pengiriman')) {
+                            this.shippingError = msg || 'Alamat tujuan berada di luar jangkauan zona pengiriman aktif.';
+                        } else if (code === 'SHIPPING_ADDRESS_COORDINATES_REQUIRED' || msg.includes('koordinat')) {
+                            this.shippingError = 'Alamat pengiriman belum memiliki koordinat peta OpenStreetMap.';
+                        } else {
+                            this.shippingError = msg;
+                        }
+                    }
+                } catch (e) {
+                    this.shippingQuote = null;
+                    this.shippingError = 'Tidak dapat menghubungi layanan kalkulasi pengiriman.';
+                } finally {
+                    this.loadingShipping = false;
+                }
+            },
+
             async applyVoucher() {
                 if (!this.voucherCode.trim()) return;
                 this.busyVoucher = true;
@@ -467,7 +659,10 @@
                     lines.push('Diskon Voucher: -' + this.formatRupiah(this.discountAmount));
                 }
                 lines.push('PPN 11%: +' + this.formatRupiah(this.ppnAmount));
-                lines.push('Total Sementara: ' + this.formatRupiah(this.totalPembayaran));
+                if (this.shippingQuote) {
+                    lines.push(`Ongkos Kirim (${this.shippingQuote.zona?.nama_zona ?? 'OSRM'}, ${Number(this.shippingQuote.jarak_km ?? 0).toFixed(2)} km, ${this.shippingQuote.berat_dibulatkan_kg ?? 1} kg): +` + this.formatRupiah(this.shippingCost));
+                }
+                lines.push('Total Pembayaran: ' + this.formatRupiah(this.totalPembayaran));
                 if (this.catatan.trim()) {
                     lines.push('Catatan: ' + this.catatan.trim());
                 }
@@ -503,10 +698,19 @@
                 this.submitMsg = '';
                 this.submitOk = false;
 
-                if (!this.selectedAddressId) {
-                    this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.';
+                if (!this.canCheckout) {
+                    if (this.originNotConfigured) {
+                        this.submitMsg = 'Lokasi asal pengiriman belum dikonfigurasi oleh admin. Mohon hubungi admin toko.';
+                    } else if (!this.selectedAddress) {
+                        this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.';
+                    } else if (!this.selectedAddressHasCoordinates) {
+                        this.submitMsg = 'Alamat belum memiliki koordinat OpenStreetMap. Silakan perbarui alamat terlebih dahulu.';
+                    } else if (!this.shippingQuote) {
+                        this.submitMsg = this.shippingError || 'Kalkulasi ongkos kirim belum selesai atau belum berhasil.';
+                    }
                     return;
                 }
+
                 if (!this.items.length) {
                     this.submitMsg = 'Keranjang Anda kosong.';
                     return;
@@ -528,8 +732,6 @@
                     id_user_address: this.selectedAddressId,
                     kode_voucher: this.voucherCode.trim() || undefined,
                     catatan: this.catatan.trim() || undefined,
-                    is_manual_shipping: true,
-                    shipping_cost: 0,
                 };
 
                 this.isLoading = true;
@@ -539,6 +741,9 @@
                         if (res.status === 401) {
                             this.submitMsg = 'Sesi Anda berakhir. Silakan login kembali.';
                             setTimeout(() => { window.location.href = '/login'; }, 1200);
+                        } else if (res.code === 'SHIPPING_ORIGIN_NOT_CONFIGURED' || (res.message && res.message.includes('asal pengiriman belum dikonfigurasi'))) {
+                            this.originNotConfigured = true;
+                            this.submitMsg = 'Lokasi asal pengiriman belum dikonfigurasi oleh admin.';
                         } else {
                             this.submitMsg = res.message || 'Pesanan gagal dibuat. Silakan coba lagi.';
                         }
@@ -576,6 +781,9 @@
                 await Promise.all([this.loadCart(), this.loadAddresses()]);
                 this.muatVoucher();
                 this.loading = false;
+                if (this.selectedAddressId) {
+                    await this.calculateShipping();
+                }
             }
         };
     }

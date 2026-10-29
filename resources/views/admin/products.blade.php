@@ -773,13 +773,20 @@
         </div>
 
         <!-- Toast -->
-        <div x-show="notice" x-cloak x-transition
-             class="fixed top-4 right-4 z-[9999] max-w-md text-sm font-bold rounded-2xl px-5 py-4 shadow-2xl border flex items-start gap-3"
-             :class="noticeOk ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-rose-600 text-white border-rose-700'"
-             role="alert">
-            <i class="fa-solid mt-0.5" :class="noticeOk ? 'fa-circle-check' : 'fa-triangle-exclamation'"></i>
-            <span x-text="notice"></span>
-        </div>
+        <template x-teleport="body">
+            <div x-show="notice" x-cloak x-transition
+                 class="fixed top-4 right-4 z-[70] max-w-md text-sm font-bold rounded-2xl px-5 py-4 shadow-2xl border flex items-start gap-3"
+                 :class="noticeOk ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-rose-600 text-white border-rose-700'"
+                 role="alert">
+                <i class="fa-solid mt-0.5" :class="noticeOk ? 'fa-circle-check' : 'fa-triangle-exclamation'"></i>
+                <div class="flex-1">
+                    <span x-text="notice"></span>
+                </div>
+                <button type="button" @click="notice = ''" class="text-white/80 hover:text-white transition cursor-pointer">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </template>
 
         <!-- 2. STATS SUMMARY CARDS -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
