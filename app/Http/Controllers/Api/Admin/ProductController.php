@@ -154,6 +154,14 @@ class ProductController extends Controller
             $query->where('status_produk', $adminFilters['status']);
         }
 
+        if (! empty($adminFilters['start_date'])) {
+            $query->whereDate('dibuat_pada', '>=', $adminFilters['start_date']);
+        }
+
+        if (! empty($adminFilters['end_date'])) {
+            $query->whereDate('dibuat_pada', '<=', $adminFilters['end_date']);
+        }
+
         if (! empty($adminFilters['sort'])) {
             $query->orderBy($adminFilters['sort'], $adminFilters['order'] ?? 'asc');
         } else {
@@ -172,6 +180,8 @@ class ProductController extends Controller
             'status' => ['nullable', 'string', 'in:draft,aktif,nonaktif'],
             'sort' => ['nullable', 'string', 'in:nama_produk,dibuat_pada,status_produk'],
             'order' => ['nullable', 'string', 'in:asc,desc'],
+            'start_date' => ['nullable', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:start_date'],
         ]);
     }
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Endpoints;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 /**
@@ -247,6 +248,27 @@ class AdminProductListExportEndpointTest extends EndpointTestCase
         $searchRows = $this->csvRows($search);
         $this->assertCount(2, $searchRows);
         $this->assertSame('Batik Parang', $searchRows[1][1]);
+
+        DB::table('products')->where('id_product', $parang->id_product)
+            ->update(['dibuat_pada' => '2026-01-02 23:59:59']);
+        DB::table('products')->where('id_product', $mega->id_product)
+            ->update(['dibuat_pada' => '2026-01-03 00:00:00']);
+
+        $dateRange = $this->hit('GET', '/api/admin/products/export?start_date=2026-01-02&end_date=2026-01-02', [
+            'endpoint' => 'GET /api/admin/products/export',
+            'label' => 'Filter tanggal produk dengan batas akhir inklusif',
+            'expected' => 200,
+        ]);
+        $dateRows = $this->csvRows($dateRange);
+        $this->assertCount(2, $dateRows);
+        $this->assertSame('Batik Parang', $dateRows[1][1]);
+
+        $invalidDates = $this->hit('GET', '/api/admin/products/export?start_date=2026-01-04&end_date=2026-01-03', [
+            'endpoint' => 'GET /api/admin/products/export',
+            'label' => 'Rentang tanggal produk yang terbalik ditolak',
+            'expected' => 422,
+        ]);
+        $this->assertSame(422, $invalidDates->status());
 
         $this->assertRecorded();
     }

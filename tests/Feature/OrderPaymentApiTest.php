@@ -17,6 +17,7 @@ use App\Models\Voucher;
 use App\Models\WebhookLog;
 use App\Models\ZonaPengiriman;
 use App\Services\MidtransService;
+use App\Services\OrderService;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Http;
@@ -497,6 +498,7 @@ class OrderPaymentApiTest extends TestCase
                 'raw' => null,
             ]);
             $mock->shouldReceive('clientKey')->andReturn('SB-Mid-client-test');
+            $mock->shouldReceive('snapScriptUrl')->andReturn('https://app.sandbox.midtrans.com/snap/snap.js');
         });
     }
 
@@ -528,7 +530,7 @@ class OrderPaymentApiTest extends TestCase
         $this->postJson('/api/checkout', [])->assertStatus(401);
     }
 
-    public function test_checkout_creates_order_without_changing_stock_until_payment(): void
+    public function test_checkout_reserves_stock_until_payment_without_reducing_physical_stock(): void
     {
         $user = $this->makeUser();
         $variant = $this->makeCategoryProductVariant(10, 100000);
@@ -545,15 +547,17 @@ class OrderPaymentApiTest extends TestCase
             ->assertJsonPath('data.status_pesanan', 'menunggu_pembayaran');
 
         $order = Order::where('id_user', $user->id_user)->firstOrFail();
-        $this->assertTrue(
-            $order->kedaluwarsa_pada->between(now()->addHours(11)->addMinutes(59), now()->addHours(12)->addMinute()),
-            'Batas pembayaran harus 12 jam sejak checkout.'
+        $paymentWindowSeconds = $order->dibuat_pada->diffInSeconds($order->kedaluwarsa_pada);
+        $this->assertLessThanOrEqual(
+            1,
+            abs($paymentWindowSeconds - (OrderService::PAYMENT_WINDOW_MINUTES * 60)),
+            'Batas pembayaran harus 15 menit sejak pesanan dibuat.'
         );
 
         $fresh = $variant->fresh();
         $this->assertSame(10, (int) $fresh->stok, 'Stok fisik tidak berkurang saat checkout.');
-        $this->assertSame(0, (int) $fresh->stok_dipesan, 'Checkout tidak mereservasi stok.');
-        $this->assertFalse((bool) $order->fresh()->stok_direservasi);
+        $this->assertSame(2, (int) $fresh->stok_dipesan, 'Checkout mereservasi jumlah yang dipesan.');
+        $this->assertTrue((bool) $order->fresh()->stok_direservasi);
 
         $this->assertDatabaseHas('orders', [
             'id_user' => $user->id_user,
@@ -725,7 +729,8 @@ class OrderPaymentApiTest extends TestCase
         $first = $this->postJson('/api/orders/'.$order->id_order.'/payment')
             ->assertStatus(201)
             ->assertJsonPath('data.snap_token', 'snap-token-test')
-            ->assertJsonPath('data.client_key', 'SB-Mid-client-test');
+            ->assertJsonPath('data.client_key', 'SB-Mid-client-test')
+            ->assertJsonPath('data.snap_script_url', 'https://app.sandbox.midtrans.com/snap/snap.js');
 
         $second = $this->postJson('/api/orders/'.$order->id_order.'/payment')
             ->assertStatus(200)
@@ -766,6 +771,36 @@ class OrderPaymentApiTest extends TestCase
         $this->getJson('/api/orders/'.$order->id_order.'/payment')
             ->assertStatus(200)
             ->assertJsonPath('data.status_pembayaran', 'menunggu');
+    }
+
+    public function test_payment_lookup_returns_404_without_calling_midtrans_when_payment_is_missing(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant();
+        $order = $this->makeOrder($user, $variant, 1, 100000);
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldNotReceive('transactionStatus');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+        $this->getJson('/api/orders/'.$order->id_order.'/payment')
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Pembayaran untuk pesanan ini belum dibuat.');
+    }
+
+    public function test_snap_script_url_matches_midtrans_environment(): void
+    {
+        config(['services.midtrans.is_production' => false]);
+        $this->assertSame(
+            'https://app.sandbox.midtrans.com/snap/snap.js',
+            (new MidtransService)->snapScriptUrl()
+        );
+
+        config(['services.midtrans.is_production' => true]);
+        $this->assertSame(
+            'https://app.midtrans.com/snap/snap.js',
+            (new MidtransService)->snapScriptUrl()
+        );
     }
 
     // ---------------- Webhook ----------------
@@ -882,7 +917,12 @@ class OrderPaymentApiTest extends TestCase
 
         $fresh = $variant->fresh();
         $this->assertSame(3, (int) $fresh->stok, 'Stok fisik tidak berubah untuk pesanan yang belum dibayar.');
-        $this->assertSame(0, (int) $fresh->stok_dipesan, 'Reservasi stok dilepas saat kedaluwarsa.');
+        $this->assertSame(2, (int) $fresh->stok_dipesan, 'Reservasi dipertahankan selama satu menit setelah kedaluwarsa.');
+
+        $this->travel(61)->seconds();
+        $this->artisan('orders:expire')->assertSuccessful();
+
+        $this->assertSame(0, (int) $variant->fresh()->stok_dipesan, 'Reservasi dilepas setelah jeda satu menit.');
         $this->assertDatabaseHas('payments', ['id_order' => $order->id_order, 'status_pembayaran' => 'kedaluwarsa']);
         $this->assertDatabaseCount('inventory_movements', 0);
     }
@@ -1187,7 +1227,86 @@ class OrderPaymentApiTest extends TestCase
 
         $this->assertSame('dibatalkan', $order->fresh()->status_pesanan);
         $this->assertDatabaseHas('payments', ['id_order' => $order->id_order, 'status_pembayaran' => 'kedaluwarsa']);
-        $this->assertSame(0, (int) $variant->fresh()->stok_dipesan, 'Reservasi stok dilepas.');
+        $this->assertSame(2, (int) $variant->fresh()->stok_dipesan, 'Reservasi dipertahankan selama jeda setelah pembatalan.');
+
+        $this->travel(61)->seconds();
+        $this->artisan('orders:expire')->assertSuccessful();
+        $this->assertSame(0, (int) $variant->fresh()->stok_dipesan, 'Reservasi dilepas setelah jeda satu menit.');
+    }
+
+    public function test_expire_command_keeps_order_paid_when_midtrans_confirms_settlement(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant(3);
+        $order = $this->makeOrder($user, $variant, 2, 200000);
+        $order->update([
+            'kedaluwarsa_pada' => now()->subMinute(),
+            'stok_direservasi' => true,
+        ]);
+        $variant->update(['stok_dipesan' => 2]);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 200000,
+            'status_pembayaran' => 'menunggu',
+            'payment_reference' => 'snap-existing-token',
+        ]);
+
+        $this->mockTransactionStatus([
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'fraud_status' => 'accept',
+            'payment_type' => 'qris',
+            'transaction_id' => 'trx-settled-before-expiry',
+            'gross_amount' => 200000.0,
+            'status_code' => '200',
+        ]);
+
+        $this->artisan('orders:expire')->assertSuccessful();
+
+        $this->assertSame('dibayar', $order->fresh()->status_pesanan);
+        $this->assertDatabaseHas('payments', [
+            'id_order' => $order->id_order,
+            'status_pembayaran' => 'dibayar',
+        ]);
+        $this->assertSame(1, (int) $variant->fresh()->stok);
+        $this->assertSame(0, (int) $variant->fresh()->stok_dipesan);
+        $this->assertDatabaseCount('inventory_movements', 1);
+    }
+
+    public function test_expire_command_does_not_cancel_when_midtrans_status_cannot_be_checked(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant(3);
+        $order = $this->makeOrder($user, $variant, 2, 200000);
+        $order->update([
+            'kedaluwarsa_pada' => now()->subMinute(),
+            'stok_direservasi' => true,
+        ]);
+        $variant->update(['stok_dipesan' => 2]);
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 200000,
+            'status_pembayaran' => 'menunggu',
+            'payment_reference' => 'snap-existing-token',
+        ]);
+        $this->mock(MidtransService::class, function ($mock): void {
+            $mock->shouldReceive('transactionStatus')
+                ->once()
+                ->andThrow(new \RuntimeException('provider timeout'));
+        });
+
+        $this->artisan('orders:expire')->assertSuccessful();
+
+        $this->assertSame('menunggu_pembayaran', $order->fresh()->status_pesanan);
+        $this->assertSame(2, (int) $variant->fresh()->stok_dipesan);
+        $this->assertDatabaseHas('payments', [
+            'id_order' => $order->id_order,
+            'status_pembayaran' => 'menunggu',
+        ]);
     }
 
     public function test_expire_command_does_not_cancel_paid_order(): void

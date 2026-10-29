@@ -61,12 +61,18 @@ class MidtransRedirectTest extends TestCase
         MT_Tests::$stubHttpResponse = '{"token":"test-token","redirect_url":"https://app.sandbox.midtrans.com/snap/v4/redirection/test-token"}';
         MT_Tests::$stubHttpStatus = ['http_code' => 201];
 
+        $this->travelTo(now()->startOfMinute());
         $service = new MidtransService;
-        $service->createSnapTransaction($this->buatOrder());
+        $order = $this->buatOrder();
+        $order->kedaluwarsa_pada = now()->addMinutes(15);
+        $service->createSnapTransaction($order);
 
-        $body = json_decode(MT_Tests::lastReqOptions()['POSTFIELDS'] ?? '{}', true);
+        $requestOptions = MT_Tests::$lastHttpRequest['curl'] ?? [];
+        $body = json_decode($requestOptions[CURLOPT_POSTFIELDS] ?? '{}', true);
 
         $this->assertIsArray($body);
+        $this->assertSame('minute', $body['expiry']['unit'] ?? null);
+        $this->assertSame(15, $body['expiry']['duration'] ?? null);
         $this->assertArrayHasKey('callbacks', $body);
         $this->assertSame('ORD-UJI-0001', $body['transaction_details']['order_id'] ?? null);
         $this->assertSame(175500, $body['transaction_details']['gross_amount'] ?? null);

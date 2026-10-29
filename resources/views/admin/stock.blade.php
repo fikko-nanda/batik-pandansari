@@ -13,6 +13,8 @@
     page: 1,
     perPage: 10,
     searchQuery: '',
+    exportStartDate: '',
+    exportEndDate: '',
     loading: true,
     notice: '', noticeOk: true,
 
@@ -192,6 +194,31 @@
             this.page = res.meta?.current_page ?? this.page;
         } else this.pesan(false, res.message);
     },
+    async eksporInventaris() {
+        if (this.exportStartDate && this.exportEndDate && this.exportEndDate < this.exportStartDate) {
+            this.pesan(false, 'Tanggal akhir tidak boleh sebelum tanggal mulai.');
+            return;
+        }
+        const params = {
+            search: this.searchQuery.trim() || undefined,
+            start_date: this.exportStartDate || undefined,
+            end_date: this.exportEndDate || undefined,
+        };
+        const res = await PandansariAPI.admin.inventoryExport(params);
+        this.pesan(res.ok, res.ok ? 'CSV inventaris sesuai tanggal berhasil diunduh.' : res.message);
+    },
+    async eksporProduk() {
+        if (this.exportStartDate && this.exportEndDate && this.exportEndDate < this.exportStartDate) {
+            this.pesan(false, 'Tanggal akhir tidak boleh sebelum tanggal mulai.');
+            return;
+        }
+        const res = await PandansariAPI.admin.productsExport({
+            search: this.searchQuery.trim() || undefined,
+            start_date: this.exportStartDate || undefined,
+            end_date: this.exportEndDate || undefined,
+        });
+        this.pesan(res.ok, res.ok ? 'CSV seluruh produk sesuai tanggal berhasil diunduh.' : res.message);
+    },
     goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadProduk(); },
 
     async init() {
@@ -227,13 +254,19 @@
             </p>
         </div>
 
-        <div class="flex flex-wrap items-center gap-3 shrink-0">
-            <button type="button" @click="PandansariAPI.admin.inventoryExport()"
+        <div class="flex flex-wrap items-end gap-3 shrink-0">
+            <label class="text-[10px] font-bold text-slate-500">Mulai
+                <input type="date" x-model="exportStartDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs">
+            </label>
+            <label class="text-[10px] font-bold text-slate-500">Akhir
+                <input type="date" x-model="exportEndDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs">
+            </label>
+            <button type="button" @click="eksporInventaris()"
                     class="px-4 py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-file-export text-emerald-600"></i>
                 <span>Export Inventaris</span>
             </button>
-            <button type="button" @click="PandansariAPI.admin.productsExport()"
+            <button type="button" @click="eksporProduk()"
                     class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-download text-slate-500"></i>
                 <span>Unduh CSV Produk</span>

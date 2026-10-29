@@ -12,6 +12,7 @@ use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 class OrderService
 {
@@ -28,7 +29,7 @@ class OrderService
      * Batas waktu pembayaran sejak pesanan dibuat. Berlaku untuk seluruh
      * metode pembayaran Midtrans.
      */
-    public const PAYMENT_WINDOW_HOURS = 12;
+    public const PAYMENT_WINDOW_MINUTES = 15;
 
     /**
      * Tarif PPh yang dibebankan ke pembeli.
@@ -48,7 +49,7 @@ class OrderService
     {
         $base = $base ?? now();
 
-        return CarbonImmutable::instance($base)->addHours(self::PAYMENT_WINDOW_HOURS);
+        return CarbonImmutable::instance($base)->addMinutes(self::PAYMENT_WINDOW_MINUTES);
     }
 
     /**
@@ -101,7 +102,7 @@ class OrderService
                 $locked,
                 'dibatalkan',
                 null,
-                'Pembayaran melewati batas waktu '.self::PAYMENT_WINDOW_HOURS.' jam.'
+                'Pembayaran melewati batas waktu '.self::PAYMENT_WINDOW_MINUTES.' menit.'
             );
 
             return true;
@@ -119,6 +120,60 @@ class OrderService
         $sequence = ($last ? ((int) substr($last, strlen($prefix))) : 0) + 1 + $offset;
 
         return $prefix.str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    public function reserveStock(Order $order): void
+    {
+        $this->reservations->reserve($order);
+    }
+
+    public function notifyOrderCreated(Order $order): void
+    {
+        try {
+            $this->whatsApp->sendOrderCreated($order);
+        } catch (Throwable $e) {
+            report($e);
+        }
+    }
+
+    public function releaseDueReservations(): int
+    {
+        $cutoff = now()->subMinute();
+        $released = 0;
+
+        Order::query()
+            ->where('status_pesanan', 'dibatalkan')
+            ->where('stok_direservasi', true)
+            ->where('diperbarui_pada', '<=', $cutoff)
+            ->orderBy('id_order')
+            ->chunkById(100, function ($orders) use (&$released, $cutoff) {
+                foreach ($orders as $candidate) {
+                    $didRelease = DB::transaction(function () use ($candidate, $cutoff) {
+                        $order = Order::with('items')
+                            ->whereKey($candidate->id_order)
+                            ->lockForUpdate()
+                            ->first();
+
+                        if (! $order
+                            || $order->status_pesanan !== 'dibatalkan'
+                            || ! $order->stok_direservasi
+                            || $order->diperbarui_pada === null
+                            || $order->diperbarui_pada->isAfter($cutoff)) {
+                            return false;
+                        }
+
+                        $this->reservations->release($order);
+
+                        return true;
+                    });
+
+                    if ($didRelease) {
+                        $released++;
+                    }
+                }
+            }, 'id_order', 'id_order');
+
+        return $released;
     }
 
     /**
@@ -148,7 +203,9 @@ class OrderService
 
             if ($newStatus === 'dibatalkan') {
                 if ($statusSebelumnya === 'menunggu_pembayaran') {
-                    $this->reservations->release($order);
+                    Payment::where('id_order', $order->id_order)
+                        ->where('status_pembayaran', 'menunggu')
+                        ->update(['status_pembayaran' => 'dibatalkan']);
                 } elseif ($statusSebelumnya === 'dibayar') {
                     $hasStockMovement = InventoryMovement::where('referensi', $order->nomor_pesanan)
                         ->where('jenis_pergerakan', 'keluar')
@@ -166,7 +223,7 @@ class OrderService
 
             if ($newStatus === 'dibayar') {
                 if (in_array($statusSebelumnya, ['menunggu_pembayaran', 'dibatalkan'], true)) {
-                    $kekurangan = $statusSebelumnya === 'menunggu_pembayaran'
+                    $kekurangan = $order->stok_direservasi
                         ? $this->reservations->commit($order, $changedBy)
                         : $this->reservations->commitAfterRelease($order, $changedBy);
 
@@ -211,12 +268,14 @@ class OrderService
         // email ditelan di dalam OrderMailService dan tidak membatalkan
         // perubahan status.
         if ($transisi) {
-            if ($newStatus === 'dibayar') {
-                $this->orderMail->sendPaid($fresh);
-                $this->whatsApp->sendOrderPaid($fresh);
-            } elseif ($newStatus === 'dibatalkan') {
-                $this->orderMail->sendCancelled($fresh);
-            }
+            DB::afterCommit(function () use ($fresh, $newStatus) {
+                if ($newStatus === 'dibayar') {
+                    $this->orderMail->sendPaid($fresh);
+                    $this->whatsApp->sendOrderPaid($fresh);
+                } elseif ($newStatus === 'dibatalkan') {
+                    $this->orderMail->sendCancelled($fresh);
+                }
+            });
         }
 
         return $fresh;

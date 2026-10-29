@@ -19,7 +19,8 @@ class PaymentController extends Controller
         Request $request,
         string $id,
         MidtransService $midtrans,
-        OrderService $orderService
+        OrderService $orderService,
+        SyncPaymentStatusService $sync
     ): JsonResponse {
         $order = Order::where('id_order', $id)
             ->where('id_user', $request->user()->id_user)
@@ -30,6 +31,22 @@ class PaymentController extends Controller
         }
 
         if ($orderService->isExpired($order)) {
+            if (! $sync->verifyBeforeExpiry($order)) {
+                $order->refresh();
+
+                if ($order->status_pesanan === 'menunggu_pembayaran') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Status pembayaran belum dapat diverifikasi. Silakan coba kembali sebentar lagi.',
+                    ], 503);
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pesanan ini sudah tidak dapat dibayar.',
+                ], 422);
+            }
+
             $orderService->expireIfUnpaid($order);
 
             return response()->json([
@@ -93,7 +110,7 @@ class PaymentController extends Controller
             $payment->update([
                 'payment_reference' => $result['token'],
                 'payment_url' => $result['redirect_url'],
-                'expires_at' => $order->kedaluwarsa_pada ?? now()->addHours(OrderService::PAYMENT_WINDOW_HOURS),
+                'expires_at' => $order->kedaluwarsa_pada ?? now()->addMinutes(OrderService::PAYMENT_WINDOW_MINUTES),
             ]);
         }
 
@@ -110,13 +127,18 @@ class PaymentController extends Controller
                 'snap_token' => $payment->payment_reference,
                 'redirect_url' => $payment->payment_url,
                 'client_key' => $midtrans->clientKey(),
+                'snap_script_url' => $midtrans->snapScriptUrl(),
                 'expires_at' => $payment->expires_at,
             ],
         ], $reused ? 200 : 201);
     }
 
-    public function show(Request $request, string $id, SyncPaymentStatusService $sync): JsonResponse
-    {
+    public function show(
+        Request $request,
+        string $id,
+        SyncPaymentStatusService $sync,
+        OrderService $orderService
+    ): JsonResponse {
         $order = Order::where('id_order', $id)
             ->where('id_user', $request->user()->id_user)
             ->first();
@@ -124,9 +146,6 @@ class PaymentController extends Controller
         if (! $order) {
             return $this->orderNotFound();
         }
-
-        $sync->syncOrder($order);
-        $order->refresh();
 
         $payment = Payment::with('order')
             ->where('id_order', $order->id_order)
@@ -138,6 +157,22 @@ class PaymentController extends Controller
                 'success' => false,
                 'message' => 'Pembayaran untuk pesanan ini belum dibuat.',
             ], 404);
+        }
+
+        if ($orderService->isExpired($order)) {
+            if ($sync->verifyBeforeExpiry($order)) {
+                $orderService->expireIfUnpaid($order);
+            }
+
+            $payment = Payment::with('order')
+                ->where('id_order', $order->id_order)
+                ->orderByDesc('dibuat_pada')
+                ->firstOrFail();
+        } elseif ($sync->syncOrder($order)) {
+            $payment = Payment::with('order')
+                ->where('id_order', $order->id_order)
+                ->orderByDesc('dibuat_pada')
+                ->firstOrFail();
         }
 
         return response()->json([

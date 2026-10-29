@@ -145,7 +145,7 @@ class CheckoutController extends Controller
                     }
 
                     $jumlah = (int) $cartItem->jumlah;
-                    $tersedia = (int) $variant->stok;
+                    $tersedia = max(0, (int) $variant->stok - (int) $variant->stok_dipesan);
 
                     if ($jumlah > $tersedia) {
                         throw ValidationException::withMessages([
@@ -246,6 +246,8 @@ class CheckoutController extends Controller
                     ]);
                 }
 
+                $orderService->reserveStock($order);
+
                 if ($voucher) {
                     VoucherUsage::create([
                         'id_voucher_usage' => (string) Str::uuid(),
@@ -298,6 +300,8 @@ class CheckoutController extends Controller
                 'message' => 'Checkout gagal diproses. Silakan coba lagi.',
             ], 500);
         }
+
+        $orderService->notifyOrderCreated($order);
 
         return response()->json([
             'success' => true,

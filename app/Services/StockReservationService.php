@@ -6,19 +6,69 @@ use App\Models\InventoryMovement;
 use App\Models\Order;
 use App\Models\ProductVariant;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
- * Menangani reservasi lama dan perubahan stok saat pembayaran pesanan.
+ * Menangani reservasi dan perubahan stok saat pembayaran pesanan.
  *
  * Model stok:
  * - product_variants.stok           : stok fisik/total yang dimiliki.
- * - product_variants.stok_dipesan   : reservasi aggregate dari order lama.
+ * - product_variants.stok_dipesan   : jumlah unit yang sudah direservasi.
  *
- * Checkout tidak mencadangkan stok. Stok fisik baru berkurang saat pembayaran
- * terkonfirmasi; reservasi yang dibuat versi lama tetap dapat dilepas.
+ * Stok fisik baru berkurang saat pembayaran terkonfirmasi.
  */
 class StockReservationService
 {
+    public function reserve(Order $order): void
+    {
+        if ($order->status_pesanan !== 'menunggu_pembayaran') {
+            throw new \LogicException('Stok hanya dapat direservasi untuk pesanan yang menunggu pembayaran.');
+        }
+
+        if ($order->stok_direservasi) {
+            return;
+        }
+
+        $items = $order->items->sortBy('id_variant');
+        $jumlahPerVariant = $items
+            ->groupBy('id_variant')
+            ->map(fn ($variantItems): int => (int) $variantItems->sum('jumlah'))
+            ->all();
+        ksort($jumlahPerVariant);
+
+        $variants = [];
+
+        foreach ($jumlahPerVariant as $idVariant => $jumlah) {
+            $variant = ProductVariant::whereKey($idVariant)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $variant) {
+                throw ValidationException::withMessages([
+                    'cart' => ['Varian produk tidak tersedia untuk dibeli.'],
+                ]);
+            }
+
+            $tersedia = max(0, (int) $variant->stok - (int) $variant->stok_dipesan);
+
+            if ($jumlah > $tersedia) {
+                throw ValidationException::withMessages([
+                    'cart' => ["Stok tidak mencukupi untuk {$variant->sku}. Stok tersedia: {$tersedia}."],
+                ]);
+            }
+
+            $variants[$idVariant] = [$variant, $jumlah];
+        }
+
+        foreach ($variants as [$variant, $jumlah]) {
+            $variant->update([
+                'stok_dipesan' => (int) $variant->stok_dipesan + $jumlah,
+            ]);
+        }
+
+        $order->update(['stok_direservasi' => true]);
+    }
+
     /**
      * Lepas reservasi stok pesanan (pembatalan / kedaluwarsa sebelum bayar).
      *
