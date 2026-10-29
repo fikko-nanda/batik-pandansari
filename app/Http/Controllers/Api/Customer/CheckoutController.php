@@ -14,7 +14,6 @@ use App\Models\UserAddress;
 use App\Models\VoucherUsage;
 use App\Services\OrderService;
 use App\Services\ShippingService;
-use App\Services\StockReservationService;
 use App\Services\VoucherService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -30,7 +29,6 @@ class CheckoutController extends Controller
         Request $request,
         VoucherService $voucherService,
         OrderService $orderService,
-        StockReservationService $reservations,
         ShippingService $shipping
     ): JsonResponse {
         // Terima `id_user_address` (kontrak resmi) atau `address_id` (alias
@@ -64,7 +62,6 @@ class CheckoutController extends Controller
             $user,
             $voucherService,
             $orderService,
-            $reservations,
             $shipping
         );
     }
@@ -80,7 +77,6 @@ class CheckoutController extends Controller
         $user,
         VoucherService $voucherService,
         OrderService $orderService,
-        StockReservationService $reservations,
         ShippingService $shipping
     ): JsonResponse {
         try {
@@ -105,7 +101,6 @@ class CheckoutController extends Controller
                 $validated,
                 $voucherService,
                 $orderService,
-                $reservations,
                 $shipping,
                 $route
             ) {
@@ -150,7 +145,7 @@ class CheckoutController extends Controller
                     }
 
                     $jumlah = (int) $cartItem->jumlah;
-                    $tersedia = (int) $variant->stok - (int) $variant->stok_dipesan;
+                    $tersedia = (int) $variant->stok;
 
                     if ($jumlah > $tersedia) {
                         throw ValidationException::withMessages([
@@ -182,17 +177,6 @@ class CheckoutController extends Controller
                 }
 
                 $shippingQuote = $shipping->quoteForDistance($route, $beratGram);
-
-                // Reservasi stok: tambah stok_dipesan (stok fisik belum dikurangi).
-                // Stok yang direservasi tidak bisa dibeli pesanan lain sampai
-                // pembayaran berhasil (dikurangi permanen) atau kedaluwarsa/dibatal.
-                $reservations->reserve(array_map(
-                    fn ($line) => [
-                        'id_variant' => $line['variant']->id_variant,
-                        'jumlah' => $line['jumlah'],
-                    ],
-                    $lines
-                ));
 
                 $subtotal = round($subtotal, 2);
 

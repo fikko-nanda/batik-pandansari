@@ -74,6 +74,11 @@ class AddressEndpointTest extends EndpointTestCase
 
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertTrue((bool) ($data['alamat_utama'] ?? false), 'Alamat pertama seharusnya menjadi utama.');
+        $address = UserAddress::where('id_user_address', $data['id_user_address'] ?? null)
+            ->where('id_user', $user->id_user)
+            ->firstOrFail();
+        $this->assertNull($address->latitude);
+        $this->assertNull($address->longitude);
         $this->assertSame(['user_addresses' => '0 -> 1 (+1)'], $this->recorded[0]['db_effect']);
 
         $this->assertRecorded();
@@ -165,9 +170,32 @@ class AddressEndpointTest extends EndpointTestCase
             'expected' => 422,
         ]);
 
+        $this->hit('POST', '/api/addresses', [
+            'endpoint' => 'POST /api/addresses',
+            'label' => 'Buat alamat dengan ID tujuan > 20 karakter',
+            'json' => [
+                'label_alamat' => 'Rumah',
+                'nama_penerima' => 'Budi',
+                'nomor_telepon' => '0812',
+                'nama_provinsi' => 'Jateng',
+                'nama_kota' => 'Pekalongan',
+                'nama_kecamatan' => 'Barat',
+                'kode_pos' => '51133',
+                'alamat_lengkap' => 'Jl. A',
+                'id_tujuan_rajaongkir' => str_repeat('1', 21),
+            ],
+            'expected' => 422,
+        ]);
+
+        $this->assertArrayHasKey(
+            'id_tujuan_rajaongkir',
+            $this->recorded[3]['response']['errors'] ?? [],
+            'Panjang ID tujuan harus mengikuti batas kolom varchar(20).'
+        );
         $this->assertSame([], $this->recorded[0]['db_effect'], 'Tidak boleh ada baris tersimpan saat validasi gagal.');
         $this->assertSame([], $this->recorded[1]['db_effect']);
         $this->assertSame([], $this->recorded[2]['db_effect']);
+        $this->assertSame([], $this->recorded[3]['db_effect']);
 
         $this->assertRecorded();
     }
@@ -231,6 +259,15 @@ class AddressEndpointTest extends EndpointTestCase
             'json' => ['kode_pos' => str_repeat('1', 15)],
             'expected' => 422,
         ]);
+
+        $this->hit('PUT', '/api/addresses/'.$address->id_user_address, [
+            'endpoint' => 'PUT /api/addresses/{id}',
+            'label' => 'Perbarui alamat dengan ID tujuan > 20 karakter',
+            'json' => ['id_tujuan_rajaongkir' => str_repeat('1', 21)],
+            'expected' => 422,
+        ]);
+
+        $this->assertArrayHasKey('id_tujuan_rajaongkir', $this->recorded[2]['response']['errors'] ?? []);
 
         $this->hit('PUT', '/api/addresses/tidak-ada', [
             'endpoint' => 'PUT /api/addresses/{id}',

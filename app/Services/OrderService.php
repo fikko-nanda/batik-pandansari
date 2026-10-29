@@ -147,12 +147,16 @@ class OrderService
             $transisi = true;
 
             if ($newStatus === 'dibatalkan') {
-                // Reservasi masih aktif (belum dibayar) → cukup dilepas.
-                // Sudah dibayar (stok fisik sudah berkurang) → kembalikan stok.
                 if ($statusSebelumnya === 'menunggu_pembayaran') {
                     $this->reservations->release($order);
                 } elseif ($statusSebelumnya === 'dibayar') {
-                    $this->restoreStock($order);
+                    $hasStockMovement = InventoryMovement::where('referensi', $order->nomor_pesanan)
+                        ->where('jenis_pergerakan', 'keluar')
+                        ->exists();
+
+                    if ($hasStockMovement) {
+                        $this->restoreStock($order);
+                    }
                 }
 
                 VoucherUsage::where('id_order', $order->id_order)
@@ -161,14 +165,10 @@ class OrderService
             }
 
             if ($newStatus === 'dibayar') {
-                // Konversi reservasi menjadi pengurangan stok permanen bila
-                // reservasi memang masih menunggu. Bila reservasi sudah
-                // dilepas (mis. pesanan sempat dibatalkan), jangan kurangi
-                // stok tanpa validasi — dicatat sebagai kekurangan untuk admin.
-                if ($statusSebelumnya === 'menunggu_pembayaran') {
-                    $this->reservations->commit($order, $changedBy);
-                } elseif ($statusSebelumnya === 'dibatalkan') {
-                    $kekurangan = $this->reservations->commitAfterRelease($order, $changedBy);
+                if (in_array($statusSebelumnya, ['menunggu_pembayaran', 'dibatalkan'], true)) {
+                    $kekurangan = $statusSebelumnya === 'menunggu_pembayaran'
+                        ? $this->reservations->commit($order, $changedBy)
+                        : $this->reservations->commitAfterRelease($order, $changedBy);
 
                     if ($kekurangan !== []) {
                         OrderStatusHistory::create([
@@ -176,7 +176,7 @@ class OrderService
                             'id_order' => $order->id_order,
                             'status_sebelumnya' => $statusSebelumnya,
                             'status_baru' => $newStatus,
-                            'catatan' => 'PERINGATAN: pembayaran diterima setelah pembatalan namun stok tidak mencukupi; perlu tindak lanjut admin: '.json_encode($kekurangan),
+                            'catatan' => 'PERINGATAN: pembayaran diterima tetapi stok tidak mencukupi; tidak ada stok yang dikurangi dan perlu tindak lanjut admin/refund: '.json_encode($kekurangan),
                             'diubah_oleh' => $changedBy,
                             'waktu_perubahan' => now(),
                         ]);

@@ -217,7 +217,7 @@
                                     <input type="tel"
                                            inputmode="numeric"
                                            pattern="[0-9]*"
-                                           maxlength="13"
+                                           maxlength="20"
                                            x-model="form.nomor_telepon"
                                            required
                                            @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
@@ -230,29 +230,59 @@
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
                                     <label class="block text-[11px] font-semibold text-slate-600 mb-1">Provinsi <span class="text-rose-500">*</span></label>
-                                    <input type="text" x-model="form.nama_provinsi" required placeholder="cth: Jawa Tengah"
+                                    <input type="text" x-model="form.nama_provinsi" @input="hapusKoordinat()" required placeholder="cth: Jawa Tengah"
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kota/Kabupaten <span class="text-rose-500">*</span></label>
-                                    <input type="text" x-model="form.nama_kota" required placeholder="cth: Surakarta"
+                                    <input type="text" x-model="form.nama_kota" @input="hapusKoordinat()" required placeholder="cth: Surakarta"
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kecamatan <span class="text-rose-500">*</span></label>
-                                    <input type="text" x-model="form.nama_kecamatan" required placeholder="cth: Laweyan"
+                                    <input type="text" x-model="form.nama_kecamatan" @input="hapusKoordinat()" required placeholder="cth: Laweyan"
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kode Pos</label>
-                                <input type="text" x-model="form.kode_pos"
+                                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kode Pos <span class="text-rose-500">*</span></label>
+                                <input type="text" x-model="form.kode_pos" @input="hapusKoordinat()" maxlength="10" required
                                        class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-600 mb-1">Alamat Lengkap <span class="text-rose-500">*</span></label>
-                                <textarea x-model="form.alamat_lengkap" rows="3" required placeholder="Jl., RT/RW, patokan…"
+                                <textarea x-model="form.alamat_lengkap" @input="hapusKoordinat()" rows="3" required placeholder="Jl., RT/RW, patokan…"
                                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"></textarea>
+                            </div>
+                            <div class="rounded-xl border border-sky-200 bg-sky-50/70 p-3 space-y-2">
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-700 mb-1">Cari lokasi untuk ongkir</label>
+                                    <div class="flex gap-2">
+                                        <input type="search" x-model="pencarianLokasi" @input="hapusKoordinat()"
+                                               @keydown.enter.prevent="cariLokasi()"
+                                               placeholder="Cari nama jalan, desa, atau kecamatan"
+                                               class="min-w-0 flex-1 border border-slate-200 rounded-lg px-3 py-2 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                        <button type="button" @click="cariLokasi()" :disabled="mencariLokasi"
+                                                class="shrink-0 rounded-lg bg-sky-700 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-60">
+                                            <span x-show="!mencariLokasi">Cari</span>
+                                            <span x-show="mencariLokasi">Mencari...</span>
+                                        </button>
+                                    </div>
+                                    <p class="mt-1 text-[10px] text-slate-500">Pilih hasil lokasi yang paling tepat agar jarak dan ongkir bisa dihitung.</p>
+                                </div>
+                                <p x-show="pesanLokasi" class="text-[11px]" :class="lokasiError ? 'text-rose-700' : 'text-slate-600'" x-text="pesanLokasi"></p>
+                                <div x-show="hasilLokasi.length" class="space-y-1">
+                                    <template x-for="(hasil, index) in hasilLokasi" :key="`${hasil.latitude}-${hasil.longitude}-${index}`">
+                                        <button type="button" @click="pilihLokasi(hasil)"
+                                                class="block w-full rounded-lg border border-sky-100 bg-white px-3 py-2 text-left text-[11px] text-slate-700 hover:border-sky-400">
+                                            <span x-text="hasil.label"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                                <p x-show="form.latitude !== null && form.longitude !== null" class="text-[10px] font-semibold text-emerald-700">
+                                    Lokasi dipilih: <span x-text="Number(form.latitude).toFixed(6)"></span>,
+                                    <span x-text="Number(form.longitude).toFixed(6)"></span>
+                                </p>
                             </div>
                             <label class="flex items-center gap-2 font-semibold text-slate-700 cursor-pointer">
                                 <input type="checkbox" x-model="form.alamat_utama" class="rounded text-sky-600 focus:ring-sky-500 w-4 h-4">
@@ -299,6 +329,11 @@
             msgOk: false,
             user: null,
             addressesCount: 0,
+            pencarianLokasi: '',
+            hasilLokasi: [],
+            mencariLokasi: false,
+            pesanLokasi: '',
+            lokasiError: false,
             form: {
                 label_alamat: '',
                 nama_penerima: '',
@@ -308,7 +343,9 @@
                 nama_kecamatan: '',
                 kode_pos: '',
                 alamat_lengkap: '',
-                alamat_utama: false
+                alamat_utama: false,
+                latitude: null,
+                longitude: null,
             },
 
             get isEdit() {
@@ -330,6 +367,59 @@
                 } catch {
                     return '';
                 }
+            },
+
+            hapusKoordinat() {
+                this.form.latitude = null;
+                this.form.longitude = null;
+                this.hasilLokasi = [];
+            },
+
+            async cariLokasi() {
+                const query = this.pencarianLokasi.trim();
+                if (query.length < 3) {
+                    this.lokasiError = true;
+                    this.pesanLokasi = 'Masukkan minimal 3 karakter untuk mencari lokasi.';
+                    return;
+                }
+
+                this.mencariLokasi = true;
+                this.pesanLokasi = '';
+                this.lokasiError = false;
+                try {
+                    const res = await PandansariAPI.searchShippingAddresses(query);
+                    if (!res?.ok) {
+                        this.hasilLokasi = [];
+                        this.lokasiError = true;
+                        this.pesanLokasi = res?.message || 'Pencarian lokasi gagal.';
+                        return;
+                    }
+
+                    this.hasilLokasi = Array.isArray(res.data) ? res.data : [];
+                    this.pesanLokasi = this.hasilLokasi.length
+                        ? 'Pilih salah satu hasil lokasi berikut.'
+                        : 'Lokasi tidak ditemukan. Coba kata pencarian yang lebih lengkap.';
+                } catch (error) {
+                    this.hasilLokasi = [];
+                    this.lokasiError = true;
+                    this.pesanLokasi = 'Layanan pencarian lokasi tidak dapat dihubungi.';
+                } finally {
+                    this.mencariLokasi = false;
+                }
+            },
+
+            pilihLokasi(hasil) {
+                this.form.latitude = hasil.latitude;
+                this.form.longitude = hasil.longitude;
+                this.form.nama_provinsi = hasil.nama_provinsi || this.form.nama_provinsi;
+                this.form.nama_kota = hasil.nama_kota || this.form.nama_kota;
+                this.form.nama_kecamatan = hasil.nama_kecamatan || this.form.nama_kecamatan;
+                this.form.kode_pos = hasil.kode_pos || this.form.kode_pos;
+                this.form.alamat_lengkap = hasil.label || this.form.alamat_lengkap;
+                this.pencarianLokasi = hasil.label || this.pencarianLokasi;
+                this.hasilLokasi = [];
+                this.lokasiError = false;
+                this.pesanLokasi = 'Koordinat lokasi berhasil dipilih.';
             },
 
             async load() {
@@ -363,8 +453,13 @@
                     nama_kecamatan: '',
                     kode_pos: '',
                     alamat_lengkap: '',
-                    alamat_utama: false
+                    alamat_utama: false,
+                    latitude: null,
+                    longitude: null,
                 };
+                this.pencarianLokasi = '';
+                this.hasilLokasi = [];
+                this.pesanLokasi = '';
                 this.showAddModal = true;
             },
 
@@ -380,7 +475,14 @@
                     kode_pos: a.kode_pos ?? '',
                     alamat_lengkap: a.alamat_lengkap ?? '',
                     alamat_utama: Boolean(a.alamat_utama),
+                    latitude: a.latitude ?? null,
+                    longitude: a.longitude ?? null,
                 };
+                this.pencarianLokasi = a.alamat_lengkap ?? '';
+                this.hasilLokasi = [];
+                this.pesanLokasi = a.latitude && a.longitude
+                    ? 'Alamat ini sudah memiliki koordinat.'
+                    : 'Pilih hasil pencarian lokasi agar ongkir dapat dihitung.';
                 this.showAddModal = true;
             },
 

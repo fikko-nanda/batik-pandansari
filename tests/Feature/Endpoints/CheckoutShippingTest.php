@@ -4,10 +4,12 @@ namespace Tests\Feature\Endpoints;
 
 use App\Models\Cart;
 use App\Models\Order;
+use App\Models\OrderStatusHistory;
 use App\Models\Payment;
 use App\Models\ProfilUsaha;
 use App\Models\ZonaPengiriman;
 use App\Services\MidtransService;
+use App\Services\OrderService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -16,6 +18,39 @@ use Illuminate\Support\Str;
 class CheckoutShippingTest extends EndpointTestCase
 {
     protected static string $group = 'Checkout Ongkir';
+
+    public function test_checkout_alerts_with_clear_error_and_preserves_cart_when_origin_is_not_configured(): void
+    {
+        $user = $this->actingAsRole('pelanggan');
+        $catalog = $this->seedCatalog();
+        $address = $this->makeAddress($user);
+        $this->addToCart($user, $catalog['variant']);
+        ProfilUsaha::updateOrCreate(
+            ['id_profil_usaha' => 1],
+            [
+                'nama_usaha' => 'Batik Pandansari',
+                'alamat_lengkap' => 'Wonokerto, Jembangan, Sragen',
+                'latitude' => null,
+                'longitude' => null,
+            ]
+        );
+        Http::preventStrayRequests();
+
+        $this->hit('POST', '/api/checkout', [
+            'json' => ['id_user_address' => $address->id_user_address],
+            'expected' => 503,
+        ]);
+
+        $this->assertSame('SHIPPING_ORIGIN_NOT_CONFIGURED', $this->recorded[0]['response']['code'] ?? null);
+        $this->assertSame(
+            'Lokasi asal pengiriman belum dikonfigurasi oleh admin.',
+            $this->recorded[0]['response']['message'] ?? null
+        );
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertSame('aktif', Cart::where('id_user', $user->id_user)->value('status_cart'));
+        $this->assertSame([], $this->recorded[0]['db_effect']);
+        $this->assertRecorded();
+    }
 
     public function test_checkout_persists_shipping_snapshot_and_passes_same_total_to_payment(): void
     {
@@ -140,5 +175,99 @@ class CheckoutShippingTest extends EndpointTestCase
             Cart::where('id_user', $user->id_user)->value('status_cart')
         );
         $this->assertRecorded();
+    }
+
+    public function test_checkout_can_sell_all_physical_stock_and_reduce_it_to_zero_after_payment(): void
+    {
+        $user = $this->actingAsRole('pelanggan');
+        $catalog = $this->seedCatalog(3, 150000);
+        $legacyOrder = $this->makeOrder(
+            $user,
+            ['nomor_pesanan' => 'ORD-STOCK-LEGACY'],
+            [$catalog['variant']]
+        );
+        $legacyOrder->update(['stok_direservasi' => true]);
+        $catalog['variant']->update(['stok_dipesan' => 1]);
+        $address = $this->makeAddress($user);
+        $this->addToCart($user, $catalog['variant'], 3);
+        $this->seedShippingBaseline();
+        Cache::flush();
+        Http::preventStrayRequests();
+        Http::fake([
+            rtrim((string) config('services.osm.osrm_url'), '/').'/route/*' => Http::response([
+                'code' => 'Ok',
+                'routes' => [['distance' => 5000, 'duration' => 900]],
+            ]),
+        ]);
+
+        $this->hit('POST', '/api/checkout', [
+            'json' => ['id_user_address' => $address->id_user_address],
+            'expected' => 201,
+        ]);
+
+        $order = Order::findOrFail($this->recorded[0]['response']['data']['id_order']);
+        $this->assertSame(3, (int) $catalog['variant']->fresh()->stok);
+        $this->assertSame(1, (int) $catalog['variant']->fresh()->stok_dipesan);
+        $this->assertFalse((bool) $order->stok_direservasi);
+
+        $orders = app(OrderService::class);
+        $orders->changeStatus($order, 'dibayar');
+
+        $this->assertSame(0, (int) $catalog['variant']->fresh()->stok);
+        $this->assertSame(1, (int) $catalog['variant']->fresh()->stok_dipesan);
+        $this->assertDatabaseHas('inventory_movements', [
+            'referensi' => $order->nomor_pesanan,
+            'jumlah' => 3,
+            'stok_sebelum' => 3,
+            'stok_sesudah' => 0,
+        ]);
+
+        $orders->changeStatus($legacyOrder, 'dibayar');
+
+        $this->assertSame(0, (int) $catalog['variant']->fresh()->stok);
+        $this->assertSame(0, (int) $catalog['variant']->fresh()->stok_dipesan);
+        $this->assertTrue(
+            OrderStatusHistory::where('id_order', $legacyOrder->id_order)
+                ->where('catatan', 'like', '%perlu tindak lanjut admin/refund%')
+                ->exists()
+        );
+        $this->assertRecorded();
+    }
+
+    public function test_payment_shortage_does_not_make_stock_negative_and_records_admin_warning(): void
+    {
+        $admin = $this->actingAsRole('admin');
+        $customer = $this->makeUser('pelanggan');
+        $catalog = $this->seedCatalog(3, 150000);
+        $firstOrder = $this->makeOrder(
+            $customer,
+            ['nomor_pesanan' => 'ORD-STOCK-FIRST'],
+            [$catalog['variant']]
+        );
+        $secondOrder = $this->makeOrder(
+            $customer,
+            ['nomor_pesanan' => 'ORD-STOCK-SECOND'],
+            [$catalog['variant']]
+        );
+        $firstOrder->items()->update(['jumlah' => 2]);
+        $secondOrder->items()->update(['jumlah' => 2]);
+
+        $orders = app(OrderService::class);
+        $orders->changeStatus($firstOrder, 'dibayar', $admin->id_user);
+        $orders->changeStatus($secondOrder, 'dibayar', $admin->id_user);
+
+        $this->assertSame(1, (int) $catalog['variant']->fresh()->stok);
+        $this->assertDatabaseCount('inventory_movements', 1);
+        $this->assertTrue(
+            OrderStatusHistory::where('id_order', $secondOrder->id_order)
+                ->where('status_baru', 'dibayar')
+                ->where('catatan', 'like', '%perlu tindak lanjut admin/refund%')
+                ->exists()
+        );
+
+        $orders->changeStatus($secondOrder, 'dibatalkan', $admin->id_user);
+
+        $this->assertSame(1, (int) $catalog['variant']->fresh()->stok);
+        $this->assertDatabaseCount('inventory_movements', 1);
     }
 }

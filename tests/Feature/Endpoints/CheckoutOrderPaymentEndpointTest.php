@@ -83,7 +83,9 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         ]);
 
         $data = $this->recorded[0]['response']['data'] ?? [];
+        $order = Order::findOrFail($data['id_order']);
         $this->assertSame('menunggu_pembayaran', $data['status_pesanan'] ?? null);
+        $this->assertArrayNotHasKey('stok_direservasi', $data);
         $this->assertSame(300000.0, (float) ($data['subtotal'] ?? 0), 'Subtotal 2 x 150.000.');
         $this->assertSame(7000.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Ongkir zona uji 1 kg.');
         $this->assertSame(5.0, (float) ($data['jarak_km'] ?? 0));
@@ -106,11 +108,12 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         );
 
         $variant = $catalog['variant']->fresh();
-        $this->assertSame(10, (int) $variant->stok, 'Stok fisik tidak berkurang saat checkout (reservasi).');
-        $this->assertSame(2, (int) $variant->stok_dipesan, 'Stok direservasi sebesar jumlah pesanan.');
+        $this->assertSame(10, (int) $variant->stok, 'Stok fisik tidak berkurang sebelum pembayaran.');
+        $this->assertSame(0, (int) $variant->stok_dipesan, 'Checkout tidak mereservasi stok.');
+        $this->assertFalse((bool) $order->stok_direservasi);
         $this->assertSame('checkout', $this->currentCartStatus($user));
 
-        $this->note('Stok fisik tetap 10; 2 unit masuk stok_dipesan (tersedia = stok - stok_dipesan).');
+        $this->note('Checkout tidak mengurangi atau mereservasi stok; stok fisik dikurangi setelah pembayaran.');
 
         $this->assertRecorded();
     }
@@ -765,6 +768,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 
         // Simulasikan reservasi stok yang masih aktif (pesanan menunggu pembayaran).
         $catalog['variant']->update(['stok_dipesan' => 1]);
+        $order->update(['stok_direservasi' => true]);
 
         $this->hit('PUT', '/api/admin/orders/'.$order->id_order.'/status', [
             'endpoint' => 'PUT /api/admin/orders/{id}/status',

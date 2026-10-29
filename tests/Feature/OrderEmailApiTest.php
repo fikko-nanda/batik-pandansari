@@ -128,6 +128,7 @@ class OrderEmailApiTest extends TestCase
             $table->string('id_user');
             $table->string('nomor_pesanan')->unique();
             $table->string('status_pesanan')->default('menunggu_pembayaran');
+            $table->boolean('stok_direservasi')->default(false);
             $table->timestamp('kedaluwarsa_pada')->nullable();
             $table->decimal('subtotal', 12, 2)->default(0);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);
@@ -552,6 +553,7 @@ class OrderEmailApiTest extends TestCase
         $variant = $this->makeVariant(5);
         $variant->update(['stok_dipesan' => 1]);
         $order = $this->makeOrder($user, $variant, 1, 100000);
+        $order->update(['stok_direservasi' => true]);
         $order->update(['kedaluwarsa_pada' => now()->subMinute()]);
         $this->makePendingPayment($order);
 
@@ -570,6 +572,7 @@ class OrderEmailApiTest extends TestCase
         $variant = $this->makeVariant(5);
         $variant->update(['stok_dipesan' => 1]);
         $order = $this->makeOrder($user, $variant, 1, 100000);
+        $order->update(['stok_direservasi' => true]);
         $this->makePendingPayment($order);
 
         $this->mockNotification([

@@ -143,4 +143,29 @@ class LegacySchemaMigrationsTest extends TestCase
             );
         }
     }
+
+    public function test_stock_state_migration_marks_existing_unpaid_orders_as_reserved(): void
+    {
+        Schema::create('product_variants', function (Blueprint $table) {
+            $table->string('id_variant')->primary();
+            $table->unsignedInteger('stok')->default(0);
+            $table->unsignedInteger('stok_dipesan')->default(0);
+        });
+
+        Schema::create('orders', function (Blueprint $table) {
+            $table->string('id_order')->primary();
+            $table->string('status_pesanan');
+        });
+
+        DB::table('orders')->insert([
+            ['id_order' => 'order-pending', 'status_pesanan' => 'menunggu_pembayaran'],
+            ['id_order' => 'order-cancelled', 'status_pesanan' => 'dibatalkan'],
+        ]);
+
+        $migration = require database_path('migrations/2026_10_29_070249_add_stock_state_columns_to_orders.php');
+        $migration->up();
+
+        $this->assertTrue((bool) DB::table('orders')->where('id_order', 'order-pending')->value('stok_direservasi'));
+        $this->assertFalse((bool) DB::table('orders')->where('id_order', 'order-cancelled')->value('stok_direservasi'));
+    }
 }

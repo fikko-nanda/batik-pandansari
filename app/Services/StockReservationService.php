@@ -6,71 +6,19 @@ use App\Models\InventoryMovement;
 use App\Models\Order;
 use App\Models\ProductVariant;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 /**
- * Reservasi stok pesanan yang menunggu pembayaran (maksimal 12 jam).
+ * Menangani reservasi lama dan perubahan stok saat pembayaran pesanan.
  *
  * Model stok:
  * - product_variants.stok           : stok fisik/total yang dimiliki.
- * - product_variants.stok_dipesan   : unit yang sedang direservasi pesanan
- *                                     menunggu pembayaran.
- * - stok tersedia                   : stok - stok_dipesan.
+ * - product_variants.stok_dipesan   : reservasi aggregate dari order lama.
  *
- * Alur:
- * - reserve() : saat checkout, pastikan stok tersedia cukup lalu tambah
- *               stok_dipesan. Stok fisik TIDAK dikurangi.
- * - release() : saat pesanan dibatalkan/kedaluwarsa sebelum dibayar, kurangi
- *               stok_dipesan kembali. Idempotent (aman dipanggil berulang).
- * - commit()  : saat pembayaran terkonfirmasi, kurangi stok fisik DAN
- *               stok_dipesan sekaligus, catat pergerakan 'keluar'.
- *
- * Idempotensi bersumber dari status pesanan (menunggu_pembayaran vs
- * dibayar/dibatalkan) yang diperiksa pemanggil di dalam transaksi dengan row
- * lock; store/commit/release di sini juga mengunci baris varian.
+ * Checkout tidak mencadangkan stok. Stok fisik baru berkurang saat pembayaran
+ * terkonfirmasi; reservasi yang dibuat versi lama tetap dapat dilepas.
  */
 class StockReservationService
 {
-    /**
-     * Reservasi stok untuk seluruh item pesanan.
-     *
-     * @param  array<int, array{id_variant: string, jumlah: int}>  $lines
-     *
-     * @throws ValidationException
-     */
-    public function reserve(array $lines): void
-    {
-        usort(
-            $lines,
-            fn (array $a, array $b) => $a['id_variant'] <=> $b['id_variant']
-        );
-
-        foreach ($lines as $line) {
-            $variant = ProductVariant::whereKey($line['id_variant'])
-                ->lockForUpdate()
-                ->first();
-
-            if (! $variant) {
-                throw ValidationException::withMessages([
-                    'cart' => ['Varian produk tidak tersedia untuk dibeli.'],
-                ]);
-            }
-
-            $jumlah = (int) $line['jumlah'];
-            $tersedia = (int) $variant->stok - (int) $variant->stok_dipesan;
-
-            if ($jumlah > $tersedia) {
-                throw ValidationException::withMessages([
-                    'cart' => ["Stok tidak mencukupi untuk {$variant->sku}. Stok tersedia: {$tersedia}."],
-                ]);
-            }
-
-            $variant->update([
-                'stok_dipesan' => (int) $variant->stok_dipesan + $jumlah,
-            ]);
-        }
-    }
-
     /**
      * Lepas reservasi stok pesanan (pembatalan / kedaluwarsa sebelum bayar).
      *
@@ -79,6 +27,10 @@ class StockReservationService
      */
     public function release(Order $order): void
     {
+        if (! $order->stok_direservasi) {
+            return;
+        }
+
         foreach ($order->items->sortBy('id_variant') as $item) {
             $variant = ProductVariant::whereKey($item->id_variant)
                 ->lockForUpdate()
@@ -96,49 +48,21 @@ class StockReservationService
 
             $variant->update(['stok_dipesan' => $dipesanBaru]);
         }
+
+        $order->update(['stok_direservasi' => false]);
     }
 
     /**
      * Tetapkan pengurangan stok permanen karena pembayaran berhasil.
      *
-     * Mengurangi stok fisik sekaligus melepas reservasi, mencatat pergerakan
-     * 'keluar'. Hanya dijalankan ketika order belum pernah dikonversi
-     * (dijaga status pesanan oleh pemanggil + lock di sini).
+     * Mengurangi stok fisik secara atomik jika seluruh item masih tersedia.
+     * Reservasi lama, bila ada, dilepas sekaligus.
+     *
+     * @return array<int, array{id_variant: string, sku: string, diminta: int, tersedia: int}>
      */
-    public function commit(Order $order, ?string $idUser = null): void
+    public function commit(Order $order, ?string $idUser = null): array
     {
-        foreach ($order->items->sortBy('id_variant') as $item) {
-            $variant = ProductVariant::whereKey($item->id_variant)
-                ->lockForUpdate()
-                ->first();
-
-            if (! $variant) {
-                continue;
-            }
-
-            $jumlah = (int) $item->jumlah;
-            $stokSebelum = (int) $variant->stok;
-            $stokSesudah = max(0, $stokSebelum - $jumlah);
-            $dipesanBaru = max(0, (int) $variant->stok_dipesan - $jumlah);
-
-            $variant->update([
-                'stok' => $stokSesudah,
-                'stok_dipesan' => $dipesanBaru,
-            ]);
-
-            InventoryMovement::create([
-                'id_inventory_movement' => (string) Str::uuid(),
-                'id_variant' => $variant->id_variant,
-                'id_user' => $idUser,
-                'jenis_pergerakan' => 'keluar',
-                'jumlah' => $jumlah,
-                'stok_sebelum' => $stokSebelum,
-                'stok_sesudah' => $stokSesudah,
-                'referensi' => $order->nomor_pesanan,
-                'catatan' => 'Pengurangan stok pesanan dibayar',
-                'waktu_pergerakan' => now(),
-            ]);
-        }
+        return $this->commitOrder($order, $idUser, (bool) $order->stok_direservasi);
     }
 
     /**
@@ -153,51 +77,89 @@ class StockReservationService
      */
     public function commitAfterRelease(Order $order, ?string $idUser = null): array
     {
+        return $this->commitOrder($order, $idUser, false);
+    }
+
+    /**
+     * @return array<int, array{id_variant: string, sku: string, diminta: int, tersedia: int}>
+     */
+    private function commitOrder(Order $order, ?string $idUser, bool $releaseReservation): array
+    {
+        $items = $order->items->sortBy('id_variant');
+        $jumlahPerVariant = $items
+            ->groupBy('id_variant')
+            ->map(fn ($variantItems): int => (int) $variantItems->sum('jumlah'))
+            ->all();
+        ksort($jumlahPerVariant);
+
+        $variants = [];
         $kekurangan = [];
 
-        foreach ($order->items->sortBy('id_variant') as $item) {
-            $variant = ProductVariant::whereKey($item->id_variant)
+        foreach ($jumlahPerVariant as $idVariant => $jumlah) {
+            $variant = ProductVariant::whereKey($idVariant)
                 ->lockForUpdate()
                 ->first();
 
             if (! $variant) {
-                continue;
-            }
-
-            $jumlah = (int) $item->jumlah;
-            $stokSebelum = (int) $variant->stok;
-
-            if ($jumlah > $stokSebelum) {
+                $item = $items->firstWhere('id_variant', $idVariant);
                 $kekurangan[] = [
-                    'id_variant' => $variant->id_variant,
-                    'sku' => $variant->sku,
+                    'id_variant' => (string) $idVariant,
+                    'sku' => (string) $item->sku,
                     'diminta' => $jumlah,
-                    'tersedia' => $stokSebelum,
+                    'tersedia' => 0,
                 ];
 
                 continue;
             }
 
-            $stokSesudah = $stokSebelum - $jumlah;
+            $variants[$idVariant] = $variant;
+            $stokSebelum = (int) $variant->stok;
 
-            $variant->update([
-                'stok' => $stokSesudah,
-                'stok_dipesan' => max(0, (int) $variant->stok_dipesan - $jumlah),
-            ]);
-
-            InventoryMovement::create([
-                'id_inventory_movement' => (string) Str::uuid(),
-                'id_variant' => $variant->id_variant,
-                'id_user' => $idUser,
-                'jenis_pergerakan' => 'keluar',
-                'jumlah' => $jumlah,
-                'stok_sebelum' => $stokSebelum,
-                'stok_sesudah' => $stokSesudah,
-                'referensi' => $order->nomor_pesanan,
-                'catatan' => 'Pengurangan stok pesanan dibayar (reservasi sudah dilepas)',
-                'waktu_pergerakan' => now(),
-            ]);
+            if ($jumlah > $stokSebelum) {
+                $kekurangan[] = [
+                    'id_variant' => (string) $idVariant,
+                    'sku' => $variant->sku,
+                    'diminta' => $jumlah,
+                    'tersedia' => $stokSebelum,
+                ];
+            }
         }
+
+        if ($kekurangan === []) {
+            foreach ($jumlahPerVariant as $idVariant => $jumlah) {
+                $variant = $variants[$idVariant];
+                $stokSebelum = (int) $variant->stok;
+                $stokSesudah = $stokSebelum - $jumlah;
+
+                $variant->update(['stok' => $stokSesudah]);
+
+                InventoryMovement::create([
+                    'id_inventory_movement' => (string) Str::uuid(),
+                    'id_variant' => $variant->id_variant,
+                    'id_user' => $idUser,
+                    'jenis_pergerakan' => 'keluar',
+                    'jumlah' => $jumlah,
+                    'stok_sebelum' => $stokSebelum,
+                    'stok_sesudah' => $stokSesudah,
+                    'referensi' => $order->nomor_pesanan,
+                    'catatan' => 'Pengurangan stok pesanan dibayar',
+                    'waktu_pergerakan' => now(),
+                ]);
+            }
+        }
+
+        if ($releaseReservation) {
+            foreach ($variants as $idVariant => $variant) {
+                $variant->update([
+                    'stok_dipesan' => max(
+                        0,
+                        (int) $variant->stok_dipesan - $jumlahPerVariant[$idVariant]
+                    ),
+                ]);
+            }
+        }
+
+        $order->update(['stok_direservasi' => false]);
 
         return $kekurangan;
     }
