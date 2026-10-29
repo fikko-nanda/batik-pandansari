@@ -1,6 +1,6 @@
 {{-- Component kartu produk katalog — dipanggil dari shop/katalog.blade.php
     Memakai variabel Alpine `p` dari parent (template x-for pada shop/katalog.blade.php). --}}
-<div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
+<div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between w-full max-w-full">
     <div class="relative h-44 sm:h-72 bg-slate-100 overflow-hidden">
         <a :href="'/detail/' + p.id_product" class="block w-full h-full">
             <img :src="coverOf(p)" :alt="p.nama_produk" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out" :onerror="`this.src='${fallbackImage}'`">
@@ -11,16 +11,23 @@
         </span>
 
         <!-- Tombol Toggle Like / Wishlist -->
-        <button @click.stop.prevent="typeof toggleLike === 'function' ? toggleLike(p) : toggleWishlist(p)"
+        <button @click.stop.prevent="typeof toggleWishlist === 'function' ? toggleWishlist(p) : toggleLike(p)"
                 type="button"
                 class="absolute top-2 right-2 sm:top-3 sm:right-3 w-7 h-7 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-md hover:scale-110 active:scale-95 transition-all duration-200 z-10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 :class="(p.is_liked || (typeof wishlisted !== 'undefined' && wishlisted[p.id_product]?.liked)) ? 'text-red-500' : 'text-gray-400'"
                 :disabled="p.isLoading || p.isLoadingWishlist || (typeof wishlistBusy !== 'undefined' && wishlistBusy[p.id_product])"
                 :title="(p.is_liked || (typeof wishlisted !== 'undefined' && wishlisted[p.id_product]?.liked)) ? 'Batalkan Suka' : 'Sukai Produk'">
-            <i class="text-[11px] sm:text-xs transition-colors duration-150"
-               :class="(p.is_liked || (typeof wishlisted !== 'undefined' && wishlisted[p.id_product]?.liked))
-                   ? 'fa-solid fa-heart text-red-500 fill-current'
-                   : 'fa-regular fa-heart text-gray-400 stroke-current'"></i>
+            <svg xmlns="http://www.w3.org/2000/svg"
+                 class="w-4 h-4 transition-colors duration-150"
+                 :class="(p.is_liked || (typeof wishlisted !== 'undefined' && wishlisted[p.id_product]?.liked))
+                     ? 'text-red-500 fill-red-500'
+                     : 'text-gray-400 fill-none stroke-current'"
+                 viewBox="0 0 24 24"
+                 stroke-width="1.8"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+            </svg>
         </button>
 
         <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4 pointer-events-none">

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id" class="h-full bg-[#FAF8F5] overflow-x-hidden">
+<html lang="id" class="h-full bg-[#FAF8F5] overflow-x-hidden w-full max-w-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -28,11 +28,11 @@
     <script src="{{ $midtransSnapUrl }}" data-client-key="{{ $midtransClientKey ?? 'SB-Mid-client-sample' }}"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="flex flex-col min-h-screen text-[#0F1A24] antialiased font-['Plus_Jakarta_Sans',sans-serif] bg-[#FAF8F5] relative overflow-x-hidden">
+<body class="flex flex-col min-h-screen text-[#0F1A24] antialiased font-['Plus_Jakarta_Sans',sans-serif] bg-[#FAF8F5] relative overflow-x-hidden w-full max-w-full">
 
     <x-announcement-bar />
     <x-navbar />
-        <main class="flex-grow w-full">
+        <main class="flex-grow w-full max-w-full overflow-x-hidden">
             @yield('content')
         </main>
 

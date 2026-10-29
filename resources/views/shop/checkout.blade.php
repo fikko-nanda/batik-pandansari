@@ -104,36 +104,44 @@
                                     <div class="flex flex-wrap items-center gap-2">
                                         <span class="text-xs font-bold text-[#0F1A24]" x-text="a.label_alamat || 'Alamat'"></span>
                                         <span x-show="a.alamat_utama ?? a.is_primary" class="text-[9px] bg-sky-100 text-[#0369A1] font-bold px-1.5 py-0.5 rounded uppercase">UTAMA</span>
-                                        <span x-show="a.latitude && a.longitude" class="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
-                                            <i class="fa-solid fa-location-dot"></i> Koordinat OSM Tersimpan
+                                        <span x-show="a.latitude && a.longitude" class="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
+                                            <i class="fa-solid fa-location-dot text-emerald-600"></i> Titik Peta Aktif
                                         </span>
-                                        <span x-show="!a.latitude || !a.longitude" class="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
-                                            <i class="fa-solid fa-triangle-exclamation"></i> Belum Ada Titik Peta
+                                        <span x-show="!a.latitude || !a.longitude" class="text-[9px] bg-rose-50 text-rose-700 border border-rose-200 font-bold px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
+                                            <i class="fa-solid fa-triangle-exclamation text-rose-500"></i> Belum Ada Titik Peta
                                         </span>
                                     </div>
-                                    <p class="text-[11px] text-slate-600 leading-relaxed mt-0.5">
+                                    <p class="text-[11px] text-slate-600 leading-relaxed mt-1">
                                         <strong x-text="a.nama_penerima"></strong> • <span x-text="a.nomor_telepon || a.telepon"></span><br>
                                         <span x-text="a.alamat_lengkap"></span>, <span x-text="a.nama_kecamatan"></span>, <span x-text="a.nama_kota"></span>, <span x-text="a.nama_provinsi"></span> <span x-text="a.kode_pos"></span>
                                     </p>
-                                    <p x-show="!a.latitude || !a.longitude" class="mt-1 text-[10px] font-semibold text-amber-700">Koordinat belum dipilih. Lengkapi lokasi di <a href="/address" class="underline">buku alamat</a> untuk cek ongkir.</p>
                                 </div>
                             </label>
                         </template>
 
-                        <!-- Peringatan jika alamat terpilih belum memiliki koordinat OSM -->
-                        <div x-show="selectedAddress && !selectedAddressHasCoordinates" x-cloak class="bg-amber-50 border border-amber-200 text-amber-800 p-3 sm:p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-                            <div class="flex items-center gap-2 font-medium">
-                                <i class="fa-solid fa-triangle-exclamation text-amber-600 text-sm shrink-0"></i>
-                                <span>Alamat ini belum memiliki koordinat peta OpenStreetMap yang valid.</span>
+                        <!-- Alert & Tombol Aksi jika alamat terpilih belum memiliki titik koordinat peta -->
+                        <div x-show="selectedAddress && !selectedAddressHasCoordinates" x-cloak class="bg-amber-50/90 border border-amber-200 text-amber-900 p-3.5 sm:p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                                    <i class="fa-solid fa-location-crosshairs text-base"></i>
+                                </div>
+                                <div>
+                                    <span class="font-bold block text-[#0F1A24]">Titik Peta Pengiriman Belum Disetel</span>
+                                    <span class="text-[11px] text-amber-800">Tentukan titik lokasi pada peta agar ongkos kirim rute darat dapat dihitung otomatis.</span>
+                                </div>
                             </div>
-                            <a href="/address" class="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-lg text-[11px] whitespace-nowrap self-start sm:self-auto transition">
-                                <i class="fa-solid fa-map-pin"></i> Perbarui Alamat di /address
+                            <a href="/address" class="inline-flex items-center justify-center gap-1.5 bg-[#0F1A24] hover:bg-slate-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs whitespace-nowrap transition shadow-sm shrink-0">
+                                <i class="fa-solid fa-map-location-dot text-sky-400"></i>
+                                <span>Atur Titik Peta Alamat</span>
                             </a>
                         </div>
 
-                        <p class="text-[11px] text-slate-400 text-right">
-                            Kelola daftar alamat di <a href="/address" class="text-sky-600 font-bold hover:underline">/address</a> →
-                        </p>
+                        <div class="flex items-center justify-between pt-2 text-[11px] text-slate-500 border-t border-slate-100">
+                            <span>Ingin menggunakan alamat lain?</span>
+                            <a href="/address" class="text-sky-600 font-bold hover:underline flex items-center gap-1">
+                                Kelola Buku Alamat <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                            </a>
+                        </div>
 
                         <div>
                             <label class="block text-[11px] font-semibold text-slate-600 mb-1">Patokan / Catatan Alamat (opsional)</label>
@@ -208,82 +216,6 @@
                             </div>
 
                             <!-- Berat Paket & Pembulatan -->
-                            <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1">
-                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Berat Paket & Pembulatan</span>
-                                <div class="text-sm font-extrabold text-slate-900 flex items-baseline gap-1.5">
-                                    <span x-text="(shippingQuote?.berat_dibulatkan_kg ?? 1) + ' kg'"></span>
-                                    <span class="text-[10px] text-slate-500 font-medium" x-text="'(' + (shippingQuote?.berat_gram ?? 0) + ' gram, min. 1 kg)'"></span>
-                                </div>
-                                <p class="text-[10px] text-slate-500">Dibulatkan ke atas per kilogram penuh.</p>
-                            </div>
-                        </div>
-
-                        <!-- Rincian Zona & Biaya -->
-                        <div class="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 text-xs">
-                            <div class="flex items-center justify-between">
-                                <span class="font-bold text-slate-800 flex items-center gap-1.5">
-                                    <i class="fa-solid fa-layer-group text-sky-600"></i>
-                                    <span x-text="shippingQuote?.zona?.nama_zona || 'Zona Pengiriman'"></span>
-                                </span>
-                                <span class="text-sm font-extrabold text-slate-900" x-text="formatRupiah(shippingQuote?.biaya_pengiriman ?? 0)"></span>
-                            </div>
-                            <div class="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 border-t border-slate-200/60">
-                                <span>Biaya Dasar: <strong class="text-slate-700" x-text="formatRupiah(shippingQuote?.zona?.biaya_dasar ?? 0)"></strong></span>
-                                <span>Tarif per kg: <strong class="text-slate-700" x-text="formatRupiah(shippingQuote?.zona?.biaya_per_kg ?? 0) + ' / kg'"></strong></span>
-                                <span>Perhitungan: <span class="text-slate-600 font-mono text-[10px]">Dasar + (<span x-text="shippingQuote?.berat_dibulatkan_kg ?? 1"></span> kg × Tarif/kg)</span></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Peringatan jika error kalkulasi -->
-                    <div x-show="!loadingShipping && shippingError && !originNotConfigured" class="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 space-y-1">
-                        <div class="font-bold flex items-center gap-1.5">
-                            <i class="fa-solid fa-circle-exclamation text-rose-600"></i>
-                            <span>Kalkulasi Ongkos Kirim Belum Berhasil</span>
-                        </div>
-                        <p x-text="shippingError"></p>
-                    </div>
-
-                    <!-- Peringatan jika belum ada alamat / belum ada koordinat -->
-                    <div x-show="!loadingShipping && (!selectedAddress || !selectedAddressHasCoordinates)" class="p-3.5 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-center text-xs text-slate-500">
-                        <i class="fa-solid fa-map-pin text-slate-400 mb-1 text-sm block"></i>
-                        <span x-text="!selectedAddress ? 'Pilih alamat pengiriman di atas untuk menghitung ongkir otomatis.' : 'Alamat belum memiliki koordinat peta. Perbarui alamat untuk menghitung ongkir.'"></span>
-                    </div>
-                </div>
-
-            </div>
-                            <i class="fa-solid fa-truck-fast text-sky-600 text-sm"></i>
-                            <span>Kalkulasi Pengiriman Otomatis (OpenStreetMap & OSRM)</span>
-                        </div>
-                        <button type="button"
-                                @click="calculateShipping()"
-                                :disabled="loadingShipping || !selectedAddress || !selectedAddressHasCoordinates"
-                                class="text-[11px] text-sky-600 font-bold hover:underline flex items-center gap-1 disabled:opacity-40 cursor-pointer">
-                            <i class="fa-solid fa-rotate-right" :class="loadingShipping && 'fa-spin'"></i>
-                            <span>Hitung Ulang</span>
-                        </button>
-                    </div>
-
-                    <!-- Loading State -->
-                    <div x-show="loadingShipping" class="py-5 text-center text-xs text-slate-500 font-medium flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-circle-notch fa-spin text-sky-600 text-base"></i>
-                        <span>Menghitung rute darat OSRM dan tarif zona pengiriman...</span>
-                    </div>
-
-                    <!-- Hasil Kalkulasi Sukses -->
-                    <div x-show="!loadingShipping && shippingQuote" class="space-y-3">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                            <!-- Jarak & Durasi -->
-                            <div class="p-3 bg-sky-50/70 border border-sky-100 rounded-xl space-y-1">
-                                <span class="text-[10px] font-bold text-sky-700 uppercase tracking-wider block">Jarak Rute Jalan (OSRM)</span>
-                                <div class="text-sm font-extrabold text-slate-900 flex items-baseline gap-1.5">
-                                    <span x-text="shippingQuote?.jarak_km ? Number(shippingQuote.jarak_km).toFixed(2) + ' km' : '-'"></span>
-                                    <span class="text-[10px] text-slate-500 font-medium" x-text="shippingQuote?.durasi_menit ? '(± ' + shippingQuote.durasi_menit + ' menit)' : ''"></span>
-                                </div>
-                                <p class="text-[10px] text-slate-500">Dihitung berdasarkan rute jalan darat ke koordinat tujuan.</p>
-                            </div>
-
-                            <!-- Berat Barang & Pembulatan -->
                             <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1">
                                 <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Berat Paket & Pembulatan</span>
                                 <div class="text-sm font-extrabold text-slate-900 flex items-baseline gap-1.5">

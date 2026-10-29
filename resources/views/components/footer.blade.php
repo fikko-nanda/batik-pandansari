@@ -1,4 +1,4 @@
-<footer class="bg-white pt-14 pb-8 border-t border-slate-100 text-xs font-['Plus_Jakarta_Sans']">
+<footer class="bg-white pt-14 pb-8 border-t border-slate-100 text-xs font-['Plus_Jakarta_Sans'] w-full max-w-full overflow-hidden">
     <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
         <div class="grid grid-cols-1 md:grid-cols-12 gap-8 pb-12 border-b border-slate-100">
             <div class="md:col-span-4 space-y-4">

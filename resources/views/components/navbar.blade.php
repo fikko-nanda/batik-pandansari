@@ -10,35 +10,35 @@
     
 
     <!-- Main Navbar Container -->
-    <div class="max-w-[1280px] mx-auto px-4 sm:px-6 py-3">
-        <div class="flex items-center justify-between gap-4">
+    <div class="max-w-[1280px] mx-auto px-4 sm:px-6 py-2.5 sm:py-3 w-full">
+        <div class="flex items-center justify-between gap-2 md:gap-4 w-full">
             
             <!-- Logo Brand (Icon Berlian + Teks) -->
-            <a href="/" class="flex items-center gap-2.5 shrink-0">
-                <div class="w-9 h-9 bg-black rounded-xl flex items-center justify-center text-white">
-                    <i class="fa-regular fa-gem text-base"></i>
+            <a href="/" class="flex items-center gap-2 sm:gap-2.5 shrink-0">
+                <div class="w-8 h-8 sm:w-9 sm:h-9 bg-black rounded-xl flex items-center justify-center text-white shrink-0">
+                    <i class="fa-regular fa-gem text-sm sm:text-base"></i>
                 </div>
                 <div>
-                    <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900 leading-none font-['Plus_Jakarta_Sans']">
+                    <h1 class="text-sm sm:text-base lg:text-lg font-bold tracking-tight text-slate-900 leading-none font-['Plus_Jakarta_Sans']">
                         BATIK PANDANSARI
                     </h1>
-                    <p class="text-[9px] font-bold tracking-[2.5px] text-slate-500 uppercase mt-0.5 font-['Plus_Jakarta_Sans']">
+                    <p class="text-[8px] sm:text-[9px] font-bold tracking-[2px] sm:tracking-[2.5px] text-slate-500 uppercase mt-0.5 font-['Plus_Jakarta_Sans']">
                         MAHARDIKA AUTENTIK
                     </p>
                 </div>
             </a>
 
             <!-- Right Action Items (Search Bar, Wishlist, Cart, WA Button, User Icon) -->
-            <div class="flex items-center gap-3 sm:gap-4">
+            <div class="flex items-center gap-2 sm:gap-3 lg:gap-4 shrink-0">
                 
-                <!-- Search Bar Input -->
-                <form action="/katalog" method="GET" class="relative hidden sm:block w-48 md:w-64 lg:w-72">
+                <!-- Search Bar Input (Ringkas di tampilan tablet agar tidak overflow) -->
+                <form action="/katalog" method="GET" class="relative hidden sm:block w-36 md:w-44 lg:w-64 xl:w-72 shrink min-w-0">
                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                     <input type="text" 
                            name="q"
                            value="{{ request('q') }}"
-                           placeholder="Cari motif, kain, sarimbit..." 
-                           class="w-full pl-8 pr-3 py-2 text-xs bg-slate-50/80 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 font-['Plus_Jakarta_Sans'] placeholder:text-slate-400">
+                           placeholder="Cari motif..." 
+                           class="w-full pl-8 pr-3 py-1.5 sm:py-2 text-xs bg-slate-50/80 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 font-['Plus_Jakarta_Sans'] placeholder:text-slate-400">
                 </form>
 
                <!-- Tombol Icon Wishlist / Favorit -->
@@ -71,13 +71,14 @@
                                   x-text="$store.lencana ? $store.lencana.cart : 0">
                             </span>
                         </a>
-                <!-- WhatsApp CS Button -->
+                <!-- WhatsApp CS Button (Ringkas hanya ikon di tablet/md, lengkap teks di xl, tersembunyi di bawah md) -->
                 <a href="https://wa.me/6283820380977?text=Halo%20Batik%20Pandansari,%20saya%20ingin%20konsultasi" 
                    target="_blank" 
                    rel="noopener noreferrer"
-                   class="hidden md:inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-sm font-['Plus_Jakarta_Sans']">
-                    <i class="fa-regular fa-comment-dots text-sm"></i>
-                    <span>WhatsApp CS</span>
+                   class="hidden md:inline-flex items-center gap-1.5 bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-bold p-2 xl:px-3.5 xl:py-2 rounded-xl transition shadow-sm font-['Plus_Jakarta_Sans'] shrink-0"
+                   title="WhatsApp CS">
+                    <i class="fa-brands fa-whatsapp text-sm sm:text-base"></i>
+                    <span class="hidden xl:inline">WhatsApp CS</span>
                 </a>
 
              <!-- User Profile Button (status dari API: GET /me — dropdown profil/keluar) -->

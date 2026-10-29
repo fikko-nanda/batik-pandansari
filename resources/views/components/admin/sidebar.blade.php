@@ -1,16 +1,16 @@
 <!-- SIDEBAR ADMIN (DARK ROYAL NAVY) -->
-<aside class="w-64 bg-[#0A192F] text-slate-300 flex flex-col h-[100dvh] lg:h-screen sticky top-0 relative overflow-hidden">
+<div {{ $attributes->merge(['class' => 'w-64 bg-[#0A192F] text-slate-300 flex flex-col h-full relative overflow-hidden']) }}>
     
     <!-- Tombol Tutup (Hanya untuk HP) -->
     <button type="button" @click="sidebarOpen = false" class="lg:hidden absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition z-20" aria-label="Tutup menu">
         <i class="fa-solid fa-xmark text-lg"></i>
     </button>
 
-    <!-- Konten Sidebar -->
-    <div class="relative z-10 flex flex-col h-full">
-        <!-- Brand Header Sidebar -->
-        <a href="{{ route('admin.dashboard') }}" @click="if (window.innerWidth < 1024) { sidebarOpen = false }" class="p-5 lg:p-6 flex items-center gap-3 border-b border-slate-800/80">
-            <div class="w-9 h-9 bg-sky-500 rounded-xl flex items-center justify-center text-slate-900 font-bold shadow-md">
+    <!-- Konten Sidebar Flex Container -->
+    <div class="relative z-10 flex flex-col h-full min-h-0">
+        <!-- Brand Header Sidebar (shrink-0 agar tetap terkunci di posisi atas) -->
+        <a href="{{ route('admin.dashboard') }}" @click="if (window.innerWidth < 1024) { sidebarOpen = false }" class="shrink-0 p-5 lg:p-6 flex items-center gap-3 border-b border-slate-800/80">
+            <div class="w-9 h-9 bg-sky-500 rounded-xl flex items-center justify-center text-slate-900 font-bold shadow-md shrink-0">
                 <i class="fa-regular fa-gem text-lg"></i>
             </div>
             <div>
@@ -19,8 +19,8 @@
             </div>
         </a>
 
-        <!-- Navigation Links -->
-        <nav class="px-2.5 sm:px-3 pt-3 lg:pt-4 pb-2 space-y-3 sm:space-y-4 text-[11px] sm:text-xs font-semibold">
+        <!-- Navigation Links (flex-1 overflow-y-auto agar scrollable secara independen) -->
+        <nav class="flex-1 overflow-y-auto sidebar-scroll px-2.5 sm:px-3 py-3 sm:py-4 space-y-3 sm:space-y-4 text-[11px] sm:text-xs font-semibold">
 
             <!-- UTAMA -->
             <div>
@@ -64,12 +64,6 @@
                     class="flex items-center gap-2.5 sm:gap-3 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition {{ request()->routeIs('admin.midtrans') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-300 hover:bg-slate-800' }}">
                         <i class="fa-solid fa-credit-card text-sm"></i>
                         <span>Gerbang Midtrans</span>
-                    </a>
-                    <!-- Pengaturan Ongkir & Zona -->
-                    <a href="{{ route('admin.shipping') }}" @click="if (window.innerWidth < 1024) { sidebarOpen = false }"
-                    class="flex items-center gap-2.5 sm:gap-3 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition {{ request()->routeIs('admin.shipping') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-300 hover:bg-slate-800' }}">
-                        <i class="fa-solid fa-truck-fast text-sm"></i>
-                        <span>Pengaturan Ongkir &amp; Zona</span>
                     </a>
                 </div>
             </div>
@@ -115,15 +109,8 @@
             </div>
         </nav>
 
-        <!-- Ornamen Batik di bawah Dashboard Customer -->
-        <div class="relative flex-1 min-h-0 hidden lg:flex items-end justify-center px-2 overflow-hidden pointer-events-none">
-            <img src="{{ asset('images/batik-sidebar.png') }}" 
-                 alt="Ornamen Batik Megamendung" 
-                 class="w-full h-full object-contain object-bottom mix-blend-screen filter brightness-200 contrast-150">
-        </div>
-
-        <!-- Footer Profile Admin -->
-        <div class="p-3 sm:p-4 border-t border-slate-800/80 bg-[#0A192F] space-y-2">
+        <!-- Footer Profile Admin (shrink-0 agar tetap menempel di posisi bawah) -->
+        <div class="shrink-0 p-3 sm:p-4 border-t border-slate-800/80 bg-[#0A192F] space-y-2">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-700/80 text-white rounded-xl flex items-center justify-center font-bold text-[10px] sm:text-xs shrink-0">
                     <i class="fa-solid fa-user-tie"></i>
@@ -143,5 +130,6 @@
             </button>
         </div>
     </div>
+</div>
 
 </aside>

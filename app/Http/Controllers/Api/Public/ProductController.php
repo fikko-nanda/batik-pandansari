@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Public;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Models\WishlistItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -53,6 +54,22 @@ class ProductController extends Controller
             ->orderByDesc('dibuat_pada')
             ->paginate($validated['per_page'] ?? 10);
 
+        // Sertakan atribut boolean `is_liked` jika user sedang login
+        $user = auth('sanctum')->user() ?? $request->user();
+        $userWishlistIds = [];
+        if ($user) {
+            $userWishlistIds = WishlistItem::where('id_user', $user->id_user)
+                ->pluck('id_product')
+                ->all();
+        }
+
+        $items = $products->getCollection()->map(function ($product) use ($userWishlistIds) {
+            $product->setAttribute('is_liked', in_array($product->id_product, $userWishlistIds));
+
+            return $product;
+        });
+        $products->setCollection($items);
+
         return response()->json([
             'success' => true,
             'message' => 'Daftar produk berhasil diambil.',
@@ -66,7 +83,7 @@ class ProductController extends Controller
         ]);
     }
 
-    public function show(string $id): JsonResponse
+    public function show(Request $request, string $id): JsonResponse
     {
         $product = Product::with([
             'category',
@@ -88,6 +105,15 @@ class ProductController extends Controller
                 'message' => 'Produk tidak ditemukan.',
             ], 404);
         }
+
+        $user = auth('sanctum')->user() ?? $request->user();
+        $isLiked = false;
+        if ($user) {
+            $isLiked = WishlistItem::where('id_user', $user->id_user)
+                ->where('id_product', $product->id_product)
+                ->exists();
+        }
+        $product->setAttribute('is_liked', $isLiked);
 
         return response()->json([
             'success' => true,
