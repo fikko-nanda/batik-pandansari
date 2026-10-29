@@ -158,6 +158,12 @@
                                     </span>
                                     <span class="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md uppercase" x-text="item.label_alamat ?? 'Alamat'"></span>
                                     <span class="px-2.5 py-1 rounded-md uppercase bg-slate-100 text-slate-600">ALAMAT PENGIRIMAN</span>
+                                    <span x-show="item.latitude && item.longitude" class="bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-md uppercase flex items-center gap-1">
+                                        <i class="fa-solid fa-location-dot"></i> KOORDINAT OSM OK
+                                    </span>
+                                    <span x-show="!item.latitude || !item.longitude" class="bg-amber-100 text-amber-800 px-2.5 py-1 rounded-md uppercase flex items-center gap-1">
+                                        <i class="fa-solid fa-triangle-exclamation"></i> BELUM ADA TITIK PETA
+                                    </span>
                                 </div>
 
                                 <div class="flex items-center gap-3">
@@ -226,27 +232,199 @@
                                 </div>
                             </div>
 
-                            <!-- Wilayah: Provinsi, Kota/Kabupaten, Kecamatan -->
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Provinsi <span class="text-rose-500">*</span></label>
-                                    <input type="text" x-model="form.nama_provinsi" @input="hapusKoordinat()" required placeholder="cth: Jawa Tengah"
-                                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            <!-- Wilayah: Provinsi, Kota/Kabupaten, Kecamatan (Tervalidasi Huruf & Spasi + Dropdown OSM) -->
+                            <div class="space-y-1">
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <!-- Field Provinsi -->
+                                    <div class="relative">
+                                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">
+                                            Provinsi <span class="text-rose-500">*</span>
+                                        </label>
+                                        <div class="relative">
+                                            <input type="text"
+                                                   x-model="form.nama_provinsi"
+                                                   required
+                                                   maxlength="60"
+                                                   placeholder="cth: Jawa Tengah"
+                                                   @input="handleWilayahInput('provinsi', $event)"
+                                                   @keydown="filterWilayahKey($event)"
+                                                   @focus="if(form.nama_provinsi && form.nama_provinsi.trim().length >= 3) searchOsm('provinsi')"
+                                                   class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                            <div x-show="osmLoading && osmActiveField === 'provinsi'" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                                                <i class="fa-solid fa-circle-notch fa-spin text-sky-500"></i>
+                                            </div>
+                                        </div>
+
+                                        <!-- Dropdown OSM untuk Provinsi -->
+                                        <div x-show="osmActiveField === 'provinsi' && (osmLoading || osmResults.length > 0)"
+                                             x-cloak
+                                             @click.outside="if (osmActiveField === 'provinsi') osmActiveField = ''"
+                                             class="absolute left-0 top-full mt-1 w-full min-w-[280px] sm:min-w-[340px] max-w-md bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto text-xs py-1">
+                                            <div class="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
+                                                <span>Pilihan Wilayah OpenStreetMap</span>
+                                                <i class="fa-solid fa-map-location-dot text-sky-500"></i>
+                                            </div>
+                                            <template x-if="osmLoading">
+                                                <div class="px-3 py-4 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                                                    <i class="fa-solid fa-circle-notch fa-spin text-sky-600"></i>
+                                                    <span>Mencari di OpenStreetMap...</span>
+                                                </div>
+                                            </template>
+                                            <template x-if="!osmLoading && osmResults.length === 0">
+                                                <div class="px-3 py-3 text-center text-slate-400 text-xs">
+                                                    Tidak ada wilayah ditemukan.
+                                                </div>
+                                            </template>
+                                            <template x-for="(loc, idx) in osmResults" :key="'prov-' + idx">
+                                                <button type="button"
+                                                        @click="selectOsm(loc)"
+                                                        class="w-full text-left px-3 py-2 hover:bg-sky-50 transition border-b border-slate-100 last:border-b-0 flex items-start gap-2.5 cursor-pointer">
+                                                    <i class="fa-solid fa-map-pin text-sky-600 mt-0.5 shrink-0"></i>
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="font-bold text-slate-800 text-[11px] truncate"
+                                                             x-text="[loc.nama_provinsi, loc.nama_kota].filter(Boolean).join(', ') || loc.label"></div>
+                                                        <div class="text-[10px] text-slate-500 truncate"
+                                                             x-text="loc.nama_kecamatan ? 'Kec. ' + loc.nama_kecamatan : loc.label"></div>
+                                                    </div>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
+
+                                    <!-- Field Kota/Kabupaten -->
+                                    <div class="relative">
+                                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">
+                                            Kota/Kabupaten <span class="text-rose-500">*</span>
+                                        </label>
+                                        <div class="relative">
+                                            <input type="text"
+                                                   x-model="form.nama_kota"
+                                                   required
+                                                   maxlength="60"
+                                                   placeholder="cth: Surakarta"
+                                                   @input="handleWilayahInput('kota', $event)"
+                                                   @keydown="filterWilayahKey($event)"
+                                                   @focus="if(form.nama_kota && form.nama_kota.trim().length >= 3) searchOsm('kota')"
+                                                   class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                            <div x-show="osmLoading && osmActiveField === 'kota'" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                                                <i class="fa-solid fa-circle-notch fa-spin text-sky-500"></i>
+                                            </div>
+                                        </div>
+
+                                        <!-- Dropdown OSM untuk Kota -->
+                                        <div x-show="osmActiveField === 'kota' && (osmLoading || osmResults.length > 0)"
+                                             x-cloak
+                                             @click.outside="if (osmActiveField === 'kota') osmActiveField = ''"
+                                             class="absolute left-0 top-full mt-1 w-full min-w-[280px] sm:min-w-[340px] max-w-md bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto text-xs py-1">
+                                            <div class="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
+                                                <span>Pilihan Wilayah OpenStreetMap</span>
+                                                <i class="fa-solid fa-map-location-dot text-sky-500"></i>
+                                            </div>
+                                            <template x-if="osmLoading">
+                                                <div class="px-3 py-4 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                                                    <i class="fa-solid fa-circle-notch fa-spin text-sky-600"></i>
+                                                    <span>Mencari di OpenStreetMap...</span>
+                                                </div>
+                                            </template>
+                                            <template x-if="!osmLoading && osmResults.length === 0">
+                                                <div class="px-3 py-3 text-center text-slate-400 text-xs">
+                                                    Tidak ada wilayah ditemukan.
+                                                </div>
+                                            </template>
+                                            <template x-for="(loc, idx) in osmResults" :key="'kota-' + idx">
+                                                <button type="button"
+                                                        @click="selectOsm(loc)"
+                                                        class="w-full text-left px-3 py-2 hover:bg-sky-50 transition border-b border-slate-100 last:border-b-0 flex items-start gap-2.5 cursor-pointer">
+                                                    <i class="fa-solid fa-map-pin text-sky-600 mt-0.5 shrink-0"></i>
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="font-bold text-slate-800 text-[11px] truncate"
+                                                             x-text="[loc.nama_kota, loc.nama_provinsi].filter(Boolean).join(', ') || loc.label"></div>
+                                                        <div class="text-[10px] text-slate-500 truncate"
+                                                             x-text="loc.nama_kecamatan ? 'Kec. ' + loc.nama_kecamatan : loc.label"></div>
+                                                    </div>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
+
+                                    <!-- Field Kecamatan -->
+                                    <div class="relative">
+                                        <label class="block text-[11px] font-semibold text-slate-600 mb-1">
+                                            Kecamatan <span class="text-rose-500">*</span>
+                                        </label>
+                                        <div class="relative">
+                                            <input type="text"
+                                                   x-model="form.nama_kecamatan"
+                                                   required
+                                                   maxlength="60"
+                                                   placeholder="cth: Laweyan"
+                                                   @input="handleWilayahInput('kecamatan', $event)"
+                                                   @keydown="filterWilayahKey($event)"
+                                                   @focus="if(form.nama_kecamatan && form.nama_kecamatan.trim().length >= 3) searchOsm('kecamatan')"
+                                                   class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                            <div x-show="osmLoading && osmActiveField === 'kecamatan'" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                                                <i class="fa-solid fa-circle-notch fa-spin text-sky-500"></i>
+                                            </div>
+                                        </div>
+
+                                        <!-- Dropdown OSM untuk Kecamatan -->
+                                        <div x-show="osmActiveField === 'kecamatan' && (osmLoading || osmResults.length > 0)"
+                                             x-cloak
+                                             @click.outside="if (osmActiveField === 'kecamatan') osmActiveField = ''"
+                                             class="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 w-full min-w-[280px] sm:min-w-[340px] max-w-md bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto text-xs py-1">
+                                            <div class="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
+                                                <span>Pilihan Wilayah OpenStreetMap</span>
+                                                <i class="fa-solid fa-map-location-dot text-sky-500"></i>
+                                            </div>
+                                            <template x-if="osmLoading">
+                                                <div class="px-3 py-4 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                                                    <i class="fa-solid fa-circle-notch fa-spin text-sky-600"></i>
+                                                    <span>Mencari di OpenStreetMap...</span>
+                                                </div>
+                                            </template>
+                                            <template x-if="!osmLoading && osmResults.length === 0">
+                                                <div class="px-3 py-3 text-center text-slate-400 text-xs">
+                                                    Tidak ada wilayah ditemukan.
+                                                </div>
+                                            </template>
+                                            <template x-for="(loc, idx) in osmResults" :key="'kec-' + idx">
+                                                <button type="button"
+                                                        @click="selectOsm(loc)"
+                                                        class="w-full text-left px-3 py-2 hover:bg-sky-50 transition border-b border-slate-100 last:border-b-0 flex items-start gap-2.5 cursor-pointer">
+                                                    <i class="fa-solid fa-map-pin text-sky-600 mt-0.5 shrink-0"></i>
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="font-bold text-slate-800 text-[11px] truncate"
+                                                             x-text="[loc.nama_kecamatan, loc.nama_kota].filter(Boolean).join(', ') || loc.label"></div>
+                                                        <div class="text-[10px] text-slate-500 truncate"
+                                                             x-text="[loc.nama_provinsi, loc.kode_pos ? 'Kode Pos: ' + loc.kode_pos : ''].filter(Boolean).join(' • ')"></div>
+                                                    </div>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kota/Kabupaten <span class="text-rose-500">*</span></label>
-                                    <input type="text" x-model="form.nama_kota" @input="hapusKoordinat()" required placeholder="cth: Surakarta"
-                                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                                </div>
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kecamatan <span class="text-rose-500">*</span></label>
-                                    <input type="text" x-model="form.nama_kecamatan" @input="hapusKoordinat()" required placeholder="cth: Laweyan"
-                                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                                </div>
+
+                                <!-- Indikator koordinat OSM terhubung -->
+                                <template x-if="form.latitude && form.longitude">
+                                    <div class="pt-1 flex items-center gap-1.5 text-[11px] text-emerald-600 font-semibold">
+                                        <i class="fa-solid fa-circle-check"></i>
+                                        <span>Koordinat OpenStreetMap terhubung (<span x-text="Number(form.latitude).toFixed(4) + ', ' + Number(form.longitude).toFixed(4)"></span>)</span>
+                                    </div>
+                                </template>
                             </div>
+
+                            <!-- Kode Pos (Hanya Angka & Maksimal 5 Digit) -->
                             <div>
-                                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kode Pos <span class="text-rose-500">*</span></label>
-                                <input type="text" x-model="form.kode_pos" @input="hapusKoordinat()" maxlength="10" required
+                                <label class="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Kode Pos <span class="text-slate-400 font-normal">(5 digit angka)</span>
+                                </label>
+                                <input type="text"
+                                       x-model="form.kode_pos"
+                                       maxlength="5"
+                                       inputmode="numeric"
+                                       placeholder="cth: 57148"
+                                       @input="form.kode_pos = $event.target.value.replace(/\D/g, '').slice(0, 5); $event.target.value = form.kode_pos"
+                                       @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
                                        class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                             </div>
                             <div>
@@ -345,8 +523,12 @@
                 alamat_lengkap: '',
                 alamat_utama: false,
                 latitude: null,
-                longitude: null,
+                longitude: null
             },
+            osmResults: [],
+            osmActiveField: '',
+            osmLoading: false,
+            _osmTimer: null,
 
             get isEdit() {
                 return this.editingId !== null;
@@ -455,11 +637,11 @@
                     alamat_lengkap: '',
                     alamat_utama: false,
                     latitude: null,
-                    longitude: null,
+                    longitude: null
                 };
-                this.pencarianLokasi = '';
-                this.hasilLokasi = [];
-                this.pesanLokasi = '';
+                this.osmResults = [];
+                this.osmActiveField = '';
+                this.osmLoading = false;
                 this.showAddModal = true;
             },
 
@@ -475,15 +657,90 @@
                     kode_pos: a.kode_pos ?? '',
                     alamat_lengkap: a.alamat_lengkap ?? '',
                     alamat_utama: Boolean(a.alamat_utama),
-                    latitude: a.latitude ?? null,
-                    longitude: a.longitude ?? null,
+                    latitude: a.latitude != null ? Number(a.latitude) : null,
+                    longitude: a.longitude != null ? Number(a.longitude) : null,
                 };
-                this.pencarianLokasi = a.alamat_lengkap ?? '';
-                this.hasilLokasi = [];
-                this.pesanLokasi = a.latitude && a.longitude
-                    ? 'Alamat ini sudah memiliki koordinat.'
-                    : 'Pilih hasil pencarian lokasi agar ongkir dapat dihitung.';
+                this.osmResults = [];
+                this.osmActiveField = '';
+                this.osmLoading = false;
                 this.showAddModal = true;
+            },
+
+            handleWilayahInput(field, e) {
+                const raw = e.target.value;
+                const sanitized = raw.replace(/[^a-zA-Z\s]/g, '');
+                this.form['nama_' + field] = sanitized;
+                e.target.value = sanitized;
+
+                clearTimeout(this._osmTimer);
+                if (sanitized.trim().length >= 3) {
+                    this._osmTimer = setTimeout(() => {
+                        this.searchOsm(field);
+                    }, 350);
+                } else {
+                    this.osmResults = [];
+                    this.osmActiveField = '';
+                }
+            },
+
+            filterWilayahKey(e) {
+                const isNav = ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter'].includes(e.key);
+                const isMod = e.ctrlKey || e.metaKey || e.altKey;
+                const isLetterOrSpace = /^[a-zA-Z\s]$/.test(e.key);
+
+                if (!isLetterOrSpace && !isNav && !isMod) {
+                    e.preventDefault();
+                }
+            },
+
+            async searchOsm(field) {
+                this.osmActiveField = field;
+                const fieldVal = (this.form['nama_' + field] || '').trim();
+                if (fieldVal.length < 3) {
+                    this.osmResults = [];
+                    return;
+                }
+
+                let q = fieldVal;
+                if (field === 'kecamatan') {
+                    if (this.form.nama_kota) q += ' ' + this.form.nama_kota;
+                } else if (field === 'kota') {
+                    if (this.form.nama_provinsi) q += ' ' + this.form.nama_provinsi;
+                }
+                q = q.trim();
+
+                this.osmLoading = true;
+                try {
+                    const res = await PandansariAPI.fetch('/shipping/address-search?q=' + encodeURIComponent(q));
+                    if (res && res.ok && Array.isArray(res.data)) {
+                        this.osmResults = res.data;
+                    } else {
+                        this.osmResults = [];
+                    }
+                } catch (e) {
+                    this.osmResults = [];
+                } finally {
+                    this.osmLoading = false;
+                }
+            },
+
+            selectOsm(loc) {
+                if (loc.nama_provinsi) {
+                    this.form.nama_provinsi = String(loc.nama_provinsi).replace(/[^a-zA-Z\s]/g, '').trim();
+                }
+                if (loc.nama_kota) {
+                    this.form.nama_kota = String(loc.nama_kota).replace(/[^a-zA-Z\s]/g, '').trim();
+                }
+                if (loc.nama_kecamatan) {
+                    this.form.nama_kecamatan = String(loc.nama_kecamatan).replace(/[^a-zA-Z\s]/g, '').trim();
+                }
+                if (loc.kode_pos) {
+                    this.form.kode_pos = String(loc.kode_pos).replace(/\D/g, '').slice(0, 5);
+                }
+                this.form.latitude = loc.latitude != null ? Number(loc.latitude) : null;
+                this.form.longitude = loc.longitude != null ? Number(loc.longitude) : null;
+                this.osmResults = [];
+                this.osmActiveField = '';
             },
 
             async simpan() {

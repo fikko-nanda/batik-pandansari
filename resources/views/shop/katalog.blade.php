@@ -46,7 +46,12 @@
                     this.muatVarianProduk(this.products);
                 } else {
                     this.products = [];
-                    this.errorMsg = res.message;
+                    const msg = res.message || '';
+                    if (msg.includes('Tidak dapat menghubungi server') || msg.includes('ngrok') || res.status === 404 || res.status === 0) {
+                        this.errorMsg = 'Error 404: Halaman atau data tidak ditemukan';
+                    } else {
+                        this.errorMsg = msg;
+                    }
                 }
             },
             async loadCategories() {
@@ -316,7 +321,7 @@
             <template x-if="!loading && errorMsg">
                 <div class="col-span-full bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl px-4 py-3 flex items-center gap-2">
                     <i class="fa-solid fa-triangle-exclamation"></i>
-                    <span x-text="errorMsg"></span>
+                    <span x-text="errorMsg.includes('Tidak dapat menghubungi server') || errorMsg.includes('ngrok') ? 'Error 404: Halaman atau data tidak ditemukan' : errorMsg"></span>
                 </div>
             </template>
 

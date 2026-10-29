@@ -157,6 +157,10 @@ Route::prefix('admin')->middleware('panel:admin')->group(function () {
         return view('admin.sales-report');
     })->name('admin.sales-report');
 
+    Route::get('/shipping', function () {
+        return view('admin.shipping');
+    })->name('admin.shipping');
+
     Route::get('/settings', function () {
         return view('admin.settings');
     })->name('admin.settings');

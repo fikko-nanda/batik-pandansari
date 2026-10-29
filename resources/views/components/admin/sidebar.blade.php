@@ -69,6 +69,12 @@
                         <i class="fa-solid fa-credit-card text-sm"></i>
                         <span>Gerbang Midtrans</span>
                     </a>
+                    <!-- Pengaturan Ongkir & Zona -->
+                    <a href="{{ route('admin.shipping') }}" @click="if (window.innerWidth < 1024) { sidebarOpen = false }"
+                    class="flex items-center gap-2.5 sm:gap-3 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition {{ request()->routeIs('admin.shipping') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-300 hover:bg-slate-800' }}">
+                        <i class="fa-solid fa-truck-fast text-sm"></i>
+                        <span>Pengaturan Ongkir &amp; Zona</span>
+                    </a>
                 </div>
             </div>
 

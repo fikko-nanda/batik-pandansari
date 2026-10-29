@@ -1,7 +1,7 @@
 <!-- MODAL WIZARD: TAMBAH / EDIT PRODUK -->
 <template x-teleport="body">
     <div x-show="showModalTambah"
-         class="fixed inset-0 z-[9999] w-screen h-screen bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+         class="fixed inset-0 z-50 w-screen h-screen bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
          x-transition:enter="transition ease-out duration-200"
          x-transition:enter-start="opacity-0"
          x-transition:enter-end="opacity-100"
@@ -56,6 +56,17 @@
                         class="px-4 py-2 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0">
                     <span class="w-5 h-5 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-[10px]">D</span>
                     <span>Panduan Ukuran</span>
+                </button>
+            </div>
+
+            <!-- Alert Notifikasi di dalam Modal -->
+            <div x-show="notice" x-cloak
+                 class="mx-6 mt-4 p-3.5 rounded-xl text-xs font-bold border flex items-center gap-2.5 shrink-0"
+                 :class="noticeOk ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'">
+                <i class="fa-solid shrink-0" :class="noticeOk ? 'fa-circle-check text-emerald-600' : 'fa-triangle-exclamation text-rose-600'"></i>
+                <span class="flex-1" x-text="notice"></span>
+                <button type="button" @click="notice = ''" class="text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
 

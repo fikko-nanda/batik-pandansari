@@ -590,7 +590,18 @@ window.PandansariAPI = {
     /** PUT /me/password — ganti password sesuai spesifikasi (payload object). */
     changePassword(payload) { return this.updatePasswordPayload(payload); },
 
-    /* ---------- Pengiriman (RajaOngkir) ---------- */
+    /* ---------- Pengiriman ---------- */
+    /** GET /shipping/address-search?q= — pencarian alamat via OpenStreetMap (Nominatim). */
+    searchOsmAddress(q) {
+        return this.fetch(`/shipping/address-search?q=${encodeURIComponent(q ?? '')}`);
+    },
+    /** POST /shipping/quote — { id_user_address }. Kalkulasi ongkir OSM & zona. */
+    shippingQuote(id_user_address) {
+        return this.fetch('/shipping/quote', {
+            method: 'POST',
+            body: { id_user_address },
+        });
+    },
     /** GET /shipping/destinations?search= — daftar tujuan (butuh min. 3 huruf). */
     shippingDestinations(search) {
         return this.fetch(`/shipping/destinations?search=${encodeURIComponent(search ?? '')}`);
@@ -1052,6 +1063,12 @@ window.PandansariAPI = {
         inventoryExport() { return PandansariAPI.downloadCsv('/admin/inventory/export', 'inventaris.csv'); },
         /** POST /admin/inventory/adjustments — { id_variant, tipe: 'masuk'|'keluar'|'koreksi', jumlah, catatan? }. */
         inventoryAdjustment(payload) { return PandansariAPI.fetch('/admin/inventory/adjustments', { method: 'POST', body: payload }); },
+
+        /* -- 4.10 Zona Pengiriman (OSRM & Tarif) -- */
+        shippingZones(params = {}) { return PandansariAPI.fetch('/admin/shipping/zones' + this._qs(params)); },
+        shippingZone(id) { return PandansariAPI.fetch(`/admin/shipping/zones/${id}`); },
+        createShippingZone(payload) { return PandansariAPI.fetch('/admin/shipping/zones', { method: 'POST', body: payload }); },
+        updateShippingZone(id, payload) { return PandansariAPI.fetch(`/admin/shipping/zones/${id}`, { method: 'PUT', body: payload }); },
     },
 
     /**
