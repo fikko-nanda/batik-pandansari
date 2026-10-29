@@ -4,232 +4,7 @@
 
     <!-- Container Utama Keranjang Belanja Interaktif dengan Alpine.js (data dari GET /api/cart) -->
     <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
-         x-data="{
-            items: [],
-            isLoading: true,
-            loadingCart: true,
-            errorMsg: '',
-            needLogin: false,
-            busy: false,
-            msg: '',
-            msgOk: false,
-            fallbackImage: '{{ asset('images/katalog1.webp') }}',
-
-            // Voucher (preview diskon — final diproses saat checkout)
-            couponCode: '',
-            voucher: null,          // { nama_voucher, tipe_diskon, nilai_diskon, ... }
-            voucherMsg: '',
-            voucherOk: false,
-            busyVoucher: false,
-
-            get selectedCount() {
-                return this.items.reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
-            },
-            get hasOverStock() {
-                return this.items.some(i => i.variant?.stok != null && Number(i.jumlah) > Number(i.variant.stok));
-            },
-            get subtotal() {
-                return this.items.reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
-            },
-            get discountAmount() {
-                if (!this.voucher) return 0;
-                let d = this.voucher.tipe_diskon === 'persentase'
-                    ? this.subtotal * Number(this.voucher.nilai_diskon) / 100
-                    : Number(this.voucher.nilai_diskon);
-                if (this.voucher.maksimal_diskon) d = Math.min(d, Number(this.voucher.maksimal_diskon));
-                return Math.round(Math.min(d, this.subtotal));
-            },
-            get totalTagihan() {
-                return Math.max(0, this.subtotal - this.discountAmount);
-            },
-            get isCheckoutDisabled() {
-                return this.isLoading || this.needLogin || !this.items.length || !!this.errorMsg || this.hasOverStock;
-            },
-            get isActionDisabled() {
-                return this.isLoading || !this.items.length || !!this.errorMsg || this.needLogin;
-            },
-
-            // --- Helper render ---
-            productTitle(i) { return i.variant?.product?.nama_produk ?? 'Produk'; },
-            productCat(i)  { return (i.variant?.product?.category?.nama_kategori ?? 'Batik Pandansari').toUpperCase(); },
-            specLine(i) {
-                const v = i.variant;
-                if (!v) return '';
-                return [v.nama_varian, v.warna && ('Warna: ' + v.warna), v.ukuran && ('Ukuran: ' + v.ukuran)].filter(Boolean).join(' • ');
-            },
-            imageOf(i) {
-                if (typeof PandansariAPI?.getProductImage === 'function') {
-                    const img = PandansariAPI.getProductImage(i);
-                    if (img) return img;
-                }
-                if (typeof PandansariAPI?.coverUrl === 'function') {
-                    const cover = PandansariAPI.coverUrl(i.variant?.product?.images);
-                    if (cover) return cover;
-                }
-                return this.fallbackImage;
-            },
-            formatRupiah(n) {
-                return typeof PandansariAPI?.formatRp === 'function' ? PandansariAPI.formatRp(n) : ('Rp ' + Number(n ?? 0).toLocaleString('id-ID'));
-            },
-
-            // === Loader ===
-            async load() {
-                this.isLoading = true;
-                this.loadingCart = true;
-                this.needLogin = false;
-                this.errorMsg = '';
-                try {
-                    const res = await PandansariAPI.cart();
-                    if (res && res.ok) {
-                        const cart = res.data ?? {};
-                        this.items = cart.items ?? (Array.isArray(cart) ? cart : []);
-                        if (!this.items.length) this.msg = '';
-                    } else if (res && res.status === 401) {
-                        this.needLogin = true;
-                    } else {
-                        this.errorMsg = res?.message || 'Gagal memuat keranjang belanja. Silakan coba lagi.';
-                    }
-                    return res;
-                } catch (err) {
-                    console.error('[Cart] Error loading cart:', err);
-                    this.errorMsg = 'Terjadi kesalahan saat memuat data keranjang belanja.';
-                    return { ok: false, message: this.errorMsg };
-                } finally {
-                    this.isLoading = false;
-                    this.loadingCart = false;
-                }
-            },
-
-            // === Aksi item ===
-            async ubahQty(item, delta) {
-                if (this.isLoading || this.busy) return;
-                const stock = item.variant?.stok != null ? Number(item.variant.stok) : 99;
-                const current = Number(item.jumlah || 1);
-                const next = current + delta;
-
-                if (next < 1) return;
-                if (delta > 0 && next > stock) {
-                    this.tampil('Stok tidak mencukupi. Stok tersedia: ' + stock + '.', false);
-                    return;
-                }
-                this.busy = true;
-                try {
-                    const res = await PandansariAPI.updateCartItem(item.id_cart_item, next);
-                    if (res && res.ok) {
-                        item.jumlah = next;
-                    } else {
-                        this.tampil(res?.message || 'Gagal memperbarui kuantitas.', false);
-                    }
-                } catch (e) {
-                    this.tampil('Gagal memperbarui kuantitas.', false);
-                } finally {
-                    this.busy = false;
-                }
-            },
-            async hapusItem(index) {
-                if (this.isLoading || this.busy) return;
-                const item = this.items[index];
-                if (!item) return;
-                this.busy = true;
-                try {
-                    const res = await PandansariAPI.removeCartItem(item.id_cart_item);
-                    if (res && res.ok) {
-                        this.items.splice(index, 1);
-                        this.tampil('Item berhasil dihapus.', true);
-                    } else {
-                        this.tampil(res?.message || 'Gagal menghapus item.', false);
-                    }
-                } catch (e) {
-                    this.tampil('Gagal menghapus item.', false);
-                } finally {
-                    this.busy = false;
-                }
-            },
-            async kosongkan() {
-                if (this.isLoading || this.busy || !this.items.length) return;
-                this.busy = true;
-                try {
-                    const res = await PandansariAPI.clearCart();
-                    if (res && res.ok) {
-                        this.items = [];
-                        this.voucher = null;
-                        this.tampil('Keranjang berhasil dikosongkan.', true);
-                    } else {
-                        this.tampil(res?.message || 'Gagal mengosongkan keranjang.', false);
-                    }
-                } catch (e) {
-                    this.tampil('Gagal mengosongkan keranjang.', false);
-                } finally {
-                    this.busy = false;
-                }
-            },
-
-            // === Voucher ===
-            async applyVoucher() {
-                if (this.isActionDisabled || this.busyVoucher || !this.couponCode.trim()) return;
-                this.busyVoucher = true;
-                try {
-                    const res = await PandansariAPI.validateVoucher(this.couponCode.trim().toUpperCase(), this.subtotal);
-                    if (res && res.ok) {
-                        this.voucher = res.data;
-                        this.voucherOk = true;
-                        this.voucherMsg = res.message;
-                    } else {
-                        this.voucher = null;
-                        this.voucherOk = false;
-                        this.voucherMsg = res?.message || 'Kode voucher tidak valid.';
-                    }
-                } catch (e) {
-                    this.voucher = null;
-                    this.voucherOk = false;
-                    this.voucherMsg = 'Gagal memvalidasi voucher.';
-                } finally {
-                    this.busyVoucher = false;
-                }
-            },
-            hapusVoucher() {
-                this.voucher = null; this.voucherMsg = ''; this.voucherOk = false; this.couponCode = '';
-            },
-
-            tampil(msg, ok) {
-                this.msg = msg; this.msgOk = ok;
-                setTimeout(() => { this.msg = ''; }, 4000);
-            },
-
-            async init() {
-                // Safely invoke loadCatalogImages if available
-                try {
-                    if (window.PandansariAPI && typeof window.PandansariAPI.loadCatalogImages === 'function') {
-                        const result = window.PandansariAPI.loadCatalogImages();
-                        if (result && typeof result.then === 'function') {
-                            await result;
-                        }
-                    }
-                } catch (e) {
-                    console.warn('[Cart] Error invoking loadCatalogImages:', e);
-                }
-
-                await this.load();
-            }
-                // Duplicate init block removed
-                try {
-                    if (typeof PandansariAPI?.loadCatalogImages === 'function') {
-                        const p = PandansariAPI.loadCatalogImages();
-                        if (p && typeof p.then === 'function') {
-                            p.then(() => {
-                                this.items = [...this.items];
-                            }).catch(err => {
-                                console.warn('[Cart] loadCatalogImages warning:', err);
-                            });
-                        }
-                    }
-                } catch (e) {
-                    console.warn('[Cart] Error invoking loadCatalogImages:', e);
-                }
-
-                await this.load();
-            }
-         }">
+         x-data="cartComponent()">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
 
             <!-- 1. Header Navigation & Checkout Stepper -->
@@ -546,4 +321,297 @@
         </div>
     </div>
 
+<script>
+    /**
+     * Komponen Alpine.js Keranjang Belanja (Cart)
+     * Mengelola state item, kupon voucher, kalkulasi harga, dan integrasi PandansariAPI.
+     */
+    function cartComponent() {
+        return {
+            // === State Utama Keranjang ===
+            items: [],
+            isLoading: true,
+            loadingCart: true,
+            errorMsg: '',
+            needLogin: false,
+            busy: false,
+            msg: '',
+            msgOk: false,
+            fallbackImage: '{{ asset('images/katalog1.webp') }}',
+
+            // === State Voucher Promo ===
+            couponCode: '',
+            voucher: null,          // { nama_voucher, tipe_diskon, nilai_diskon, maksimal_diskon, ... }
+            voucherMsg: '',
+            voucherOk: false,
+            busyVoucher: false,
+
+            // === Getters & Komputasi ===
+            get selectedCount() {
+                return (this.items || []).reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
+            },
+
+            get hasOverStock() {
+                return (this.items || []).some(i => i.variant?.stok != null && Number(i.jumlah) > Number(i.variant.stok));
+            },
+
+            get subtotal() {
+                return (this.items || []).reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
+            },
+
+            get discountAmount() {
+                if (!this.voucher) return 0;
+                let d = this.voucher.tipe_diskon === 'persentase'
+                    ? (this.subtotal * Number(this.voucher.nilai_diskon)) / 100
+                    : Number(this.voucher.nilai_diskon);
+
+                if (this.voucher.maksimal_diskon) {
+                    d = Math.min(d, Number(this.voucher.maksimal_diskon));
+                }
+
+                return Math.round(Math.min(d, this.subtotal));
+            },
+
+            get totalTagihan() {
+                return Math.max(0, this.subtotal - this.discountAmount);
+            },
+
+            get isCheckoutDisabled() {
+                const count = (this.items || []).length;
+                return this.isLoading || this.needLogin || !count || !!this.errorMsg || this.hasOverStock;
+            },
+
+            get isActionDisabled() {
+                const count = (this.items || []).length;
+                return this.isLoading || !count || !!this.errorMsg || this.needLogin;
+            },
+
+            // === Helper Render UI ===
+            productTitle(i) {
+                return i?.variant?.product?.nama_produk ?? 'Produk';
+            },
+
+            productCat(i) {
+                return (i?.variant?.product?.category?.nama_kategori ?? 'Batik Pandansari').toUpperCase();
+            },
+
+            specLine(i) {
+                const v = i?.variant;
+                if (!v) return '';
+                return [
+                    v.nama_varian,
+                    v.warna && ('Warna: ' + v.warna),
+                    v.ukuran && ('Ukuran: ' + v.ukuran)
+                ].filter(Boolean).join(' • ');
+            },
+
+            imageOf(i) {
+                try {
+                    if (typeof PandansariAPI?.getProductImage === 'function') {
+                        const img = PandansariAPI.getProductImage(i);
+                        if (img) return img;
+                    }
+                    if (typeof PandansariAPI?.coverUrl === 'function') {
+                        const cover = PandansariAPI.coverUrl(i?.variant?.product?.images);
+                        if (cover) return cover;
+                    }
+                } catch (e) {
+                    console.warn('[Cart] Gagal memuat cover gambar produk:', e);
+                }
+                return this.fallbackImage;
+            },
+
+            formatRupiah(n) {
+                try {
+                    return typeof PandansariAPI?.formatRp === 'function'
+                        ? PandansariAPI.formatRp(n)
+                        : ('Rp ' + Number(n ?? 0).toLocaleString('id-ID'));
+                } catch (e) {
+                    return 'Rp ' + Number(n ?? 0).toLocaleString('id-ID');
+                }
+            },
+
+            // === Loader API ===
+            async load() {
+                this.isLoading = true;
+                this.loadingCart = true;
+                this.needLogin = false;
+                this.errorMsg = '';
+
+                try {
+                    if (!window.PandansariAPI || typeof PandansariAPI.cart !== 'function') {
+                        throw new Error('PandansariAPI.cart tidak tersedia.');
+                    }
+
+                    const res = await PandansariAPI.cart();
+
+                    if (res && res.ok) {
+                        const cart = res.data ?? {};
+                        this.items = Array.isArray(cart.items) ? cart.items : (Array.isArray(cart) ? cart : []);
+                        if (!this.items.length) {
+                            this.msg = '';
+                        }
+                    } else if (res && res.status === 401) {
+                        this.needLogin = true;
+                        this.items = [];
+                    } else {
+                        this.errorMsg = res?.message || 'Gagal memuat keranjang belanja. Silakan coba lagi.';
+                    }
+
+                    return res;
+                } catch (err) {
+                    console.error('[Cart] Error loading cart:', err);
+                    this.errorMsg = 'Terjadi kesalahan saat memuat data keranjang belanja.';
+                    return { ok: false, message: this.errorMsg };
+                } finally {
+                    this.isLoading = false;
+                    this.loadingCart = false;
+                }
+            },
+
+            // === Aksi Item ===
+            async ubahQty(item, delta) {
+                if (this.isLoading || this.busy || !item) return;
+
+                const stock = item.variant?.stok != null ? Number(item.variant.stok) : 99;
+                const current = Number(item.jumlah || 1);
+                const next = current + delta;
+
+                if (next < 1) return;
+                if (delta > 0 && next > stock) {
+                    this.tampil('Stok tidak mencukupi. Stok tersedia: ' + stock + '.', false);
+                    return;
+                }
+
+                this.busy = true;
+                try {
+                    const res = await PandansariAPI.updateCartItem(item.id_cart_item, next);
+                    if (res && res.ok) {
+                        item.jumlah = next;
+                    } else {
+                        this.tampil(res?.message || 'Gagal memperbarui kuantitas.', false);
+                    }
+                } catch (e) {
+                    console.error('[Cart] Error updateCartItem:', e);
+                    this.tampil('Gagal memperbarui kuantitas.', false);
+                } finally {
+                    this.busy = false;
+                }
+            },
+
+            async hapusItem(index) {
+                if (this.isLoading || this.busy) return;
+
+                const item = this.items[index];
+                if (!item) return;
+
+                this.busy = true;
+                try {
+                    const res = await PandansariAPI.removeCartItem(item.id_cart_item);
+                    if (res && res.ok) {
+                        this.items.splice(index, 1);
+                        this.tampil('Item berhasil dihapus.', true);
+                    } else {
+                        this.tampil(res?.message || 'Gagal menghapus item.', false);
+                    }
+                } catch (e) {
+                    console.error('[Cart] Error removeCartItem:', e);
+                    this.tampil('Gagal menghapus item.', false);
+                } finally {
+                    this.busy = false;
+                }
+            },
+
+            async kosongkan() {
+                if (this.isLoading || this.busy || !this.items.length) return;
+
+                this.busy = true;
+                try {
+                    const res = await PandansariAPI.clearCart();
+                    if (res && res.ok) {
+                        this.items = [];
+                        this.voucher = null;
+                        this.tampil('Keranjang berhasil dikosongkan.', true);
+                    } else {
+                        this.tampil(res?.message || 'Gagal mengosongkan keranjang.', false);
+                    }
+                } catch (e) {
+                    console.error('[Cart] Error clearCart:', e);
+                    this.tampil('Gagal mengosongkan keranjang.', false);
+                } finally {
+                    this.busy = false;
+                }
+            },
+
+            // === Aksi Voucher Promo ===
+            async applyVoucher() {
+                if (this.isActionDisabled || this.busyVoucher || !this.couponCode.trim()) return;
+
+                this.busyVoucher = true;
+                try {
+                    const res = await PandansariAPI.validateVoucher(this.couponCode.trim().toUpperCase(), this.subtotal);
+                    if (res && res.ok) {
+                        this.voucher = res.data;
+                        this.voucherOk = true;
+                        this.voucherMsg = res.message;
+                    } else {
+                        this.voucher = null;
+                        this.voucherOk = false;
+                        this.voucherMsg = res?.message || 'Kode voucher tidak valid.';
+                    }
+                } catch (e) {
+                    console.error('[Cart] Error validateVoucher:', e);
+                    this.voucher = null;
+                    this.voucherOk = false;
+                    this.voucherMsg = 'Gagal memvalidasi voucher.';
+                } finally {
+                    this.busyVoucher = false;
+                }
+            },
+
+            hapusVoucher() {
+                this.voucher = null;
+                this.voucherMsg = '';
+                this.voucherOk = false;
+                this.couponCode = '';
+            },
+
+            tampil(msg, ok) {
+                this.msg = msg;
+                this.msgOk = ok;
+                setTimeout(() => {
+                    this.msg = '';
+                }, 4000);
+            },
+
+            // === Inisialisasi Komponen ===
+            async init() {
+                try {
+                    if (window.PandansariAPI && typeof window.PandansariAPI.loadCatalogImages === 'function') {
+                        const result = window.PandansariAPI.loadCatalogImages();
+                        if (result && typeof result.then === 'function') {
+                            await result;
+                            if (Array.isArray(this.items)) {
+                                this.items = [...this.items];
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Cart] Error invoking loadCatalogImages:', e);
+                }
+
+                await this.load();
+            }
+        };
+    }
+
+    // Registrasi Alpine Component
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('cartComponent', cartComponent);
+    });
+
+    if (window.Alpine) {
+        Alpine.data('cartComponent', cartComponent);
+    }
+</script>
 @endsection
