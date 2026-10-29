@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\Payment;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -59,10 +58,6 @@ class SyncPaymentStatusService
             return false;
         }
 
-        if (! $this->matchesOrder($order, $status)) {
-            return false;
-        }
-
         $transactionStatus = $status['transaction_status'] ?? '';
 
         if ($transactionStatus === '' || $transactionStatus === 'pending') {
@@ -78,81 +73,6 @@ class SyncPaymentStatusService
         );
 
         return $result['applied'];
-    }
-
-    /**
-     * Verify the provider state before expiring an order with a Snap token.
-     * Provider/network errors keep the reservation intact until a later retry.
-     */
-    public function verifyBeforeExpiry(Order $order): bool
-    {
-        $payment = Payment::where('id_order', $order->id_order)
-            ->where('status_pembayaran', 'menunggu')
-            ->orderByDesc('dibuat_pada')
-            ->first();
-
-        if (! $payment || ! $payment->payment_reference) {
-            return true;
-        }
-
-        try {
-            $status = $this->midtrans->transactionStatus($order);
-        } catch (Throwable $e) {
-            report($e);
-
-            return false;
-        }
-
-        if (! $this->matchesOrder($order, $status)) {
-            return false;
-        }
-
-        $transactionStatus = $status['transaction_status'] ?? '';
-        $fraudStatus = (string) ($status['fraud_status'] ?? '');
-
-        if ($transactionStatus === 'pending'
-            || ($transactionStatus === 'capture' && $fraudStatus === 'challenge')) {
-            return true;
-        }
-
-        if (! in_array($transactionStatus, ['settlement', 'capture', 'expire', 'cancel', 'deny'], true)) {
-            Log::warning('Status transaksi Midtrans tidak dikenal; pesanan tidak diekspirasikan.', [
-                'order_id' => $order->nomor_pesanan,
-                'transaction_status' => $transactionStatus,
-            ]);
-
-            return false;
-        }
-
-        $this->apply(
-            $order,
-            $transactionStatus,
-            $fraudStatus,
-            $status['payment_type'] ?? null,
-            $status['transaction_id'] ?? null
-        );
-
-        return false;
-    }
-
-    /**
-     * @param  array<string, mixed>  $status
-     */
-    private function matchesOrder(Order $order, array $status): bool
-    {
-        $orderIdMatches = ($status['order_id'] ?? null) === $order->nomor_pesanan;
-        $amountMatches = round((float) ($status['gross_amount'] ?? 0), 2)
-            === round((float) $order->total_pembayaran, 2);
-
-        if (! $orderIdMatches || ! $amountMatches) {
-            Log::warning('Status Midtrans tidak cocok dengan snapshot pesanan dan diabaikan.', [
-                'order_id' => $order->nomor_pesanan,
-                'provider_order_id_matches' => $orderIdMatches,
-                'provider_amount_matches' => $amountMatches,
-            ]);
-        }
-
-        return $orderIdMatches && $amountMatches;
     }
 
     /**

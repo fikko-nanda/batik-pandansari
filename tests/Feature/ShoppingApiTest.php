@@ -247,6 +247,7 @@ class ShoppingApiTest extends TestCase
     {
         $this->seedCategory();
         $product = $this->makeProduct('Batik Parang');
+        $this->makeVariant($product, 5);
         $user = $this->makeUser('pelanggan');
         Sanctum::actingAs($user);
 
@@ -267,6 +268,7 @@ class ShoppingApiTest extends TestCase
     {
         $this->seedCategory();
         $product = $this->makeProduct('Batik Kawung');
+        $this->makeVariant($product, 5);
         Sanctum::actingAs($this->makeUser('pelanggan'));
 
         $this->postJson('/api/wishlist', ['id_product' => $product->id_product])->assertStatus(201);
@@ -286,6 +288,7 @@ class ShoppingApiTest extends TestCase
     {
         $this->seedCategory();
         $product = $this->makeProduct('Batik Truntum');
+        $this->makeVariant($product, 5);
         $owner = $this->makeUser('pelanggan');
 
         Sanctum::actingAs($owner);
@@ -303,6 +306,7 @@ class ShoppingApiTest extends TestCase
     {
         $this->seedCategory();
         $product = $this->makeProduct('Batik Sogan');
+        $this->makeVariant($product, 5);
         $owner = $this->makeUser('pelanggan');
 
         Sanctum::actingAs($owner);

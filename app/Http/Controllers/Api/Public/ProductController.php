@@ -51,6 +51,9 @@ class ProductController extends Controller
                 }
             )
             ->where('status_produk', 'aktif')
+            ->whereHas('variants', fn ($query) => $query
+                ->where('status_varian', 'aktif')
+                ->where('stok', '>', 0))
             ->orderByDesc('dibuat_pada')
             ->paginate($validated['per_page'] ?? 10);
 
@@ -88,7 +91,9 @@ class ProductController extends Controller
         $product = Product::with([
             'category',
             'categories',
-            'variants' => fn ($query) => $query->where('status_varian', 'aktif'),
+            'variants' => fn ($query) => $query
+                ->where('status_varian', 'aktif')
+                ->where('stok', '>', 0),
             'images' => fn ($query) => $query
                 ->where('type', ProductImage::TYPE_PRODUK)
                 ->orderByDesc('is_primary')
@@ -97,6 +102,9 @@ class ProductController extends Controller
         ])
             ->where('id_product', $id)
             ->where('status_produk', 'aktif')
+            ->whereHas('variants', fn ($query) => $query
+                ->where('status_varian', 'aktif')
+                ->where('stok', '>', 0))
             ->first();
 
         if (! $product) {

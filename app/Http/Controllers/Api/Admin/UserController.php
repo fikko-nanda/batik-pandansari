@@ -116,18 +116,11 @@ class UserController extends Controller
         ]);
     }
 
-    public function export(Request $request): StreamedResponse
+    public function export(): StreamedResponse
     {
-        $validated = $request->validate([
-            'search' => ['nullable', 'string', 'max:150'],
-            'peran' => ['nullable', 'string', 'in:pelanggan,admin,teknisi'],
-            'start_date' => ['nullable', 'date_format:Y-m-d'],
-            'end_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:start_date'],
-        ]);
-
         $filename = 'pengguna-'.now()->format('Y-m-d').'.csv';
 
-        return response()->streamDownload(function () use ($validated) {
+        return response()->streamDownload(function () {
             $output = fopen('php://output', 'w');
 
             fputcsv($output, [
@@ -139,42 +132,18 @@ class UserController extends Controller
                 'dibuat_pada',
             ], ',', '"', '');
 
-            User::query()
-                ->when(
-                    ! empty($validated['search']),
-                    function ($query) use ($validated) {
-                        $term = $validated['search'];
-                        $query->where(function ($inner) use ($term) {
-                            $inner->where('nama_pengguna', 'like', "%{$term}%")
-                                ->orWhere('email', 'like', "%{$term}%");
-                        });
-                    }
-                )
-                ->when(
-                    ! empty($validated['peran']),
-                    fn ($query) => $query->where('peran', $validated['peran'])
-                )
-                ->when(
-                    ! empty($validated['start_date']),
-                    fn ($query) => $query->whereDate('dibuat_pada', '>=', $validated['start_date'])
-                )
-                ->when(
-                    ! empty($validated['end_date']),
-                    fn ($query) => $query->whereDate('dibuat_pada', '<=', $validated['end_date'])
-                )
-                ->orderBy('nama_pengguna')
-                ->chunk(200, function ($users) use ($output) {
-                    foreach ($users as $user) {
-                        fputcsv($output, [
-                            $user->id_user,
-                            $user->nama_pengguna,
-                            $user->email,
-                            $user->nomor_telepon,
-                            $user->peran,
-                            $user->dibuat_pada?->format('Y-m-d H:i:s'),
-                        ], ',', '"', '');
-                    }
-                });
+            User::query()->orderBy('nama_pengguna')->chunk(200, function ($users) use ($output) {
+                foreach ($users as $user) {
+                    fputcsv($output, [
+                        $user->id_user,
+                        $user->nama_pengguna,
+                        $user->email,
+                        $user->nomor_telepon,
+                        $user->peran,
+                        $user->dibuat_pada?->format('Y-m-d H:i:s'),
+                    ], ',', '"', '');
+                }
+            });
 
             fclose($output);
         }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);

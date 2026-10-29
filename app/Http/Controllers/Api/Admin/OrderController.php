@@ -8,76 +8,9 @@ use App\Services\OrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderController extends Controller
 {
-    public function export(Request $request): StreamedResponse
-    {
-        $validated = $request->validate([
-            'status' => ['nullable', 'string', Rule::in(OrderService::STATUSES)],
-            'search' => ['nullable', 'string', 'max:150'],
-            'start_date' => ['nullable', 'date_format:Y-m-d'],
-            'end_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:start_date'],
-        ]);
-
-        $filename = 'pesanan-'.now()->format('Y-m-d').'.csv';
-
-        return response()->streamDownload(function () use ($validated) {
-            $output = fopen('php://output', 'w');
-
-            fputcsv($output, [
-                'nomor_pesanan',
-                'tanggal',
-                'penerima',
-                'kota',
-                'total',
-                'ongkir',
-                'status',
-            ], ',', '"', '');
-
-            Order::query()
-                ->when(
-                    ! empty($validated['status']),
-                    fn ($query) => $query->where('status_pesanan', $validated['status'])
-                )
-                ->when(
-                    ! empty($validated['search']),
-                    function ($query) use ($validated) {
-                        $term = $validated['search'];
-                        $query->where(function ($inner) use ($term) {
-                            $inner->where('nomor_pesanan', 'like', "%{$term}%")
-                                ->orWhere('nama_penerima', 'like', "%{$term}%");
-                        });
-                    }
-                )
-                ->when(
-                    ! empty($validated['start_date']),
-                    fn ($query) => $query->whereDate('dibuat_pada', '>=', $validated['start_date'])
-                )
-                ->when(
-                    ! empty($validated['end_date']),
-                    fn ($query) => $query->whereDate('dibuat_pada', '<=', $validated['end_date'])
-                )
-                ->orderByDesc('dibuat_pada')
-                ->chunk(200, function ($orders) use ($output) {
-                    foreach ($orders as $order) {
-                        fputcsv($output, [
-                            $order->nomor_pesanan,
-                            $order->dibuat_pada?->format('Y-m-d H:i:s'),
-                            $order->nama_penerima,
-                            $order->kode_tujuan_pengiriman,
-                            $order->total_pembayaran,
-                            $order->biaya_pengiriman,
-                            $order->status_pesanan,
-                        ], ',', '"', '');
-                    }
-                });
-
-            fclose($output);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
-    }
-
     public function adminIndex(Request $request): JsonResponse
     {
         $validated = $request->validate([

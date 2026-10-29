@@ -12,7 +12,7 @@ use Illuminate\Queue\SerializesModels;
 
 /**
  * Email pemberitahuan pembatalan pesanan karena pembayaran melewati batas
- * waktu 12 jam.
+ * waktu 15 menit.
  */
 class OrderCancelledMail extends Mailable implements ShouldQueue
 {

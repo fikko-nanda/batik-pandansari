@@ -62,7 +62,8 @@ class CatalogEndpointTest extends EndpointTestCase
     public function test_produk_index_hanya_menampilkan_stok_aktif(): void
     {
         $this->seedCategory();
-        $this->makeProduct('Batik Aktif A', 'aktif');
+        $activeProduct = $this->makeProduct('Batik Aktif A', 'aktif');
+        $this->makeVariant($activeProduct, 5);
         $this->makeProduct('Batik Draft B', 'draft');
         $this->makeProduct('Batik Nonaktif C', 'nonaktif');
 
@@ -87,7 +88,8 @@ class CatalogEndpointTest extends EndpointTestCase
         $this->seedCategory();
 
         for ($i = 1; $i <= 12; $i++) {
-            $this->makeProduct("Batik Serimpi {$i}", 'aktif');
+            $product = $this->makeProduct("Batik Serimpi {$i}", 'aktif');
+            $this->makeVariant($product, 5);
         }
         $this->makeProduct('Kain Tenun Polos', 'aktif');
 
@@ -110,8 +112,10 @@ class CatalogEndpointTest extends EndpointTestCase
     {
         $this->seedCategory('cat-1', 'Batik Tulis');
         $this->seedCategory('cat-2', 'Batik Cap');
-        $this->makeProduct('Dari Tulis', 'aktif', 'cat-1');
-        $this->makeProduct('Dari Cap', 'aktif', 'cat-2');
+        $productTulis = $this->makeProduct('Dari Tulis', 'aktif', 'cat-1');
+        $this->makeVariant($productTulis, 5);
+        $productCap = $this->makeProduct('Dari Cap', 'aktif', 'cat-2');
+        $this->makeVariant($productCap, 5);
 
         $this->hit('GET', '/api/products?category=cat-2', [
             'endpoint' => 'GET /api/products',

@@ -53,6 +53,46 @@ class LegacySchemaMigrationsTest extends TestCase
         $this->assertTrue(Schema::hasTable('cache_locks'));
     }
 
+    public function test_legacy_category_and_product_migrations_preserve_existing_catalog_tables(): void
+    {
+        Schema::create('categories', function (Blueprint $table) {
+            $table->char('id_category', 36)->primary();
+            $table->string('nama_kategori');
+        });
+
+        Schema::create('products', function (Blueprint $table) {
+            $table->char('id_product', 36)->primary();
+            $table->char('id_category', 36);
+            $table->string('nama_produk');
+        });
+
+        DB::table('categories')->insert([
+            'id_category' => 'category-uuid',
+            'nama_kategori' => 'Kategori Lama',
+        ]);
+        DB::table('products')->insert([
+            'id_product' => 'product-uuid',
+            'id_category' => 'category-uuid',
+            'nama_produk' => 'Produk Lama',
+        ]);
+
+        $categoryMigration = require database_path('migrations/2026_10_16_043620_create_categories_table.php');
+        $productMigration = require database_path('migrations/2026_10_16_043632_create_products_table.php');
+        $categoryMigration->up();
+        $productMigration->up();
+
+        $this->assertSame('Kategori Lama', DB::table('categories')->where('id_category', 'category-uuid')->value('nama_kategori'));
+        $this->assertSame('Produk Lama', DB::table('products')->where('id_product', 'product-uuid')->value('nama_produk'));
+        $this->assertSame(
+            ['id_category', 'nama_kategori'],
+            Schema::getColumnListing('categories')
+        );
+        $this->assertSame(
+            ['id_product', 'id_category', 'nama_produk'],
+            Schema::getColumnListing('products')
+        );
+    }
+
     public function test_product_categories_migration_creates_constraints_and_backfills_without_duplicates(): void
     {
         Schema::create('products', function (Blueprint $table) {

@@ -1,6 +1,6 @@
 Halo {{ $namaPelanggan }},
 
-Pesananmu telah dibatalkan karena pembayaran tidak diselesaikan dalam batas waktu {{ $batasMenit }} menit atau karena pembatalan admin. Jika stok sebelumnya direservasi, stok akan tersedia kembali sekitar satu menit setelah pembatalan.
+Pesananmu dibatalkan secara otomatis karena pembayaran tidak diselesaikan dalam batas waktu {{ $batasMenit }} menit. Stok produk telah kami kembalikan ke ketersediaan.
 
 NOMOR PESANAN: {{ $order->nomor_pesanan }}
 STATUS PESANAN: Dibatalkan

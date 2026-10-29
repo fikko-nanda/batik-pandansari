@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -114,7 +115,7 @@ class ProductApiTest extends TestCase
         ]);
     }
 
-    private function makeProduct(string $nama, string $status): Product
+    private function makeProduct(string $nama, string $status, int $stok = 1): Product
     {
         $product = Product::create([
             'id_product' => (string) Str::uuid(),
@@ -126,6 +127,16 @@ class ProductApiTest extends TestCase
         ]);
 
         $product->categories()->sync(['cat-1']);
+        ProductVariant::create([
+            'id_variant' => (string) Str::uuid(),
+            'id_product' => $product->id_product,
+            'sku' => 'SKU-'.Str::random(8),
+            'nama_varian' => 'Varian standar',
+            'harga' => 100000,
+            'stok' => $stok,
+            'berat_gram' => 500,
+            'status_varian' => 'aktif',
+        ]);
 
         return $product;
     }
@@ -142,6 +153,19 @@ class ProductApiTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.status_produk', 'aktif')
+            ->assertJsonPath('meta.total', 1);
+    }
+
+    public function test_public_index_hides_products_without_available_stock(): void
+    {
+        $this->seedCategory();
+        $this->makeProduct('Produk Tersedia', 'aktif', 1);
+        $this->makeProduct('Produk Habis', 'aktif', 0);
+
+        $this->getJson('/api/products')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.nama_produk', 'Produk Tersedia')
             ->assertJsonPath('meta.total', 1);
     }
 
@@ -180,6 +204,37 @@ class ProductApiTest extends TestCase
         $this->getJson('/api/products/'.$product->id_product)
             ->assertStatus(404)
             ->assertJsonPath('success', false);
+    }
+
+    public function test_public_show_hides_sold_out_product(): void
+    {
+        $this->seedCategory();
+        $product = $this->makeProduct('Produk Habis', 'aktif', 0);
+
+        $this->getJson('/api/products/'.$product->id_product)
+            ->assertNotFound()
+            ->assertJsonPath('success', false);
+    }
+
+    public function test_public_variant_list_only_returns_available_variants(): void
+    {
+        $this->seedCategory();
+        $product = $this->makeProduct('Produk Multi Varian', 'aktif', 0);
+        $availableVariant = ProductVariant::create([
+            'id_variant' => (string) Str::uuid(),
+            'id_product' => $product->id_product,
+            'sku' => 'SKU-'.Str::random(8),
+            'nama_varian' => 'Varian tersedia',
+            'harga' => 100000,
+            'stok' => 2,
+            'berat_gram' => 500,
+            'status_varian' => 'aktif',
+        ]);
+
+        $this->getJson('/api/products/'.$product->id_product.'/variants')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id_variant', $availableVariant->id_variant);
     }
 
     public function test_admin_index_requires_authentication(): void

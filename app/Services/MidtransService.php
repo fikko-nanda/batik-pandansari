@@ -61,19 +61,11 @@ class MidtransService
                 'gross_amount' => (int) round((float) $order->total_pembayaran),
             ],
             'customer_details' => $this->customerDetails($order),
-            // Gunakan sisa waktu dari batas yang dibuat saat checkout agar
-            // pembuatan token tidak memulai ulang masa pembayaran 15 menit.
+            // Samakan waktu kedaluwarsa provider dengan batas dari checkout.
             'expiry' => [
-                'start_time' => now()->format('Y-m-d H:i:s O'),
+                'start_time' => ($order->dibuat_pada ?? now())->format('Y-m-d H:i:s O'),
                 'unit' => 'minute',
-                'duration' => max(
-                    1,
-                    intdiv(
-                        max(0, ($order->kedaluwarsa_pada ?? now()->addMinutes(OrderService::PAYMENT_WINDOW_MINUTES))
-                            ->getTimestamp() - now()->getTimestamp()),
-                        60
-                    )
-                ),
+                'duration' => OrderService::PAYMENT_WINDOW_MINUTES,
             ],
             // Arahkan pengguna kembali ke halaman hasil pembayaran milik sendiri
             // agar tidak berakhir di example.com bawaan akun Midtrans. Status

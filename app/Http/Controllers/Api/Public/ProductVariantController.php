@@ -13,6 +13,9 @@ class ProductVariantController extends Controller
     {
         $product = Product::where('id_product', $productId)
             ->where('status_produk', 'aktif')
+            ->whereHas('variants', fn ($query) => $query
+                ->where('status_varian', 'aktif')
+                ->where('stok', '>', 0))
             ->first();
 
         if (! $product) {
@@ -24,6 +27,7 @@ class ProductVariantController extends Controller
 
         $variants = ProductVariant::where('id_product', $product->id_product)
             ->where('status_varian', 'aktif')
+            ->where('stok', '>', 0)
             ->orderBy('dibuat_pada')
             ->get();
 

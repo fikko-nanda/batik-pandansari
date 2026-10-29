@@ -92,7 +92,8 @@ class CmsHomepageController extends Controller
             $pinned = Voucher::query()
                 ->with([
                     'productPeruntukan.variants' => fn ($query) => $query
-                        ->where('status_varian', 'aktif'),
+                        ->where('status_varian', 'aktif')
+                        ->where('stok', '>', 0),
                     'productPeruntukan.images' => fn ($query) => $query
                         ->where('type', ProductImage::TYPE_PRODUK)
                         ->orderByDesc('is_primary')
@@ -106,7 +107,11 @@ class CmsHomepageController extends Controller
                     $query->whereNull('id_product_peruntukan')
                         ->orWhereHas(
                             'productPeruntukan',
-                            fn ($inner) => $inner->where('status_produk', 'aktif')
+                            fn ($inner) => $inner
+                                ->where('status_produk', 'aktif')
+                                ->whereHas('variants', fn ($query) => $query
+                                    ->where('status_varian', 'aktif')
+                                    ->where('stok', '>', 0))
                         );
                 })
                 ->first();
@@ -131,7 +136,8 @@ class CmsHomepageController extends Controller
         return CmsPromo::query()
             ->with([
                 'voucher.productPeruntukan.variants' => fn ($query) => $query
-                    ->where('status_varian', 'aktif'),
+                    ->where('status_varian', 'aktif')
+                    ->where('stok', '>', 0),
                 'voucher.productPeruntukan.images' => fn ($query) => $query
                     ->where('type', ProductImage::TYPE_PRODUK)
                     ->orderByDesc('is_primary')
@@ -140,7 +146,18 @@ class CmsHomepageController extends Controller
             ->whereHas('voucher', fn ($query) => $query
                 ->where('status_voucher', 'aktif')
                 ->where('tanggal_mulai', '<=', $now)
-                ->where('tanggal_selesai', '>=', $now))
+                ->where('tanggal_selesai', '>=', $now)
+                ->where(function ($target) {
+                    $target->whereNull('id_product_peruntukan')
+                        ->orWhereHas(
+                            'productPeruntukan',
+                            fn ($product) => $product
+                                ->where('status_produk', 'aktif')
+                                ->whereHas('variants', fn ($query) => $query
+                                    ->where('status_varian', 'aktif')
+                                    ->where('stok', '>', 0))
+                        );
+                }))
             ->orderBy('dibuat_pada', 'desc')
             ->orderBy('id_cms_promo', 'desc')
             ->get()
@@ -155,7 +172,8 @@ class CmsHomepageController extends Controller
         return Voucher::query()
             ->with([
                 'productPeruntukan.variants' => fn ($query) => $query
-                    ->where('status_varian', 'aktif'),
+                    ->where('status_varian', 'aktif')
+                    ->where('stok', '>', 0),
                 'productPeruntukan.images' => fn ($query) => $query
                     ->where('type', ProductImage::TYPE_PRODUK)
                     ->orderByDesc('is_primary')
@@ -168,7 +186,11 @@ class CmsHomepageController extends Controller
                 $query->whereNull('id_product_peruntukan')
                     ->orWhereHas(
                         'productPeruntukan',
-                        fn ($inner) => $inner->where('status_produk', 'aktif')
+                        fn ($inner) => $inner
+                            ->where('status_produk', 'aktif')
+                            ->whereHas('variants', fn ($query) => $query
+                                ->where('status_varian', 'aktif')
+                                ->where('stok', '>', 0))
                     );
             })
             ->orderByRaw('CASE WHEN gambar IS NULL OR gambar = ? THEN 1 ELSE 0 END', [''])

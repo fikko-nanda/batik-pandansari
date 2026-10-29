@@ -15,8 +15,6 @@
     categories: [],
     selectedCategory: 'ALL',
     searchQuery: '',
-    exportStartDate: '',
-    exportEndDate: '',
     loading: true,
     notice: '',
     noticeOk: true,
@@ -157,19 +155,6 @@
         this.categories = list;
     },
     setKategori(id) { this.selectedCategory = id; this.page = 1; this.loadProduk(); },
-    async eksporCsv() {
-        if (this.exportStartDate && this.exportEndDate && this.exportEndDate < this.exportStartDate) {
-            this.pesan(false, 'Tanggal akhir tidak boleh sebelum tanggal mulai.');
-            return;
-        }
-        const res = await PandansariAPI.admin.productsExport({
-            search: this.searchQuery.trim() || undefined,
-            category: this.selectedCategory !== 'ALL' ? this.selectedCategory : undefined,
-            start_date: this.exportStartDate || undefined,
-            end_date: this.exportEndDate || undefined,
-        });
-        this.pesan(res.ok, res.ok ? 'CSV seluruh produk sesuai filter berhasil diunduh.' : res.message);
-    },
     goto(p) {
         if (p < 1 || (this.meta && p > this.meta.last_page)) return;
         this.page = p;
@@ -751,7 +736,7 @@
                     Kelola identitas produk, foto, bahan, varian ukuran/warna, dan panduan ukuran.
                 </p>
 
-                <div class="flex flex-wrap items-end gap-2.5 pt-1">
+                <div class="flex items-center gap-2.5 pt-1">
                     <div class="relative w-full max-w-md">
                         <i class="fa-solid fa-sliders absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600 text-xs"></i>
                         <input type="text"
@@ -760,13 +745,7 @@
                                placeholder="Saring nama / deskripsi..."
                                class="w-full text-xs font-semibold bg-[#AEE2F0] text-slate-900 placeholder-slate-600 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-sky-400 border-none">
                     </div>
-                    <label class="text-[10px] font-bold text-slate-300">Mulai
-                        <input type="date" x-model="exportStartDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs text-slate-800">
-                    </label>
-                    <label class="text-[10px] font-bold text-slate-300">Akhir
-                        <input type="date" x-model="exportEndDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs text-slate-800">
-                    </label>
-                    <button type="button" @click="eksporCsv()"
+                    <button type="button" @click="PandansariAPI.admin.productsExport()"
                             class="bg-[#AEE2F0] hover:bg-[#97d7e8] text-slate-900 p-2.5 px-3 rounded-xl transition cursor-pointer shrink-0 font-bold" title="Unduh CSV (export produk)">
                         <i class="fa-solid fa-download text-xs"></i>
                     </button>

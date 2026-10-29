@@ -14,8 +14,6 @@
     perPage: 10,
     searchQuery: '',
     selectedRole: 'ALL',
-    exportStartDate: '',
-    exportEndDate: '',
     summary: null,
     loading: true,
     notice: '', noticeOk: true,
@@ -55,19 +53,6 @@
     async loadSummary() {
         const res = await PandansariAPI.admin.usersSummary();
         if (res.ok) this.summary = res.data;
-    },
-    async eksporCsv() {
-        if (this.exportStartDate && this.exportEndDate && this.exportEndDate < this.exportStartDate) {
-            this.pesan(false, 'Tanggal akhir tidak boleh sebelum tanggal mulai.');
-            return;
-        }
-        const res = await PandansariAPI.admin.usersExport({
-            search: this.searchQuery.trim() || undefined,
-            peran: this.selectedRole !== 'ALL' ? this.selectedRole : undefined,
-            start_date: this.exportStartDate || undefined,
-            end_date: this.exportEndDate || undefined,
-        });
-        this.pesan(res.ok, res.ok ? 'CSV pengguna sesuai filter berhasil diunduh.' : res.message);
     },
     setRole(r) { this.selectedRole = r; this.page = 1; this.loadUsers(); },
     goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadUsers(); },
@@ -134,14 +119,8 @@
             </p>
         </div>
 
-        <div class="flex flex-wrap items-end gap-2 self-start sm:self-auto">
-            <label class="text-[10px] font-bold text-slate-500">Mulai
-                <input type="date" x-model="exportStartDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs">
-            </label>
-            <label class="text-[10px] font-bold text-slate-500">Akhir
-                <input type="date" x-model="exportEndDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs">
-            </label>
-            <button type="button" @click="eksporCsv()"
+        <div class="flex items-center gap-2 self-start sm:self-auto">
+            <button type="button" @click="PandansariAPI.admin.usersExport()"
                     class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-download text-slate-500"></i>
                 <span>Ekspor CSV</span>

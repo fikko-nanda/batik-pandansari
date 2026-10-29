@@ -225,9 +225,7 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 
     // API Ringkasan (admin) - sebelum /admin/orders/{id}
     Route::get('/admin/orders/summary', [OrderController::class, 'adminSummary']);
-    Route::get('/admin/orders/export', [OrderController::class, 'export']);
     Route::get('/admin/payments/summary', [PaymentController::class, 'adminSummary']);
-    Route::get('/admin/payments/export', [PaymentController::class, 'export']);
 
     // API Manajemen Pengguna (admin)
     Route::get('/admin/users/summary', [UserController::class, 'summary']);

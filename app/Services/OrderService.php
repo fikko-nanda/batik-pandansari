@@ -12,7 +12,8 @@ use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Throwable;
+
+use function Illuminate\Support\defer;
 
 class OrderService
 {
@@ -122,60 +123,6 @@ class OrderService
         return $prefix.str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
     }
 
-    public function reserveStock(Order $order): void
-    {
-        $this->reservations->reserve($order);
-    }
-
-    public function notifyOrderCreated(Order $order): void
-    {
-        try {
-            $this->whatsApp->sendOrderCreated($order);
-        } catch (Throwable $e) {
-            report($e);
-        }
-    }
-
-    public function releaseDueReservations(): int
-    {
-        $cutoff = now()->subMinute();
-        $released = 0;
-
-        Order::query()
-            ->where('status_pesanan', 'dibatalkan')
-            ->where('stok_direservasi', true)
-            ->where('diperbarui_pada', '<=', $cutoff)
-            ->orderBy('id_order')
-            ->chunkById(100, function ($orders) use (&$released, $cutoff) {
-                foreach ($orders as $candidate) {
-                    $didRelease = DB::transaction(function () use ($candidate, $cutoff) {
-                        $order = Order::with('items')
-                            ->whereKey($candidate->id_order)
-                            ->lockForUpdate()
-                            ->first();
-
-                        if (! $order
-                            || $order->status_pesanan !== 'dibatalkan'
-                            || ! $order->stok_direservasi
-                            || $order->diperbarui_pada === null
-                            || $order->diperbarui_pada->isAfter($cutoff)) {
-                            return false;
-                        }
-
-                        $this->reservations->release($order);
-
-                        return true;
-                    });
-
-                    if ($didRelease) {
-                        $released++;
-                    }
-                }
-            }, 'id_order', 'id_order');
-
-        return $released;
-    }
-
     /**
      * Apply an order status transition: record history, cancel voucher usage
      * and restore stock when the order is cancelled.
@@ -203,9 +150,7 @@ class OrderService
 
             if ($newStatus === 'dibatalkan') {
                 if ($statusSebelumnya === 'menunggu_pembayaran') {
-                    Payment::where('id_order', $order->id_order)
-                        ->where('status_pembayaran', 'menunggu')
-                        ->update(['status_pembayaran' => 'dibatalkan']);
+                    $this->reservations->release($order);
                 } elseif ($statusSebelumnya === 'dibayar') {
                     $hasStockMovement = InventoryMovement::where('referensi', $order->nomor_pesanan)
                         ->where('jenis_pergerakan', 'keluar')
@@ -223,7 +168,7 @@ class OrderService
 
             if ($newStatus === 'dibayar') {
                 if (in_array($statusSebelumnya, ['menunggu_pembayaran', 'dibatalkan'], true)) {
-                    $kekurangan = $order->stok_direservasi
+                    $kekurangan = $statusSebelumnya === 'menunggu_pembayaran'
                         ? $this->reservations->commit($order, $changedBy)
                         : $this->reservations->commitAfterRelease($order, $changedBy);
 
@@ -263,19 +208,17 @@ class OrderService
             return $order->fresh();
         });
 
-        // Kirim email hanya saat transisi nyata, dan hanya SETELAH transaksi
-        // commit agar data yang dibaca mailable sudah konsisten. Kegagalan
-        // email ditelan di dalam OrderMailService dan tidak membatalkan
-        // perubahan status.
+        // Kirim notifikasi hanya saat transisi nyata dan setelah response,
+        // agar layanan eksternal tidak menunda pembaruan status.
         if ($transisi) {
-            DB::afterCommit(function () use ($fresh, $newStatus) {
-                if ($newStatus === 'dibayar') {
+            if ($newStatus === 'dibayar') {
+                defer(function () use ($fresh) {
                     $this->orderMail->sendPaid($fresh);
                     $this->whatsApp->sendOrderPaid($fresh);
-                } elseif ($newStatus === 'dibatalkan') {
-                    $this->orderMail->sendCancelled($fresh);
-                }
-            });
+                });
+            } elseif ($newStatus === 'dibatalkan') {
+                defer(fn () => $this->orderMail->sendCancelled($fresh));
+            }
         }
 
         return $fresh;

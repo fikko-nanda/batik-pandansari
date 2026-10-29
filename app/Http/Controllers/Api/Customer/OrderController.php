@@ -14,13 +14,23 @@ use Symfony\Component\HttpFoundation\Response;
 
 class OrderController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, OrderService $orderService): JsonResponse
     {
         $validated = $request->validate([
             'status' => ['nullable', 'string', Rule::in(OrderService::STATUSES)],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
+
+        Order::where('id_user', $request->user()->id_user)
+            ->where('status_pesanan', 'menunggu_pembayaran')
+            ->whereNotNull('kedaluwarsa_pada')
+            ->where('kedaluwarsa_pada', '<=', now())
+            ->chunkById(100, function ($expiredOrders) use ($orderService) {
+                foreach ($expiredOrders as $expiredOrder) {
+                    $orderService->expireIfUnpaid($expiredOrder);
+                }
+            }, 'id_order');
 
         $orders = Order::with('items')
             ->withExists('payments')
@@ -60,25 +70,21 @@ class OrderController extends Controller
             return $this->notFound();
         }
 
-        if ($orderService->isExpired($order)) {
-            if ($sync->verifyBeforeExpiry($order)) {
-                $orderService->expireIfUnpaid($order);
-            }
-
-            $order->refresh()->load([
-                'items.variant.product',
-                'payments',
-                'voucherUsages.voucher',
-                'statusHistories',
-            ]);
-        } elseif ($sync->syncOrder($order)) {
-            $order->refresh()->load([
-                'items.variant.product',
-                'payments',
-                'voucherUsages.voucher',
-                'statusHistories',
-            ]);
+        if ($sync->syncOrder($order)) {
+            $order->refresh();
         }
+
+        if ($orderService->isExpired($order)) {
+            $orderService->expireIfUnpaid($order);
+            $order->refresh();
+        }
+
+        $order->load([
+            'items.variant.product',
+            'payments',
+            'voucherUsages.voucher',
+            'statusHistories',
+        ]);
 
         return response()->json([
             'success' => true,
