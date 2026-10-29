@@ -1121,6 +1121,13 @@ window.PandansariAPI = {
             return '/media/cms-promo/' + encodeURIComponent(filename);
         }
 
+        if (clean.startsWith('cms/profil/')) {
+            const filename = clean.slice('cms/profil/'.length);
+            if (!filename || filename.includes('/')) return p;
+
+            return '/media/cms-profil/' + encodeURIComponent(filename);
+        }
+
         if (clean.startsWith('vouchers/')) {
             const filename = clean.slice('vouchers/'.length);
             if (!filename || filename.includes('/')) return p;
