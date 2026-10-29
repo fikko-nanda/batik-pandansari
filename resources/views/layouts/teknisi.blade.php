@@ -47,31 +47,17 @@
         <header class="bg-white border-b border-slate-200/80 px-6 py-3 flex items-center justify-between sticky top-0 z-20">
             <!-- BREADCRUMB -->
             <div class="flex items-center gap-2 text-xs font-bold text-slate-500">
-                <span>Batik Pandansari</span>
+                <a href="{{ route('home') }}" class="hover:underline hover:text-blue-600 text-slate-500 transition">Batik Pandansari</a>
                 <i class="fa-solid fa-chevron-right text-[9px] text-slate-400"></i>
-                <span>Engineering Console</span>
+                <a href="{{ route('teknisi.dashboard') }}" class="hover:underline hover:text-blue-600 text-slate-500 transition">Engineering Console</a>
                 <i class="fa-solid fa-chevron-right text-[9px] text-slate-400"></i>
                 <span class="text-slate-900 font-extrabold">Gateway Telemetry</span>
             </div>
 
             <!-- STATUS BADGES & USER -->
             <div class="flex items-center gap-3 text-xs">
-                <span class="bg-sky-50 text-sky-800 border border-sky-200 px-2.5 py-1 rounded-full font-bold text-[10px] flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
-                    <span>PRODUCTION (LIVE)</span>
-                </span>
-
-                <div class="relative">
-                    <input type="text" placeholder="⌘K" readonly class="w-16 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-center font-mono text-[10px] font-bold text-slate-500 cursor-pointer">
-                </div>
-
-                <span class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-1 rounded-full font-mono text-[10px] font-bold flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    <span>Socket 12ms</span>
-                </span>
-
                 <!-- Profile User (dinamis dari user terotentikasi) -->
-                <div x-data="teknisiTopbar" class="flex items-center gap-2 pl-2 border-l border-slate-200">
+                <div x-data="teknisiTopbar" class="flex items-center gap-2">
                     <div class="w-7 h-7 bg-slate-900 text-white rounded-full flex items-center justify-center font-black text-[10px]"
                          :title="displayName"
                          x-text="getInitials(displayName)"></div>

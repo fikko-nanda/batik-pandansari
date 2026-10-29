@@ -218,13 +218,14 @@
             <div class="relative w-full mb-4">
                 <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                 <input type="text"
-                       x-model="searchQuery"
-                       @input.debounce.500ms="if (page === 1) { loadProducts(1) } else { page = 1; loadProducts(1) }"
+                       x-model.debounce.300ms="searchQuery"
+                       @input.debounce.300ms="page = 1; loadProducts(1)"
+                       @keydown.enter.prevent="page = 1; loadProducts(1)"
                        placeholder="Cari kata kunci motif, kain, sarimbit, warna di katalog..."
                        class="w-full pl-11 pr-20 sm:pr-24 py-2.5 sm:py-3 text-xs sm:text-sm bg-white border border-slate-200 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500 font-['Plus_Jakarta_Sans'] placeholder:text-slate-400">
                 <button type="button"
-                        @click="loadProducts(1)"
-                        class="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 bg-[#0F1A24] text-white text-[11px] sm:text-xs font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl hover:bg-slate-800 transition font-['Plus_Jakarta_Sans']">
+                        @click="page = 1; loadProducts(1)"
+                        class="absolute right-1.5 sm:right-2 top-1/2 -translate-y-1/2 bg-[#0F1A24] text-white text-[11px] sm:text-xs font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl hover:bg-slate-800 transition font-['Plus_Jakarta_Sans'] cursor-pointer">
                     Cari
                 </button>
             </div>

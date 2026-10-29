@@ -2,122 +2,7 @@
 
 @section('content')
 <div class="bg-[#FAF8F5] min-h-screen py-6 font-['Plus_Jakarta_Sans']"
-     x-data="{
-        user: PandansariAPI.getUser(),
-        needLogin: false,
-        form: { nama_pengguna: '', email: '', nomor_telepon: '' },
-        busy: false,
-        saving: false,
-        msg: '', msgOk: true,
-
-        // === Tautkan Akun Google (POST /me/google) ===
-        googleBusy: false, googleMsg: '', googleOk: false,
-
-        initials() {
-            const n = this.user?.nama_pengguna ?? '';
-            return n.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
-        },
-        formatTanggal(s) {
-            if (!s) return '—';
-            try { return new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }); } catch { return s; }
-        },
-        async load() {
-            if (!PandansariAPI.getToken()) { this.needLogin = true; return; }
-            this.busy = true;
-            await PandansariAPI.me();               // segarkan profil dari server + simpan ke localStorage
-            this.user = PandansariAPI.getUser();
-            this.busy = false;
-            if (this.user) {
-                this.form.nama_pengguna = this.user.nama_pengguna ?? '';
-                this.form.email = this.user.email ?? '';
-                this.form.nomor_telepon = this.user.nomor_telepon ?? '';
-            }
-        },
-        resetForm() {
-            this.form.nama_pengguna = this.user?.nama_pengguna ?? '';
-            this.form.email = this.user?.email ?? '';
-            this.form.nomor_telepon = this.user?.nomor_telepon ?? '';
-            this.msg = '';
-        },
-        async simpan() {
-            if (!this.form.nama_pengguna.trim() || !this.form.email.trim()) {
-                this.msgOk = false; this.msg = 'Nama dan email wajib diisi.'; return;
-            }
-            this.saving = true; this.msg = '';
-            const res = await PandansariAPI.updateMe({
-                nama_pengguna: this.form.nama_pengguna.trim(),
-                email: this.form.email.trim(),
-                nomor_telepon: this.form.nomor_telepon.trim() || undefined,
-            });
-            this.saving = false;
-            if (res.ok) {
-                this.user = res.data;
-                PandansariAPI.setUser(res.data);
-                this.msgOk = true; this.msg = 'Profil berhasil diperbarui!';
-            } else {
-                this.msgOk = false;
-                const errs = Object.values(res.errors ?? {}).flat();
-                this.msg = errs[0] ?? res.message ?? 'Gagal memperbarui profil.';
-            }
-        },
-        async logout() {
-            await PandansariAPI.logout();
-            PandansariAPI.clearSession();
-            window.location.href = '/';
-        },
-        async tautkanGoogle() {
-            this.googleBusy = true; this.googleMsg = '';
-            try {
-                // Popup OAuth Google (Token Client) → access token
-                const googleToken = await PandansariAPI.mintaGoogleToken();
-                // POST /api/me/google — butuh Bearer token (sudah otomatis di fetch())
-                const res = await PandansariAPI.linkGoogle(googleToken);
-                this.googleBusy = false;
-                if (res.ok) {
-                    this.googleOk = true;
-                    this.googleMsg = 'Akun Google berhasil ditautkan!';
-                    if (res.data) { this.user = res.data; PandansariAPI.setUser(res.data); }
-                    else await PandansariAPI.me();            // segarkan profil (google_id terisi)
-                    this.user = PandansariAPI.getUser();
-                } else {
-                    this.googleOk = false;
-                    this.googleMsg = res.message || 'Gagal menautkan akun Google.';
-                }
-            } catch (e) {
-                this.googleBusy = false;
-                this.googleOk = false;
-                const pesan = {
-                    GOOGLE_CLIENT_ID_BELUM_DISET: 'Login Google belum dikonfigurasi (VITE_GOOGLE_CLIENT_ID kosong).',
-                    GOOGLE_SDK_TIDAK_SIAP: 'Layanan Google gagal dimuat. Periksa koneksi internet Anda, lalu coba lagi.',
-                    GOOGLE_POPUP_DITUTUP: 'Popup Google ditutup sebelum akun dipilih. Silakan coba lagi.',
-                    GOOGLE_POPUP_TIDAK_TAMPIL: 'Popup Google diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.',
-                    GOOGLE_TOKEN_KOSONG: 'Google tidak mengembalikan token akses. Silakan coba lagi.',
-                }[e.message];
-                this.googleMsg = pesan || 'Gagal memulai Google. Silakan coba lagi.';
-            }
-        },
-        // === Riwayat pemakaian voucher (GET /voucher-usages/me) ===
-        vkList: [], vkMsg: '',
-        async muatRiwayatVoucher() {
-            const r = await PandansariAPI.voucherUsagesMe();
-            this.vkList = r.ok ? (r.data ?? []) : [];
-            if (!r.ok) this.vkMsg = r.message;
-        },
-        vkTanggal(s) {
-            try { return s ? new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'; }
-            catch { return '—'; }
-        },
-        vkWarna(st) {
-            const s = String(st ?? '').toLowerCase();
-            if (['berhasil', 'digunakan', 'dibayar'].includes(s)) return 'bg-emerald-100 text-emerald-700';
-            if (['dibatalkan', 'gagal', 'expired', 'kedaluwarsa'].includes(s)) return 'bg-rose-100 text-rose-700';
-            return 'bg-amber-100 text-amber-700';
-        },
-        vkLabel(st) {
-            return String(st ?? '').toLowerCase().toUpperCase() || 'MENUNGGU';
-        },
-        init() { this.load(); this.muatRiwayatVoucher(); }
-     }">
+     x-data="customerProfile">
 
     <!-- Gate: belum login -->
     <div x-show="needLogin" x-cloak class="max-w-md mx-auto mt-16 bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-4">
@@ -144,13 +29,13 @@
                 <!-- Card Profile Header (dari data login) -->
                 <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm text-center space-y-2">
                     <div class="w-16 h-16 bg-[#0F1A24] text-white font-bold text-xl rounded-2xl flex items-center justify-center mx-auto shadow-md">
-                        <span x-text="initials()">RW</span>
+                        <span x-text="initials()">{{ strtoupper(substr(auth()->user()?->nama_pengguna ?? auth()->user()?->name ?? 'U', 0, 2)) }}</span>
                     </div>
 
                     <div>
-                        <h2 class="text-lg font-bold text-[#0F1A24]" x-text="user?.nama_pengguna ?? '...'"></h2>
-                        <p class="text-xs text-slate-400 font-medium" x-text="user?.email ?? ''"></p>
-                        <p class="text-xs text-slate-500 font-medium mt-0.5" x-text="user?.nomor_telepon ?? '—'"></p>
+                        <h2 class="text-lg font-bold text-[#0F1A24]" x-text="user?.nama_pengguna ?? user?.name ?? '{{ auth()->user()?->nama_pengguna ?? auth()->user()?->name ?? '...' }}'">{{ auth()->user()?->nama_pengguna ?? auth()->user()?->name ?? '...' }}</h2>
+                        <p class="text-xs text-slate-400 font-medium" x-text="user?.email ?? '{{ auth()->user()?->email ?? '' }}'">{{ auth()->user()?->email ?? '' }}</p>
+                        <p class="text-xs text-slate-500 font-medium mt-0.5" x-text="user?.nomor_telepon ?? '{{ auth()->user()?->nomor_telepon ?? '—' }}'">{{ auth()->user()?->nomor_telepon ?? '—' }}</p>
                     </div>
                 </div>
 
@@ -255,7 +140,9 @@
                             <div class="relative">
                                 <input type="text"
                                        x-model="form.nama_pengguna"
+                                       value="{{ auth()->user()?->nama_pengguna ?? auth()->user()?->name ?? '' }}"
                                        :disabled="saving"
+                                       placeholder="Nama Lengkap"
                                        class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60">
                                 <i class="fa-regular fa-id-card absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                             </div>
@@ -265,15 +152,19 @@
                         <div>
                             <div class="flex items-center justify-between mb-1.5">
                                 <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                                    ALAMAT SUREL (EMAIL) <span class="text-red-500">*</span>
+                                    ALAMAT SUREL (EMAIL) <span class="text-[10px] text-slate-400 font-normal lowercase">(terkunci)</span>
                                 </label>
                             </div>
                             <div class="relative">
                                 <input type="email"
                                        x-model="form.email"
-                                       :disabled="saving"
-                                       class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60">
-                                <i class="fa-regular fa-envelope absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                       value="{{ auth()->user()?->email ?? '' }}"
+                                       readonly
+                                       disabled
+                                       :disabled="true"
+                                       tabindex="-1"
+                                       class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 text-slate-500 cursor-not-allowed select-none bg-gray-100 focus:outline-none pointer-events-none">
+                                <i class="fa-solid fa-lock absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                             </div>
                         </div>
 
@@ -378,4 +269,218 @@
 
     </div>
 </div>
+
+<script>
+    /**
+     * Komponen Alpine.js Halaman Profil & Informasi Akun
+     * Mengelola data profil, sinkronisasi data user login,
+     * penautan akun Google, dan riwayat voucher.
+     */
+    function customerProfile() {
+        const authUserName = @json(auth()->user()?->nama_pengguna ?? auth()->user()?->name ?? '');
+        const authUserEmail = @json(auth()->user()?->email ?? '');
+        const authUserPhone = @json(auth()->user()?->nomor_telepon ?? '');
+        const authUserObj = @json(auth()->user() ?? null);
+
+        const initialUser = (typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.getUser === 'function' ? PandansariAPI.getUser() : null) || authUserObj;
+
+        return {
+            user: initialUser,
+            needLogin: false,
+            form: {
+                nama_pengguna: initialUser?.nama_pengguna || initialUser?.name || authUserName || '',
+                email: initialUser?.email || authUserEmail || '',
+                nomor_telepon: initialUser?.nomor_telepon || authUserPhone || ''
+            },
+            busy: false,
+            saving: false,
+            msg: '',
+            msgOk: true,
+
+            // === Tautkan Akun Google (POST /me/google) ===
+            googleBusy: false,
+            googleMsg: '',
+            googleOk: false,
+
+            initials() {
+                const n = this.user?.nama_pengguna ?? this.user?.name ?? authUserName ?? '';
+                return n.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+            },
+
+            formatTanggal(s) {
+                if (!s) return '—';
+                try {
+                    return new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                } catch {
+                    return s;
+                }
+            },
+
+            async load() {
+                const hasToken = typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.getToken === 'function' && PandansariAPI.getToken();
+                if (!hasToken && !authUserObj) {
+                    this.needLogin = true;
+                    return;
+                }
+
+                this.busy = true;
+                if (hasToken && typeof PandansariAPI.me === 'function') {
+                    try {
+                        await PandansariAPI.me();
+                    } catch (e) {
+                        console.warn('[Profile] Error fetching me:', e);
+                    }
+                }
+
+                this.user = (typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.getUser === 'function' ? PandansariAPI.getUser() : null) || authUserObj;
+                this.busy = false;
+
+                if (this.user) {
+                    this.form.nama_pengguna = this.user.nama_pengguna ?? this.user.name ?? authUserName ?? this.form.nama_pengguna;
+                    this.form.email = this.user.email ?? authUserEmail ?? this.form.email;
+                    this.form.nomor_telepon = this.user.nomor_telepon ?? authUserPhone ?? this.form.nomor_telepon;
+                }
+            },
+
+            resetForm() {
+                this.form.nama_pengguna = this.user?.nama_pengguna ?? this.user?.name ?? authUserName ?? '';
+                this.form.email = this.user?.email ?? authUserEmail ?? '';
+                this.form.nomor_telepon = this.user?.nomor_telepon ?? authUserPhone ?? '';
+                this.msg = '';
+            },
+
+            async simpan() {
+                if (!this.form.nama_pengguna.trim()) {
+                    this.msgOk = false;
+                    this.msg = 'Nama lengkap wajib diisi.';
+                    return;
+                }
+
+                this.saving = true;
+                this.msg = '';
+
+                const payload = {
+                    nama_pengguna: this.form.nama_pengguna.trim(),
+                    nomor_telepon: this.form.nomor_telepon ? this.form.nomor_telepon.trim() : undefined,
+                };
+                if (this.form.email && this.form.email.trim()) {
+                    payload.email = this.form.email.trim();
+                }
+
+                try {
+                    const res = await PandansariAPI.updateMe(payload);
+                    if (res && res.ok) {
+                        this.user = res.data;
+                        PandansariAPI.setUser(res.data);
+                        this.msgOk = true;
+                        this.msg = 'Profil berhasil diperbarui!';
+                    } else {
+                        this.msgOk = false;
+                        const errs = Object.values(res?.errors ?? {}).flat();
+                        this.msg = errs[0] ?? res?.message ?? 'Gagal memperbarui profil.';
+                    }
+                } catch (e) {
+                    console.error('[Profile] Error simpan:', e);
+                    this.msgOk = false;
+                    this.msg = 'Terjadi kesalahan saat memperbarui profil.';
+                } finally {
+                    this.saving = false;
+                }
+            },
+
+            async logout() {
+                try {
+                    if (typeof PandansariAPI !== 'undefined') {
+                        if (typeof PandansariAPI.logout === 'function') await PandansariAPI.logout();
+                        if (typeof PandansariAPI.clearSession === 'function') PandansariAPI.clearSession();
+                    }
+                } catch (e) {
+                    console.warn('[Profile] Logout error:', e);
+                }
+                window.location.href = '/';
+            },
+
+            async tautkanGoogle() {
+                this.googleBusy = true;
+                this.googleMsg = '';
+                try {
+                    const googleToken = await PandansariAPI.mintaGoogleToken();
+                    const res = await PandansariAPI.linkGoogle(googleToken);
+                    this.googleBusy = false;
+                    if (res && res.ok) {
+                        this.googleOk = true;
+                        this.googleMsg = 'Akun Google berhasil ditautkan!';
+                        if (res.data) {
+                            this.user = res.data;
+                            PandansariAPI.setUser(res.data);
+                        } else {
+                            await PandansariAPI.me();
+                            this.user = PandansariAPI.getUser();
+                        }
+                    } else {
+                        this.googleOk = false;
+                        this.googleMsg = res?.message || 'Gagal menautkan akun Google.';
+                    }
+                } catch (e) {
+                    this.googleBusy = false;
+                    this.googleOk = false;
+                    const pesan = {
+                        GOOGLE_CLIENT_ID_BELUM_DISET: 'Login Google belum dikonfigurasi (VITE_GOOGLE_CLIENT_ID kosong).',
+                        GOOGLE_SDK_TIDAK_SIAP: 'Layanan Google gagal dimuat. Periksa koneksi internet Anda, lalu coba lagi.',
+                        GOOGLE_POPUP_DITUTUP: 'Popup Google ditutup sebelum akun dipilih. Silakan coba lagi.',
+                        GOOGLE_POPUP_TIDAK_TAMPIL: 'Popup Google diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.',
+                        GOOGLE_TOKEN_KOSONG: 'Google tidak mengembalikan token akses. Silakan coba lagi.',
+                    }[e?.message];
+                    this.googleMsg = pesan || 'Gagal memulai Google. Silakan coba lagi.';
+                }
+            },
+
+            vkList: [],
+            vkMsg: '',
+            async muatRiwayatVoucher() {
+                try {
+                    if (typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.voucherUsagesMe === 'function') {
+                        const r = await PandansariAPI.voucherUsagesMe();
+                        this.vkList = r && r.ok ? (r.data ?? []) : [];
+                        if (r && !r.ok) this.vkMsg = r.message || '';
+                    }
+                } catch (e) {
+                    console.warn('[Profile] Error muatRiwayatVoucher:', e);
+                }
+            },
+
+            vkTanggal(s) {
+                try {
+                    return s ? new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+                } catch {
+                    return '—';
+                }
+            },
+
+            vkWarna(st) {
+                const s = String(st ?? '').toLowerCase();
+                if (['berhasil', 'digunakan', 'dibayar'].includes(s)) return 'bg-emerald-100 text-emerald-700';
+                if (['dibatalkan', 'gagal', 'expired', 'kedaluwarsa'].includes(s)) return 'bg-rose-100 text-rose-700';
+                return 'bg-amber-100 text-amber-700';
+            },
+
+            vkLabel(st) {
+                return String(st ?? '').toLowerCase().toUpperCase() || 'MENUNGGU';
+            },
+
+            init() {
+                this.load();
+                this.muatRiwayatVoucher();
+            }
+        };
+    }
+
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('customerProfile', () => customerProfile());
+    });
+
+    if (window.Alpine) {
+        Alpine.data('customerProfile', () => customerProfile());
+    }
+</script>
 @endsection

@@ -2,148 +2,7 @@
 
 @section('content')
 <div class="bg-[#FAF8F5] min-h-screen py-6 font-['Plus_Jakarta_Sans']"
-     x-data="{
-        showAddModal: false,
-        editingId: null,          // null = tambah baru
-        addresses: [],
-        loading: true,
-        needLogin: false,
-        errorMsg: '',
-        saving: false,
-        msg: '',
-        msgOk: false,
-        user: null,
-        addressesCount: 0,
-        form: { label_alamat: '', nama_penerima: '', nomor_telepon: '', nama_provinsi: '', nama_kota: '', nama_kecamatan: '', kode_pos: '', alamat_lengkap: '', alamat_utama: false },
-
-        get isEdit() { return this.editingId !== null; },
-        initialOf(u) {
-            const n = u?.nama_pengguna ?? '';
-            return n.split(' ').map(x => x[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'BP';
-        },
-
-        // === Destinasi RajaOngkir (WAJIB untuk ongkir & checkout) ===
-        tujuanCari: '', tujuanHasil: [], tujuanLoading: false, tujuanTerpilih: null, tujuanTimer: null,
-        resetTujuan() {
-            this.tujuanCari = ''; this.tujuanHasil = []; this.tujuanTerpilih = null;
-        },
-        async cariTujuan() {
-            clearTimeout(this.tujuanTimer);
-            const q = this.tujuanCari.trim();
-            if (q.length < 3) { this.tujuanHasil = []; this.tujuanLoading = false; return; }
-            this.tujuanTimer = setTimeout(async () => {
-                this.tujuanLoading = true;
-                const res = await PandansariAPI.shippingDestinations(q);
-                this.tujuanLoading = false;
-                this.tujuanHasil = res.ok ? (res.data ?? []) : [];
-            }, 350);
-        },
-        pilihTujuan(d) {
-            this.tujuanTerpilih = d;
-            // auto-isi field alamat dari data tujuan (sesuaikan nama utk backend)
-            this.form.nama_provinsi = d.province_name ?? this.form.nama_provinsi;
-            this.form.nama_kota = d.city_name ?? this.form.nama_kota;
-            this.form.nama_kecamatan = d.district_name ?? this.form.nama_kecamatan;
-            this.form.kode_pos = d.zip_code ?? this.form.kode_pos;
-            this.tujuanCari = '';
-            this.tujuanHasil = [];
-        },
-
-        lineOf(a) {
-            return [a.alamat_lengkap, a.nama_kecamatan, a.nama_kota, a.nama_provinsi, a.kode_pos].filter(Boolean).join(', ');
-        },
-        updatedLabel(a) {
-            try { return 'Terakhir diperbarui: ' + new Date(a.diperbarui_pada).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }); }
-            catch { return ''; }
-        },
-
-        async load() {
-            this.loading = true;
-            const res = await PandansariAPI.addresses();
-            this.loading = false;
-            if (res.ok) this.addresses = res.data ?? [];
-            else if (res.status === 401) this.needLogin = true;
-            else this.errorMsg = res.message;
-            return res;
-        },
-
-        bukaTambah() {
-            this.editingId = null;
-            this.form = { label_alamat: '', nama_penerima: '', nomor_telepon: '', nama_provinsi: '', nama_kota: '', nama_kecamatan: '', kode_pos: '', alamat_lengkap: '', alamat_utama: false };
-            this.resetTujuan();
-            this.showAddModal = true;
-        },
-        bukaUbah(a) {
-            this.editingId = a.id_user_address;
-            this.form = {
-                label_alamat: a.label_alamat ?? '',
-                nama_penerima: a.nama_penerima ?? '',
-                nomor_telepon: a.nomor_telepon ?? '',
-                nama_provinsi: a.nama_provinsi ?? '',
-                nama_kota: a.nama_kota ?? '',
-                nama_kecamatan: a.nama_kecamatan ?? '',
-                kode_pos: a.kode_pos ?? '',
-                alamat_lengkap: a.alamat_lengkap ?? '',
-                alamat_utama: !!a.alamat_utama,
-            };
-            this.resetTujuan();
-            // kalau alamat lama sudah punya tujuan, tandai agar tidak hilang saat edit
-            this.tujuanTerpilih = a.id_tujuan_rajaongkir
-                ? { id: a.id_tujuan_rajaongkir, label: 'Tujuan tersimpan (#' + a.id_tujuan_rajaongkir + ')' }
-                : null;
-            this.showAddModal = true;
-        },
-
-        async simpan() {
-            const payload = { ...this.form };
-            if (this.tujuanTerpilih?.id) {
-                payload.id_tujuan_rajaongkir = this.tujuanTerpilih.id;
-            }
-            this.saving = true;
-            const res = this.isEdit
-                ? await PandansariAPI.updateAddress(this.editingId, payload)
-                : await PandansariAPI.addAddress(payload);
-            this.saving = false;
-            if (res.ok) {
-                this.showAddModal = false;
-                this.tampil(this.isEdit ? 'Alamat berhasil diperbarui.' : 'Alamat berhasil ditambahkan.', true);
-                await this.load();
-            } else {
-                this.tampil(res.message + (Object.values(res.errors ?? {}).flat().join(' ') || ''), false);
-            }
-        },
-        async hapus(a) {
-            if (!confirm('Hapus alamat ' + (a.label_alamat ?? '') + '?')) return;
-            const res = await PandansariAPI.deleteAddress(a.id_user_address);
-            if (res.ok) { this.tampil('Alamat berhasil dihapus.', true); await this.load(); }
-            else this.tampil(res.message, false);
-        },
-
-        async loadIdentity() {
-            this.user = PandansariAPI.getUser();
-            if (PandansariAPI.getToken()) {
-                await PandansariAPI.me();
-                this.user = PandansariAPI.getUser();
-                this.addressesCount = this.addresses.length;
-            }
-        },
-        async keluar() {
-            await PandansariAPI.logout();
-            PandansariAPI.clearSession();
-            window.location.href = '/';
-        },
-
-        tampil(msg, ok) {
-            this.msg = msg; this.msgOk = ok;
-            setTimeout(() => { this.msg = ''; }, 4000);
-        },
-
-        async init() {
-            if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
-            await this.load();
-            await this.loadIdentity();
-        }
-     }">
+     x-data="customerAddress">
 
     <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
 
@@ -366,52 +225,22 @@
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                             </div>
-                            <!-- Cari tujuan (opsional) -->
-                            <div class="relative rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                                <label class="block text-[11px] font-semibold text-slate-700 mb-1">
-                                    Cari Tujuan (kecamatan/kota) <span class="text-slate-400">(opsional)</span>
-                                </label>
-                                <div class="relative">
-                                    <input type="text" x-model="tujuanCari" @input="cariTujuan()"
-                                           placeholder="cth: Laweyan, Laweyan" autocomplete="off"
-                                           class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                                    <span x-show="tujuanLoading" class="absolute right-3 top-2.5 text-slate-400"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
-                                </div>
-                                <!-- Hasil pencarian -->
-                                <div x-show="tujuanHasil.length" x-cloak class="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
-                                    <template x-for="d in tujuanHasil" :key="d.id">
-                                        <button type="button" @click="pilihTujuan(d)" class="w-full text-left px-3 py-2 hover:bg-sky-50 transition cursor-pointer">
-                                            <span class="block text-slate-800 font-semibold" x-text="d.label"></span>
-                                            <span class="block text-[10px] text-slate-400">ID tujuan #<span x-text="d.id"></span></span>
-                                        </button>
-                                    </template>
-                                </div>
-                                <div x-show="!tujuanHasil.length && tujuanCari.length >= 3 && !tujuanLoading" x-cloak class="mt-2 text-[10px] text-slate-500">
-                                    Tidak ada tujuan yang cocok — coba kata lain (min. 3 huruf).
-                                </div>
-                                <!-- Terpilih -->
-                                <template x-if="tujuanTerpilih">
-                                    <div class="mt-2 flex items-center gap-2 bg-sky-100 text-sky-800 rounded-xl px-3 py-2 font-bold text-[11px]">
-                                        <i class="fa-solid fa-location-dot"></i>
-                                        <span x-text="tujuanTerpilih.label"></span>
-                                    </div>
-                                </template>
-                                <p class="mt-1.5 text-[10px] text-slate-500 italic">Bisa dipilih untuk membantu mengisi Provinsi, Kota, Kecamatan &amp; Kode Pos. Ongkir tetap akan dikonfirmasi via WhatsApp.</p>
-                            </div>
+
+                            <!-- Wilayah: Provinsi, Kota/Kabupaten, Kecamatan -->
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Provinsi</label>
-                                    <input type="text" x-model="form.nama_provinsi"
+                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Provinsi <span class="text-rose-500">*</span></label>
+                                    <input type="text" x-model="form.nama_provinsi" required placeholder="cth: Jawa Tengah"
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                                 <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kota/Kabupaten</label>
-                                    <input type="text" x-model="form.nama_kota"
+                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kota/Kabupaten <span class="text-rose-500">*</span></label>
+                                    <input type="text" x-model="form.nama_kota" required placeholder="cth: Surakarta"
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                                 <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kecamatan</label>
-                                    <input type="text" x-model="form.nama_kecamatan"
+                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Kecamatan <span class="text-rose-500">*</span></label>
+                                    <input type="text" x-model="form.nama_kecamatan" required placeholder="cth: Laweyan"
                                            class="w-full border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
                                 </div>
                             </div>
@@ -450,4 +279,194 @@
 
     </div>
 </div>
+
+<script>
+    /**
+     * Komponen Alpine.js Halaman Buku Alamat Pengiriman
+     * Mengelola daftar alamat, penambahan alamat baru, pengubahan,
+     * dan penghapusan alamat pengiriman pelanggan.
+     */
+    function customerAddress() {
+        return {
+            showAddModal: false,
+            editingId: null, // null = tambah baru
+            addresses: [],
+            loading: true,
+            needLogin: false,
+            errorMsg: '',
+            saving: false,
+            msg: '',
+            msgOk: false,
+            user: null,
+            addressesCount: 0,
+            form: {
+                label_alamat: '',
+                nama_penerima: '',
+                nomor_telepon: '',
+                nama_provinsi: '',
+                nama_kota: '',
+                nama_kecamatan: '',
+                kode_pos: '',
+                alamat_lengkap: '',
+                alamat_utama: false
+            },
+
+            get isEdit() {
+                return this.editingId !== null;
+            },
+
+            initialOf(u) {
+                const n = u?.nama_pengguna ?? '';
+                return n.split(' ').map(x => x[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'BP';
+            },
+
+            lineOf(a) {
+                return [a.alamat_lengkap, a.nama_kecamatan, a.nama_kota, a.nama_provinsi, a.kode_pos].filter(Boolean).join(', ');
+            },
+
+            updatedLabel(a) {
+                try {
+                    return 'Terakhir diperbarui: ' + new Date(a.diperbarui_pada).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                } catch {
+                    return '';
+                }
+            },
+
+            async load() {
+                this.loading = true;
+                try {
+                    const res = await PandansariAPI.addresses();
+                    this.loading = false;
+                    if (res && res.ok) {
+                        this.addresses = res.data ?? [];
+                    } else if (res && res.status === 401) {
+                        this.needLogin = true;
+                    } else {
+                        this.errorMsg = res?.message || 'Gagal memuat alamat.';
+                    }
+                    return res;
+                } catch (err) {
+                    this.loading = false;
+                    this.errorMsg = 'Terjadi kesalahan saat memuat alamat.';
+                    return { ok: false };
+                }
+            },
+
+            bukaTambah() {
+                this.editingId = null;
+                this.form = {
+                    label_alamat: '',
+                    nama_penerima: '',
+                    nomor_telepon: '',
+                    nama_provinsi: '',
+                    nama_kota: '',
+                    nama_kecamatan: '',
+                    kode_pos: '',
+                    alamat_lengkap: '',
+                    alamat_utama: false
+                };
+                this.showAddModal = true;
+            },
+
+            bukaUbah(a) {
+                this.editingId = a.id_user_address;
+                this.form = {
+                    label_alamat: a.label_alamat ?? '',
+                    nama_penerima: a.nama_penerima ?? '',
+                    nomor_telepon: a.nomor_telepon ?? '',
+                    nama_provinsi: a.nama_provinsi ?? '',
+                    nama_kota: a.nama_kota ?? '',
+                    nama_kecamatan: a.nama_kecamatan ?? '',
+                    kode_pos: a.kode_pos ?? '',
+                    alamat_lengkap: a.alamat_lengkap ?? '',
+                    alamat_utama: Boolean(a.alamat_utama),
+                };
+                this.showAddModal = true;
+            },
+
+            async simpan() {
+                const payload = { ...this.form };
+                this.saving = true;
+                try {
+                    const res = this.isEdit
+                        ? await PandansariAPI.updateAddress(this.editingId, payload)
+                        : await PandansariAPI.addAddress(payload);
+                    this.saving = false;
+                    if (res && res.ok) {
+                        this.showAddModal = false;
+                        this.tampil(this.isEdit ? 'Alamat berhasil diperbarui.' : 'Alamat berhasil ditambahkan.', true);
+                        await this.load();
+                    } else {
+                        this.tampil((res?.message || 'Gagal menyimpan alamat.') + (Object.values(res?.errors ?? {}).flat().join(' ') || ''), false);
+                    }
+                } catch (e) {
+                    this.saving = false;
+                    this.tampil('Terjadi kesalahan saat menyimpan alamat.', false);
+                }
+            },
+
+            async hapus(a) {
+                if (!confirm('Hapus alamat ' + (a.label_alamat ?? '') + '?')) return;
+                try {
+                    const res = await PandansariAPI.deleteAddress(a.id_user_address);
+                    if (res && res.ok) {
+                        this.tampil('Alamat berhasil dihapus.', true);
+                        await this.load();
+                    } else {
+                        this.tampil(res?.message || 'Gagal menghapus alamat.', false);
+                    }
+                } catch (e) {
+                    this.tampil('Terjadi kesalahan saat menghapus alamat.', false);
+                }
+            },
+
+            async loadIdentity() {
+                this.user = PandansariAPI.getUser();
+                if (PandansariAPI.getToken()) {
+                    try {
+                        await PandansariAPI.me();
+                        this.user = PandansariAPI.getUser();
+                        this.addressesCount = this.addresses.length;
+                    } catch (e) {
+                        console.warn('[Address] Error loadIdentity:', e);
+                    }
+                }
+            },
+
+            async keluar() {
+                try {
+                    await PandansariAPI.logout();
+                    PandansariAPI.clearSession();
+                } catch (e) {}
+                window.location.href = '/';
+            },
+
+            tampil(msg, ok) {
+                this.msg = msg;
+                this.msgOk = ok;
+                setTimeout(() => {
+                    this.msg = '';
+                }, 4000);
+            },
+
+            async init() {
+                if (!PandansariAPI.getToken()) {
+                    this.needLogin = true;
+                    this.loading = false;
+                    return;
+                }
+                await this.load();
+                await this.loadIdentity();
+            }
+        };
+    }
+
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('customerAddress', () => customerAddress());
+    });
+
+    if (window.Alpine) {
+        Alpine.data('customerAddress', () => customerAddress());
+    }
+</script>
 @endsection
