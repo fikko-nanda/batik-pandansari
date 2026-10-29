@@ -460,10 +460,6 @@
             alamatAktif: null,
             items: [],
             voucher: null,
-            shippingQuote: null,
-            shippingError: '',
-            shippingErrorCode: '',
-            shippingBusy: false,
 
             // === State UI ===
             loading: true,
@@ -627,10 +623,17 @@
                             this.alamatAktif = utama;
                             this.selectedAddressId = utama.id_user_address || utama.id;
                         }
+                    } else if (res?.status === 401) {
+                        this.needLogin = true;
+                        this.addresses = [];
+                    } else {
+                        this.addresses = [];
+                        this.errorMsg = res?.message || 'Gagal memuat alamat pengiriman.';
                     }
                     return res;
                 } catch (err) {
                     console.error('[Checkout] Error loadAddresses:', err);
+                    this.errorMsg = 'Gagal memuat alamat pengiriman.';
                     return { ok: false };
                 }
             },
@@ -638,7 +641,7 @@
             onAddressChanged(a) {
                 this.selectedAddressId = a.id_user_address || a.id;
                 this.alamatAktif = a;
-                this.calculateShipping();
+                return this.calculateShipping();
             },
 
             async calculateShipping() {
@@ -759,6 +762,8 @@
                         this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.';
                     } else if (!this.selectedAddressHasCoordinates) {
                         this.submitMsg = 'Alamat belum memiliki koordinat OpenStreetMap. Silakan perbarui alamat terlebih dahulu.';
+                    } else if (!this.items.length) {
+                        this.submitMsg = 'Keranjang Anda kosong.';
                     } else if (!this.shippingQuote) {
                         this.submitMsg = this.shippingError || 'Kalkulasi ongkos kirim belum selesai atau belum berhasil.';
                     }

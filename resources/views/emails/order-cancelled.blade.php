@@ -11,8 +11,9 @@
     Halo <strong style="color:#142B4A;">{{ $namaPelanggan }}</strong>,
 </p>
 <p style="margin:0 0 18px 0; font-size:14px; line-height:1.75; color:#374151;">
-    Pesananmu dibatalkan secara otomatis karena pembayaran tidak diselesaikan dalam batas waktu
-    {{ $batasJam }} jam. Stok produk telah kami kembalikan ke ketersediaan.
+    Pesananmu telah dibatalkan karena pembayaran tidak diselesaikan dalam batas waktu
+    {{ $batasMenit }} menit atau karena pembatalan admin. Jika stok sebelumnya direservasi,
+    stok akan tersedia kembali sekitar satu menit setelah pembatalan.
 </p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px 0; background-color:#EEF3F9; border:1px solid #C3D3E4; border-radius:8px;">

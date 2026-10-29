@@ -117,7 +117,9 @@
          * label di riwayat tidak menyesatkan (tampil 'Menunggu Verifikasi').
          */
         async cekBanyakPembayaran() {
-            const pending = this.orders.filter(o => (o.status_pesanan ?? '') === 'menunggu_pembayaran');
+            const pending = this.orders.filter(o =>
+                (o.status_pesanan ?? '') === 'menunggu_pembayaran' && o.payments_exists
+            );
             if (!pending.length) return;
             await Promise.all(pending.map(async (o) => {
                 try {
@@ -140,6 +142,46 @@
             this.page = n;
             this.load();
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+
+        async bayarSekarang(order) {
+            if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
+            const orderId = order.id_order ?? order.id;
+            if (!orderId || this.busyPay) return;
+
+            this.busyPay = orderId;
+            try {
+                const res = await PandansariAPI.payOrder(orderId);
+                if (!res.ok) {
+                    PandansariAPI.toast(
+                        `${res.message || 'Gagal memproses pembayaran.'} Silakan coba lagi atau hubungi admin.`,
+                        false
+                    );
+                    return;
+                }
+
+                if (!res.data?.snap_token) {
+                    PandansariAPI.toast(
+                        'Token pembayaran Midtrans tidak tersedia. Silakan coba lagi atau hubungi admin.',
+                        false
+                    );
+                    return;
+                }
+
+                await PandansariAPI.bayarSnap(res.data, {
+                    onClose: () => { this.load(); },
+                });
+            } catch (error) {
+                console.error('[Orders] Gagal memproses pembayaran:', error);
+                PandansariAPI.toast(
+                    error?.message
+                        ? `Gagal memproses pembayaran: ${error.message}`
+                        : 'Gagal memproses pembayaran. Silakan hubungi admin atau coba lagi nanti.',
+                    false
+                );
+            } finally {
+                this.busyPay = null;
+            }
         },
 
         // Konfirmasi pembayaran manual via WhatsApp (ongkir & rekening dari admin).
@@ -443,13 +485,14 @@
                                 </div>
 
                                 <div class="flex items-center gap-2 justify-end">
-                                    <!-- Tombol Bayar via Midtrans Snap (ke detail pesanan) -->
+                                    <!-- Tombol Bayar via Midtrans Snap -->
                                     <template x-if="order.status_pesanan === 'menunggu_pembayaran' && !order.status_tampil">
-                                        <a :href="'/orders/' + (order.id_order || order.id || order.nomor_pesanan)"
-                                           class="bg-[#0369A1] hover:bg-[#0284C7] text-white text-xs font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-sky-500/20">
-                                            <i class="fa-solid fa-credit-card text-xs"></i>
-                                            <span>BAYAR SEKARANG</span>
-                                        </a>
+                                        <button type="button" @click="bayarSekarang(order)"
+                                                :disabled="busyPay !== null"
+                                                class="bg-[#0369A1] hover:bg-[#0284C7] text-white text-xs font-bold px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm shadow-sky-500/20 disabled:opacity-60 disabled:cursor-not-allowed">
+                                            <i class="fa-solid" :class="busyPay === (order.id_order || order.id) ? 'fa-circle-notch fa-spin' : 'fa-credit-card'"></i>
+                                            <span x-text="busyPay === (order.id_order || order.id) ? 'MEMPROSES PEMBAYARAN…' : 'BAYAR SEKARANG'"></span>
+                                        </button>
                                     </template>
 
                                     <!-- Konfirmasi pembayaran manual via WhatsApp -->

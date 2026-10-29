@@ -4,6 +4,7 @@ namespace Tests\Feature\Endpoints;
 
 use App\Models\InventoryMovement;
 use App\Models\ProductVariant;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 /**
@@ -810,6 +811,25 @@ class AdminInventoryEndpointTest extends EndpointTestCase
             'expected' => 200,
         ]);
         $this->assertCount(3, $this->csvRows($search));
+
+        DB::table('product_variants')->where('id_variant', $normal->id_variant)
+            ->update(['dibuat_pada' => '2026-03-01 23:59:59']);
+        DB::table('product_variants')->where('id_variant', $berbahaya->id_variant)
+            ->update(['dibuat_pada' => '2026-03-02 00:00:00']);
+
+        $dateRange = $this->hit('GET', '/api/admin/inventory/export?start_date=2026-03-01&end_date=2026-03-01', [
+            'endpoint' => 'GET /api/admin/inventory/export',
+            'label' => 'Filter tanggal inventaris dengan batas akhir inklusif',
+            'expected' => 200,
+        ]);
+        $this->assertCount(2, $this->csvRows($dateRange));
+
+        $invalidDates = $this->hit('GET', '/api/admin/inventory/export?start_date=2026-03-03&end_date=2026-03-02', [
+            'endpoint' => 'GET /api/admin/inventory/export',
+            'label' => 'Rentang tanggal inventaris yang terbalik ditolak',
+            'expected' => 422,
+        ]);
+        $this->assertSame(422, $invalidDates->status());
 
         $this->assertRecorded();
     }

@@ -10,7 +10,9 @@ use App\Models\Payment;
 use App\Models\User;
 use App\Models\VoucherUsage;
 use App\Models\WebhookLog;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Midtrans\Config;
 
 /**
@@ -109,8 +111,8 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 
         $variant = $catalog['variant']->fresh();
         $this->assertSame(10, (int) $variant->stok, 'Stok fisik tidak berkurang sebelum pembayaran.');
-        $this->assertSame(0, (int) $variant->stok_dipesan, 'Checkout tidak mereservasi stok.');
-        $this->assertFalse((bool) $order->stok_direservasi);
+        $this->assertSame(2, (int) $variant->stok_dipesan, 'Checkout mereservasi jumlah yang dipesan.');
+        $this->assertTrue((bool) $order->stok_direservasi);
         $this->assertSame('checkout', $this->currentCartStatus($user));
 
         $this->note('Checkout tidak mengurangi atau mereservasi stok; stok fisik dikurangi setelah pembayaran.');
@@ -317,8 +319,12 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
     {
         $user = $this->actingAsRole('pelanggan');
         $lain = $this->makeUser('pelanggan');
-        $this->makeOrder($user, ['nomor_pesanan' => 'ORD-1']);
-        $this->makeOrder($user, ['nomor_pesanan' => 'ORD-2', 'status_pesanan' => 'dibatalkan']);
+        $orderDenganPembayaran = $this->makeOrder($user, ['nomor_pesanan' => 'ORD-1']);
+        $this->makePayment($orderDenganPembayaran);
+        $orderTanpaPembayaran = $this->makeOrder($user, [
+            'nomor_pesanan' => 'ORD-2',
+            'status_pesanan' => 'dibatalkan',
+        ]);
         $this->makeOrder($lain, ['nomor_pesanan' => 'ORD-3']);
 
         $this->hit('GET', '/api/orders', [
@@ -331,6 +337,9 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $this->assertCount(2, $this->recorded[0]['response']['data'] ?? []);
         $this->assertSame(10, (int) ($meta['per_page'] ?? 0));
         $this->assertSame(2, (int) ($meta['total'] ?? 0));
+        $pesanan = collect($this->recorded[0]['response']['data'] ?? [])->keyBy('id_order');
+        $this->assertSame(true, $pesanan[$orderDenganPembayaran->id_order]['payments_exists'] ?? null);
+        $this->assertSame(false, $pesanan[$orderTanpaPembayaran->id_order]['payments_exists'] ?? null);
 
         $this->hit('GET', '/api/orders?status=dibatalkan', [
             'endpoint' => 'GET /api/orders',
@@ -772,7 +781,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 
         $this->hit('PUT', '/api/admin/orders/'.$order->id_order.'/status', [
             'endpoint' => 'PUT /api/admin/orders/{id}/status',
-            'label' => 'Batalkan pesanan: reservasi stok dilepas + voucher dibatalkan',
+            'label' => 'Batalkan pesanan: reservasi dipertahankan sementara dan voucher dibatalkan',
             'json' => ['status_pesanan' => 'dibatalkan', 'catatan' => 'Dibatalkan admin.'],
             'expected' => 200,
         ]);
@@ -781,7 +790,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 
         $variant = $catalog['variant']->fresh();
         $this->assertSame(10, (int) $variant->stok, 'Stok fisik tidak berubah saat pembatalan pesanan belum dibayar.');
-        $this->assertSame(0, (int) $variant->stok_dipesan, 'Reservasi stok dilepas saat pembatalan.');
+        $this->assertSame(1, (int) $variant->stok_dipesan, 'Reservasi dipertahankan selama satu menit setelah pembatalan.');
         $this->assertSame('dibatalkan', $usage->fresh()->status_penggunaan, 'VoucherUsage tidak dibatalkan.');
         $this->assertSame(
             [
@@ -792,7 +801,11 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 
         $this->assertSame(0, InventoryMovement::count(), 'Tidak ada pergerakan stok untuk pesanan yang belum dibayar.');
 
-        $this->note('Pembatalan pesanan menunggu_pembayaran hanya melepas reservasi (stok_dipesan -> 0), stok fisik tetap.');
+        $this->note('Pembatalan mempertahankan reservasi selama satu menit; stok fisik tetap.');
+
+        $this->travel(61)->seconds();
+        $this->artisan('orders:expire')->assertSuccessful();
+        $this->assertSame(0, (int) $variant->fresh()->stok_dipesan);
 
         $this->assertRecorded();
     }
@@ -840,6 +853,91 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
             'label' => 'per_page melebihi batas 100',
             'expected' => 422,
         ]);
+
+        $this->assertRecorded();
+    }
+
+    public function test_admin_order_export_filters_inclusive_date_range_and_rejects_invalid_range(): void
+    {
+        $this->actingAsRole('admin');
+        $user = $this->makeUser('pelanggan');
+        $firstOrder = $this->makeOrder($user, ['nomor_pesanan' => 'ORD-EXPORT-1']);
+        $secondOrder = $this->makeOrder($user, ['nomor_pesanan' => 'ORD-EXPORT-2']);
+
+        DB::table('orders')->where('id_order', $firstOrder->id_order)
+            ->update(['dibuat_pada' => '2026-04-10 23:59:59']);
+        DB::table('orders')->where('id_order', $secondOrder->id_order)
+            ->update(['dibuat_pada' => '2026-04-11 00:00:00']);
+
+        $allOrders = $this->hit('GET', '/api/admin/orders/export', [
+            'endpoint' => 'GET /api/admin/orders/export',
+            'label' => 'Ekspor semua pesanan tanpa filter tanggal',
+            'expected' => 200,
+        ]);
+        $this->assertCount(3, $this->csvRows($allOrders));
+
+        $dateRange = $this->hit('GET', '/api/admin/orders/export?start_date=2026-04-10&end_date=2026-04-10', [
+            'endpoint' => 'GET /api/admin/orders/export',
+            'label' => 'Filter tanggal pesanan dengan batas akhir inklusif',
+            'expected' => 200,
+        ]);
+        $dateRows = $this->csvRows($dateRange);
+        $this->assertCount(2, $dateRows);
+        $this->assertSame('ORD-EXPORT-1', $dateRows[1][0]);
+
+        $invalidRange = $this->hit('GET', '/api/admin/orders/export?start_date=2026-04-12&end_date=2026-04-10', [
+            'endpoint' => 'GET /api/admin/orders/export',
+            'label' => 'Rentang tanggal pesanan yang terbalik ditolak',
+            'expected' => 422,
+        ]);
+        $this->assertSame(422, $invalidRange->status());
+
+        $this->assertRecorded();
+    }
+
+    public function test_admin_payment_exports_filter_dates_for_payments_and_cashbook(): void
+    {
+        $this->actingAsRole('admin');
+        $user = $this->makeUser('pelanggan');
+        $firstOrder = $this->makeOrder($user, ['nomor_pesanan' => 'ORD-PAY-EXPORT-1']);
+        $firstPayment = $this->makePayment($firstOrder);
+        $secondOrder = $this->makeOrder($user, ['nomor_pesanan' => 'ORD-PAY-EXPORT-2']);
+        $secondPayment = $this->makePayment($secondOrder);
+
+        DB::table('payments')->where('id_payment', $firstPayment->id_payment)
+            ->update(['dibuat_pada' => '2026-05-01 23:59:59']);
+        DB::table('payments')->where('id_payment', $secondPayment->id_payment)
+            ->update(['dibuat_pada' => '2026-05-02 00:00:00']);
+
+        $allPayments = $this->hit('GET', '/api/admin/payments/export', [
+            'endpoint' => 'GET /api/admin/payments/export',
+            'label' => 'Ekspor semua pembayaran tanpa filter tanggal',
+            'expected' => 200,
+        ]);
+        $this->assertCount(3, $this->csvRows($allPayments));
+
+        $paymentsByDate = $this->hit('GET', '/api/admin/payments/export?start_date=2026-05-01&end_date=2026-05-01', [
+            'endpoint' => 'GET /api/admin/payments/export',
+            'label' => 'Filter tanggal pembayaran dengan batas akhir inklusif',
+            'expected' => 200,
+        ]);
+        $paymentRows = $this->csvRows($paymentsByDate);
+        $this->assertCount(2, $paymentRows);
+        $this->assertSame('ORD-PAY-EXPORT-1', $paymentRows[1][0]);
+
+        $cashbookByDate = $this->hit('GET', '/api/admin/payments/export?format=buku-kas&start_date=2026-05-01&end_date=2026-05-01', [
+            'endpoint' => 'GET /api/admin/payments/export?format=buku-kas',
+            'label' => 'Filter tanggal buku kas dengan batas akhir inklusif',
+            'expected' => 200,
+        ]);
+        $this->assertCount(2, $this->csvRows($cashbookByDate));
+
+        $invalidRange = $this->hit('GET', '/api/admin/payments/export?start_date=2026-05-02&end_date=2026-05-01', [
+            'endpoint' => 'GET /api/admin/payments/export',
+            'label' => 'Rentang tanggal pembayaran yang terbalik ditolak',
+            'expected' => 422,
+        ]);
+        $this->assertSame(422, $invalidRange->status());
 
         $this->assertRecorded();
     }
@@ -1014,5 +1112,21 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
     private function currentCartStatus(User $user): ?string
     {
         return Cart::where('id_user', $user->id_user)->value('status_cart');
+    }
+
+    /**
+     * @return array<int, array<int, string|null>>
+     */
+    private function csvRows(TestResponse $response): array
+    {
+        $rows = [];
+
+        foreach (preg_split('/\r\n|\n|\r/', trim($response->streamedContent())) as $line) {
+            if ($line !== '') {
+                $rows[] = str_getcsv($line, ',', '"', '');
+            }
+        }
+
+        return $rows;
     }
 }

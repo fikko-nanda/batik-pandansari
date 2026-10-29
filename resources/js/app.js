@@ -714,8 +714,9 @@ window.PandansariAPI = {
         return new Promise((resolve, reject) => {
             const s = document.createElement('script');
             s.id = idScript;
-            s.src = this._snapUrl();
+            s.src = scriptUrl;
             s.dataset.clientKey = clientKey;
+            s.dataset.snapUrl = scriptUrl;
             s.onload = () => { if (window.snap?.pay) resolve(window.snap); else reject(new Error('Snap tidak termuat')); };
             s.onerror = () => reject(new Error('Script Midtrans Snap gagal dimuat'));
             document.head.appendChild(s);
@@ -878,7 +879,7 @@ window.PandansariAPI = {
         /** POST /users — wajib: nama_pengguna, email, kata_sandi (+kata_sandi_confirmation), peran. */
         createUser(payload) { return PandansariAPI.fetch('/users', { method: 'POST', body: payload }); },
         usersSummary() { return PandansariAPI.fetch('/admin/users/summary'); },
-        usersExport() { return PandansariAPI.downloadCsv('/users/export', 'pengguna.csv'); },
+        usersExport(params = {}) { return PandansariAPI.downloadCsv('/admin/users/export', 'pengguna.csv', params); },
 
         /* -- 4.2 Produk, varian & gambar -- */
         /** GET /admin/products — query: search, status, category, page, per_page. */
@@ -887,7 +888,7 @@ window.PandansariAPI = {
         createProduct(payload) { return PandansariAPI.fetch('/products', { method: 'POST', body: payload }); },
         updateProduct(id, payload) { return PandansariAPI.fetch(`/products/${id}`, { method: 'PUT', body: payload }); },
         deleteProduct(id) { return PandansariAPI.fetch(`/products/${id}`, { method: 'DELETE' }); },
-        productsExport() { return PandansariAPI.downloadCsv('/admin/products/export', 'produk.csv'); },
+        productsExport(params = {}) { return PandansariAPI.downloadCsv('/admin/products/export', 'produk.csv', params); },
         createVariant(id_product, payload) { return PandansariAPI.fetch(`/products/${id_product}/variants`, { method: 'POST', body: payload }); },
         updateVariant(id, payload) { return PandansariAPI.fetch(`/variants/${id}`, { method: 'PUT', body: payload }); },
         deleteVariant(id) { return PandansariAPI.fetch(`/variants/${id}`, { method: 'DELETE' }); },
@@ -1049,10 +1050,12 @@ window.PandansariAPI = {
             });
         },
         orderFulfillments(params = {}) { return PandansariAPI.fetch('/admin/order-fulfillments' + this._qs(params)); },
+        ordersExport(params = {}) { return PandansariAPI.downloadCsv('/admin/orders/export', 'pesanan.csv', params); },
 
         /* -- 4.6 Pembayaran -- */
         payments(params = {}) { return PandansariAPI.fetch('/admin/payments' + this._qs(params)); },
         paymentsSummary() { return PandansariAPI.fetch('/admin/payments/summary'); },
+        paymentsExport(params = {}) { return PandansariAPI.downloadCsv('/admin/payments/export', params.format === 'buku-kas' ? 'buku-kas.csv' : 'pembayaran.csv', params); },
 
         /* -- 4.7 Pengiriman -- */
         shipments(params = {}) { return PandansariAPI.fetch('/admin/shipments' + this._qs(params)); },
@@ -1069,7 +1072,7 @@ window.PandansariAPI = {
         /** GET /admin/inventory/valuation — { total_nilai_modal, total_nilai_jual, margin_potensial }. */
         inventoryValuation() { return PandansariAPI.fetch('/admin/inventory/valuation'); },
         /** GET /admin/inventory/export — CSV export. */
-        inventoryExport() { return PandansariAPI.downloadCsv('/admin/inventory/export', 'inventaris.csv'); },
+        inventoryExport(params = {}) { return PandansariAPI.downloadCsv('/admin/inventory/export', 'inventaris.csv', params); },
         /** POST /admin/inventory/adjustments — { id_variant, tipe: 'masuk'|'keluar'|'koreksi', jumlah, catatan? }. */
         inventoryAdjustment(payload) { return PandansariAPI.fetch('/admin/inventory/adjustments', { method: 'POST', body: payload }); },
 
@@ -1082,14 +1085,19 @@ window.PandansariAPI = {
 
     /**
      * Unduh file CSV yang butuh header Authorization (export admin).
-     * Dipanggil: PandansariAPI.downloadCsv('/users/export', 'pengguna.csv').
+     * Query parameter dipakai untuk filter sebelum file dibuat server.
      */
-    async downloadCsv(path, filename = 'export.csv') {
+    async downloadCsv(path, filename = 'export.csv', params = {}) {
         const headers = { 'Accept': 'text/csv', 'ngrok-skip-browser-warning': 'true' };
         const token = this.getToken();
         if (token) headers.Authorization = `Bearer ${token}`;
         try {
-            const res = await fetch(buildUrl(path), { headers });
+            const query = new URLSearchParams();
+            for (const [key, value] of Object.entries(params)) {
+                if (value !== undefined && value !== null && value !== '') query.set(key, value);
+            }
+            const suffix = query.toString();
+            const res = await fetch(buildUrl(path + (suffix ? `?${suffix}` : '')), { headers });
             if (!res.ok) return { ok: false, status: res.status, message: `Gagal mengunduh (${res.status}).` };
             const url = URL.createObjectURL(await res.blob());
             const a = document.createElement('a');

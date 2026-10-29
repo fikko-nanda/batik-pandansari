@@ -144,7 +144,7 @@ class LegacySchemaMigrationsTest extends TestCase
         }
     }
 
-    public function test_stock_state_migration_marks_existing_unpaid_orders_as_reserved(): void
+    public function test_stock_state_migration_does_not_guess_legacy_reservations(): void
     {
         Schema::create('product_variants', function (Blueprint $table) {
             $table->string('id_variant')->primary();
@@ -165,7 +165,8 @@ class LegacySchemaMigrationsTest extends TestCase
         $migration = require database_path('migrations/2026_10_29_070249_add_stock_state_columns_to_orders.php');
         $migration->up();
 
-        $this->assertTrue((bool) DB::table('orders')->where('id_order', 'order-pending')->value('stok_direservasi'));
+        $this->assertFalse((bool) DB::table('orders')->where('id_order', 'order-pending')->value('stok_direservasi'));
         $this->assertFalse((bool) DB::table('orders')->where('id_order', 'order-cancelled')->value('stok_direservasi'));
+        $this->assertSame(0, (int) DB::table('product_variants')->value('stok_dipesan'));
     }
 }

@@ -14,6 +14,8 @@
     perPage: 10,
     selectedStatus: 'ALL',
     selectedProvider: 'ALL',
+    exportStartDate: '',
+    exportEndDate: '',
     summary: null,
     loading: true,
     notice: '', noticeOk: true,
@@ -67,21 +69,18 @@
     goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadPayments(); },
     resetFilter() { this.selectedStatus = 'ALL'; this.selectedProvider = 'ALL'; this.page = 1; this.loadPayments(); },
 
-    // === Ekspor CSV client-side (halaman aktif) ===
-    eksporCsv() {
-        const Q = '\x22';
-        const head = ['nomor_pesanan', 'provider', 'metode', 'jumlah', 'status', 'dibuat_pada', 'paid_at'];
-        const rows = this.payments.map(p => [
-            p.order?.nomor_pesanan, p.provider, p.metode_pembayaran,
-            p.jumlah_pembayaran, p.status_pembayaran, p.dibuat_pada, p.paid_at,
-        ]);
-        const csv = [head, ...rows].map(r => r.map(c => Q + String(c ?? '').split(Q).join(Q + Q) + Q).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'pembayaran.csv';
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    async eksporCsv() {
+        if (this.exportStartDate && this.exportEndDate && this.exportEndDate < this.exportStartDate) {
+            this.pesan(false, 'Tanggal akhir tidak boleh sebelum tanggal mulai.');
+            return;
+        }
+        const res = await PandansariAPI.admin.paymentsExport({
+            status: this.selectedStatus !== 'ALL' ? this.selectedStatus : undefined,
+            provider: this.selectedProvider !== 'ALL' ? this.selectedProvider : undefined,
+            start_date: this.exportStartDate || undefined,
+            end_date: this.exportEndDate || undefined,
+        });
+        this.pesan(res.ok, res.ok ? 'CSV seluruh pembayaran sesuai filter berhasil diunduh.' : res.message);
     },
 
     async init() {
@@ -116,10 +115,18 @@
                 GET /admin/payments — status transaksi diperbarui otomatis oleh webhook Midtrans.
             </p>
         </div>
-        <button type="button" @click="eksporCsv()" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
-            <i class="fa-solid fa-file-export text-xs"></i>
-            <span>Ekspor CSV (halaman ini)</span>
-        </button>
+        <div class="flex flex-wrap items-end gap-2">
+            <label class="text-[10px] font-bold text-slate-500">Mulai
+                <input type="date" x-model="exportStartDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs">
+            </label>
+            <label class="text-[10px] font-bold text-slate-500">Akhir
+                <input type="date" x-model="exportEndDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs">
+            </label>
+            <button type="button" @click="eksporCsv()" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
+                <i class="fa-solid fa-file-export text-xs"></i>
+                <span>Ekspor semua hasil</span>
+            </button>
+        </div>
     </div>
 
     <!-- Pesan -->

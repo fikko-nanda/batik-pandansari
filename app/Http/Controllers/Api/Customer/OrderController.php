@@ -23,6 +23,7 @@ class OrderController extends Controller
         ]);
 
         $orders = Order::with('items')
+            ->withExists('payments')
             ->where('id_user', $request->user()->id_user)
             ->when(
                 ! empty($validated['status']),
@@ -39,8 +40,12 @@ class OrderController extends Controller
         ]);
     }
 
-    public function show(Request $request, string $id, SyncPaymentStatusService $sync): JsonResponse
-    {
+    public function show(
+        Request $request,
+        string $id,
+        SyncPaymentStatusService $sync,
+        OrderService $orderService
+    ): JsonResponse {
         $order = Order::with([
             'items.variant.product',
             'payments',
@@ -55,7 +60,18 @@ class OrderController extends Controller
             return $this->notFound();
         }
 
-        if ($sync->syncOrder($order)) {
+        if ($orderService->isExpired($order)) {
+            if ($sync->verifyBeforeExpiry($order)) {
+                $orderService->expireIfUnpaid($order);
+            }
+
+            $order->refresh()->load([
+                'items.variant.product',
+                'payments',
+                'voucherUsages.voucher',
+                'statusHistories',
+            ]);
+        } elseif ($sync->syncOrder($order)) {
             $order->refresh()->load([
                 'items.variant.product',
                 'payments',
