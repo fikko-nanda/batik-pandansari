@@ -87,6 +87,7 @@
                                         <strong x-text="a.nama_penerima"></strong> • <span x-text="a.nomor_telepon || a.telepon"></span><br>
                                         <span x-text="a.alamat_lengkap"></span>, <span x-text="a.nama_kecamatan"></span>, <span x-text="a.nama_kota"></span>, <span x-text="a.nama_provinsi"></span> <span x-text="a.kode_pos"></span>
                                     </p>
+                                    <p x-show="!a.latitude || !a.longitude" class="mt-1 text-[10px] font-semibold text-amber-700">Koordinat belum dipilih. Lengkapi lokasi di <a href="/address" class="underline">buku alamat</a> untuk cek ongkir.</p>
                                 </div>
                             </label>
                         </template>
@@ -110,6 +111,27 @@
                             <label class="block text-[11px] font-semibold text-slate-600 mb-1">Patokan / Catatan Alamat (opsional)</label>
                             <input type="text" x-model="catatan" placeholder="Patokan / catatan alamat..."
                                    class="w-full text-xs font-medium border border-slate-200 rounded-xl px-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                        </div>
+                        <div class="rounded-xl border border-sky-100 bg-sky-50/70 p-3 space-y-2">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-[11px] font-bold text-slate-700">Ongkos Kirim OpenStreetMap</p>
+                                    <p class="text-[10px] text-slate-500" x-show="shippingQuote">
+                                        <span x-text="Number(shippingQuote?.jarak_km ?? 0).toFixed(2)"></span> km ·
+                                        <span x-text="shippingQuote?.zona?.nama_zona"></span>
+                                    </p>
+                                </div>
+                                <button type="button" @click="hitungOngkir()" :disabled="shippingBusy || !selectedAddressId"
+                                        class="rounded-lg bg-sky-700 px-3 py-2 text-[10px] font-bold text-white disabled:opacity-50">
+                                    <span x-show="!shippingBusy">Cek Ongkir</span>
+                                    <span x-show="shippingBusy">Menghitung...</span>
+                                </button>
+                            </div>
+                            <p x-show="shippingError" class="text-[11px] text-rose-700" x-text="shippingError"></p>
+                            <p x-show="shippingQuote" class="text-[11px] text-slate-600">
+                                Berat <span x-text="shippingQuote?.berat_dibulatkan_kg"></span> kg ·
+                                Ongkir <strong class="text-slate-900" x-text="formatRupiah(shippingQuote?.biaya_pengiriman)"></strong>
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -349,6 +371,10 @@
             alamatAktif: null,
             items: [],
             voucher: null,
+            shippingQuote: null,
+            shippingError: '',
+            shippingErrorCode: '',
+            shippingBusy: false,
 
             // === State UI ===
             loading: true,
@@ -716,6 +742,14 @@
                     return;
                 }
 
+                if (!await this.hitungOngkir()) {
+                    this.submitMsg = this.shippingError || 'Ongkos kirim belum dapat dihitung.';
+                    if (this.shippingErrorCode === 'SHIPPING_ORIGIN_NOT_CONFIGURED') {
+                        window.alert('Lokasi asal pengiriman belum dikonfigurasi oleh admin.');
+                    }
+                    return;
+                }
+
                 // Validasi stok: hanya blokir jika kuantitas melebihi stok yang ada (quantity > stock)
                 const overStock = this.items.find(i => i.variant?.stok != null && Number(i.jumlah) > Number(i.variant.stok));
                 if (overStock) {
@@ -779,6 +813,9 @@
                     }
                 } catch (_) {}
                 await Promise.all([this.loadCart(), this.loadAddresses()]);
+                if (this.selectedAddressId) {
+                    await this.hitungOngkir();
+                }
                 this.muatVoucher();
                 this.loading = false;
                 if (this.selectedAddressId) {

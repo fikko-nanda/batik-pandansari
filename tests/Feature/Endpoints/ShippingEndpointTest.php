@@ -4,6 +4,7 @@ namespace Tests\Feature\Endpoints;
 
 use App\Models\UserAddress;
 use App\Models\ZonaPengiriman;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class ShippingEndpointTest extends EndpointTestCase
@@ -109,8 +110,9 @@ class ShippingEndpointTest extends EndpointTestCase
     public function test_quote_rejects_address_without_coordinates(): void
     {
         $user = $this->actingAsRole('pelanggan');
-        $catalog = $this->seedCatalog();
-        $this->addToCart($user, $catalog['variant']);
+        $catalog = $this->seedCatalog(3);
+        $catalog['variant']->update(['stok_dipesan' => 3]);
+        $this->addToCart($user, $catalog['variant'], 3);
         $this->seedShippingBaseline();
         $address = $this->makeAddress($user);
         $address->forceFill(['latitude' => null, 'longitude' => null])->save();
@@ -154,6 +156,30 @@ class ShippingEndpointTest extends EndpointTestCase
             'expected' => 429,
         ]);
 
+        Http::assertSentCount(1);
+        $this->assertRecorded();
+    }
+
+    public function test_quote_returns_road_distance_and_calculates_shipping_from_rounded_weight(): void
+    {
+        $user = $this->actingAsRole('pelanggan');
+        $catalog = $this->seedCatalog(5);
+        $catalog['variant']->update(['berat_gram' => 1001]);
+        $this->addToCart($user, $catalog['variant'], 2);
+        $this->seedShippingBaseline(5.0);
+        Cache::flush();
+        $address = $this->makeAddress($user);
+
+        $this->hit('POST', '/api/shipping/quote', [
+            'json' => ['id_user_address' => $address->id_user_address],
+            'expected' => 200,
+        ]);
+
+        $quote = $this->recorded[0]['response']['data'] ?? [];
+        $this->assertSame(5, $quote['jarak_km'] ?? null);
+        $this->assertSame(3, $quote['berat_dibulatkan_kg'] ?? null);
+        $this->assertSame(11000, $quote['biaya_pengiriman'] ?? null);
+        $this->assertSame('Zona Uji', $quote['zona']['nama_zona'] ?? null);
         Http::assertSentCount(1);
         $this->assertRecorded();
     }

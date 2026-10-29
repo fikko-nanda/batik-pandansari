@@ -14,6 +14,10 @@ class Order extends Model
 
     protected $keyType = 'string';
 
+    protected $hidden = [
+        'stok_direservasi',
+    ];
+
     const CREATED_AT = 'dibuat_pada';
 
     const UPDATED_AT = 'diperbarui_pada';
@@ -23,6 +27,7 @@ class Order extends Model
         'id_user',
         'nomor_pesanan',
         'status_pesanan',
+        'stok_direservasi',
         'kedaluwarsa_pada',
         'subtotal',
         'biaya_pengiriman',
@@ -42,6 +47,7 @@ class Order extends Model
     protected function casts(): array
     {
         return [
+            'stok_direservasi' => 'boolean',
             'kedaluwarsa_pada' => 'datetime',
             'subtotal' => 'decimal:2',
             'biaya_pengiriman' => 'decimal:2',

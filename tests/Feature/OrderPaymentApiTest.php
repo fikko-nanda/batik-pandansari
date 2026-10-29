@@ -202,6 +202,7 @@ class OrderPaymentApiTest extends TestCase
             $table->string('id_user');
             $table->string('nomor_pesanan')->unique();
             $table->string('status_pesanan')->default('menunggu_pembayaran');
+            $table->boolean('stok_direservasi')->default(false);
             $table->timestamp('kedaluwarsa_pada')->nullable();
             $table->decimal('subtotal', 12, 2)->default(0);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);
@@ -527,7 +528,7 @@ class OrderPaymentApiTest extends TestCase
         $this->postJson('/api/checkout', [])->assertStatus(401);
     }
 
-    public function test_checkout_creates_order_and_reserves_stock(): void
+    public function test_checkout_creates_order_without_changing_stock_until_payment(): void
     {
         $user = $this->makeUser();
         $variant = $this->makeCategoryProductVariant(10, 100000);
@@ -551,7 +552,8 @@ class OrderPaymentApiTest extends TestCase
 
         $fresh = $variant->fresh();
         $this->assertSame(10, (int) $fresh->stok, 'Stok fisik tidak berkurang saat checkout.');
-        $this->assertSame(2, (int) $fresh->stok_dipesan, 'Stok direservasi sebesar jumlah pesanan.');
+        $this->assertSame(0, (int) $fresh->stok_dipesan, 'Checkout tidak mereservasi stok.');
+        $this->assertFalse((bool) $order->fresh()->stok_direservasi);
 
         $this->assertDatabaseHas('orders', [
             'id_user' => $user->id_user,
@@ -856,6 +858,7 @@ class OrderPaymentApiTest extends TestCase
 
         // Simulasikan reservasi stok aktif untuk pesanan menunggu pembayaran.
         $variant->update(['stok_dipesan' => 2]);
+        $order->update(['stok_direservasi' => true]);
 
         $this->mockNotification([
             'order_id' => $order->nomor_pesanan,
@@ -1171,6 +1174,7 @@ class OrderPaymentApiTest extends TestCase
         $order = $this->makeOrder($user, $variant, 2, 200000);
         $order->update(['kedaluwarsa_pada' => now()->subMinute()]);
         $variant->update(['stok_dipesan' => 2]);
+        $order->update(['stok_direservasi' => true]);
         Payment::create([
             'id_payment' => (string) Str::uuid(),
             'id_order' => $order->id_order,

@@ -163,7 +163,7 @@ class CartController extends Controller
 
     private function availableStock(ProductVariant $variant): int
     {
-        return max(0, (int) $variant->stok - (int) $variant->stok_dipesan);
+        return max(0, (int) $variant->stok);
     }
 
     private function insufficientStock(int $stok): JsonResponse
