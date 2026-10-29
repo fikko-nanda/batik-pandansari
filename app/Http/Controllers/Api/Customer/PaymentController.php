@@ -19,8 +19,7 @@ class PaymentController extends Controller
         Request $request,
         string $id,
         MidtransService $midtrans,
-        OrderService $orderService,
-        SyncPaymentStatusService $sync
+        OrderService $orderService
     ): JsonResponse {
         $order = Order::where('id_order', $id)
             ->where('id_user', $request->user()->id_user)
@@ -31,22 +30,6 @@ class PaymentController extends Controller
         }
 
         if ($orderService->isExpired($order)) {
-            if (! $sync->verifyBeforeExpiry($order)) {
-                $order->refresh();
-
-                if ($order->status_pesanan === 'menunggu_pembayaran') {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Status pembayaran belum dapat diverifikasi. Silakan coba kembali sebentar lagi.',
-                    ], 503);
-                }
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Pesanan ini sudah tidak dapat dibayar.',
-                ], 422);
-            }
-
             $orderService->expireIfUnpaid($order);
 
             return response()->json([
@@ -159,21 +142,18 @@ class PaymentController extends Controller
             ], 404);
         }
 
-        if ($orderService->isExpired($order)) {
-            if ($sync->verifyBeforeExpiry($order)) {
-                $orderService->expireIfUnpaid($order);
-            }
-
-            $payment = Payment::with('order')
-                ->where('id_order', $order->id_order)
-                ->orderByDesc('dibuat_pada')
-                ->firstOrFail();
-        } elseif ($sync->syncOrder($order)) {
-            $payment = Payment::with('order')
-                ->where('id_order', $order->id_order)
-                ->orderByDesc('dibuat_pada')
-                ->firstOrFail();
+        if ($sync->syncOrder($order)) {
+            $order->refresh();
         }
+
+        if ($orderService->isExpired($order)) {
+            $orderService->expireIfUnpaid($order);
+        }
+
+        $payment = Payment::with('order')
+            ->where('id_order', $order->id_order)
+            ->orderByDesc('dibuat_pada')
+            ->firstOrFail();
 
         return response()->json([
             'success' => true,

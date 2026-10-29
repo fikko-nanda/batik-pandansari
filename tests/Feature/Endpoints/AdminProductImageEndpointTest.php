@@ -211,6 +211,7 @@ class AdminProductImageEndpointTest extends EndpointTestCase
     {
         Storage::fake('public');
         $product = $this->makeProduct('Produk Detail Size Chart', 'aktif');
+        $this->makeVariant($product, 5);
         $this->actingAsRole('admin');
 
         $this->hit('POST', '/api/admin/products/'.$product->id_product.'/images', [

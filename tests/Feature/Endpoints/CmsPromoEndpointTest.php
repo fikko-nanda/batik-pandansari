@@ -391,6 +391,35 @@ class CmsPromoEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_cms_promo_publik_menyembunyikan_voucher_produk_yang_stoknya_habis(): void
+    {
+        $catalog = $this->seedCatalog(0);
+        $voucher = $this->makeVoucher([
+            'id_product_peruntukan' => $catalog['product']->id_product,
+        ]);
+        CmsPromo::create([
+            'id_cms_promo' => 1,
+            'id_voucher' => $voucher->id_voucher,
+        ]);
+
+        $this->asGuest();
+        $this->hit('GET', '/api/cms/promo', [
+            'endpoint' => 'GET /api/cms/promo',
+            'label' => 'Promo produk habis tidak ditampilkan',
+            'expected' => 200,
+        ]);
+        $this->assertNull($this->recorded[0]['response']['data']);
+
+        $this->hit('GET', '/api/cms/promos', [
+            'endpoint' => 'GET /api/cms/promos',
+            'label' => 'Daftar promo produk habis tidak ditampilkan',
+            'expected' => 200,
+        ]);
+        $this->assertSame([], $this->recorded[1]['response']['data']);
+
+        $this->assertRecorded();
+    }
+
     public function test_admin_cms_promos_auth_guard(): void
     {
         $this->asGuest();

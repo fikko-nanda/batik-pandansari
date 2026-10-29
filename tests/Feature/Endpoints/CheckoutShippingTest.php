@@ -78,10 +78,6 @@ class CheckoutShippingTest extends EndpointTestCase
         Cache::flush();
         Http::preventStrayRequests();
         $transactionLevelDuringRouting = null;
-        config([
-            'services.fonnte.token' => 'fonnte-test-token',
-            'services.fonnte.admin_numbers' => ['081234567890'],
-        ]);
         Http::fake([
             rtrim((string) config('services.osm.osrm_url'), '/').'/route/*' => function () use (
                 &$transactionLevelDuringRouting
@@ -96,7 +92,6 @@ class CheckoutShippingTest extends EndpointTestCase
                     ]],
                 ]);
             },
-            'api.fonnte.com/send' => Http::response(['status' => true, 'id' => 'wa-order-created'], 200),
         ]);
 
         $this->hit('POST', '/api/checkout', [
@@ -113,12 +108,7 @@ class CheckoutShippingTest extends EndpointTestCase
         $this->assertSame(1001, (int) $order->berat_pengiriman_gram);
         $this->assertSame(175500.0, (float) $order->total_pembayaran);
         $this->assertSame([], $this->recorded[0]['db_effect']['payments'] ?? []);
-        Http::assertSentCount(2);
-        Http::assertSent(fn ($request) => $request->url() === 'https://api.fonnte.com/send'
-            && (string) $request['target'] === '6281234567890'
-            && str_contains((string) $request['message'], '*PESANAN BARU*')
-            && str_contains((string) $request['message'], 'Menunggu pembayaran')
-            && str_contains((string) $request['message'], $order->nomor_pesanan));
+        Http::assertSentCount(1);
 
         config([
             'services.midtrans.server_key' => 'SB-Mid-server-test',
@@ -188,54 +178,6 @@ class CheckoutShippingTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
-    public function test_checkout_sends_order_created_notification_to_admin(): void
-    {
-        $user = $this->actingAsRole('pelanggan');
-        $catalog = $this->seedCatalog();
-        $address = $this->makeAddress($user);
-        $this->addToCart($user, $catalog['variant']);
-        $this->seedShippingBaseline();
-        Cache::flush();
-        config([
-            'services.fonnte.token' => 'fonnte-test-token',
-            'services.fonnte.admin_numbers' => ['081234567890'],
-        ]);
-        Http::preventStrayRequests();
-        Http::fake([
-            rtrim((string) config('services.osm.osrm_url'), '/').'/route/*' => Http::response([
-                'code' => 'Ok',
-                'routes' => [['distance' => 5000, 'duration' => 900]],
-            ]),
-            'api.fonnte.com/*' => Http::response(['status' => true, 'id' => 'wa-order-created'], 200),
-        ]);
-
-        $this->hit('POST', '/api/checkout', [
-            'json' => ['id_user_address' => $address->id_user_address],
-            'expected' => 201,
-        ]);
-
-        Http::assertSent(function ($request) {
-            if ($request->url() !== 'https://api.fonnte.com/send') {
-                return false;
-            }
-
-            $message = (string) $request['message'];
-
-            return (string) $request['target'] === '6281234567890'
-                && $request->hasHeader('Authorization', 'fonnte-test-token')
-                && str_contains($message, '*PESANAN BARU*')
-                && str_contains($message, 'Menunggu pembayaran')
-                && str_contains($message, 'Batik Parang Seling')
-                && str_contains($message, '*TOTAL PEMBAYARAN*');
-        });
-
-        $this->assertDatabaseHas('notification_logs', [
-            'notification_type' => 'order_created_admin',
-            'delivery_status' => 'sent',
-        ]);
-        $this->assertRecorded();
-    }
-
     public function test_checkout_can_sell_all_physical_stock_and_reduce_it_to_zero_after_payment(): void
     {
         $user = $this->actingAsRole('pelanggan');
@@ -248,7 +190,7 @@ class CheckoutShippingTest extends EndpointTestCase
         $legacyOrder->update(['stok_direservasi' => true]);
         $catalog['variant']->update(['stok_dipesan' => 1]);
         $address = $this->makeAddress($user);
-        $this->addToCart($user, $catalog['variant'], 2);
+        $this->addToCart($user, $catalog['variant'], 3);
         $this->seedShippingBaseline();
         Cache::flush();
         Http::preventStrayRequests();
@@ -266,31 +208,30 @@ class CheckoutShippingTest extends EndpointTestCase
 
         $order = Order::findOrFail($this->recorded[0]['response']['data']['id_order']);
         $this->assertSame(3, (int) $catalog['variant']->fresh()->stok);
-        $this->assertSame(3, (int) $catalog['variant']->fresh()->stok_dipesan);
-        $this->assertTrue((bool) $order->stok_direservasi);
+        $this->assertSame(1, (int) $catalog['variant']->fresh()->stok_dipesan);
+        $this->assertFalse((bool) $order->stok_direservasi);
 
         $orders = app(OrderService::class);
         $orders->changeStatus($order, 'dibayar');
 
-        $this->assertSame(1, (int) $catalog['variant']->fresh()->stok);
+        $this->assertSame(0, (int) $catalog['variant']->fresh()->stok);
         $this->assertSame(1, (int) $catalog['variant']->fresh()->stok_dipesan);
         $this->assertDatabaseHas('inventory_movements', [
             'referensi' => $order->nomor_pesanan,
-            'jumlah' => 2,
+            'jumlah' => 3,
             'stok_sebelum' => 3,
-            'stok_sesudah' => 1,
+            'stok_sesudah' => 0,
         ]);
 
         $orders->changeStatus($legacyOrder, 'dibayar');
 
         $this->assertSame(0, (int) $catalog['variant']->fresh()->stok);
         $this->assertSame(0, (int) $catalog['variant']->fresh()->stok_dipesan);
-        $this->assertDatabaseHas('inventory_movements', [
-            'referensi' => $legacyOrder->nomor_pesanan,
-            'jumlah' => 1,
-            'stok_sebelum' => 1,
-            'stok_sesudah' => 0,
-        ]);
+        $this->assertTrue(
+            OrderStatusHistory::where('id_order', $legacyOrder->id_order)
+                ->where('catatan', 'like', '%perlu tindak lanjut admin/refund%')
+                ->exists()
+        );
         $this->assertRecorded();
     }
 

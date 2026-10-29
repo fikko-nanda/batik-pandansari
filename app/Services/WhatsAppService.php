@@ -20,16 +20,6 @@ class WhatsAppService
 
     public function sendOrderPaid(Order $order): void
     {
-        $this->sendOrderNotification($order, 'order_paid_admin', $this->paidMessage($order));
-    }
-
-    public function sendOrderCreated(Order $order): void
-    {
-        $this->sendOrderNotification($order, 'order_created_admin', $this->createdMessage($order));
-    }
-
-    private function sendOrderNotification(Order $order, string $notificationType, string $message): void
-    {
         $token = trim((string) config('services.fonnte.token', ''));
         $targets = (array) config('services.fonnte.admin_numbers', []);
 
@@ -38,24 +28,21 @@ class WhatsAppService
 
             return;
         }
+
         $order->loadMissing(['items']);
 
+        $message = $this->paidMessage($order);
         $url = (string) config('services.fonnte.url', 'https://api.fonnte.com/send');
 
         foreach ($targets as $rawTarget) {
             $target = $this->normalizeNumber((string) $rawTarget);
 
             if ($target === '') {
-                Log::warning('Notifikasi WhatsApp dilewati karena nomor admin tidak valid.', [
-                    'order_id' => $order->nomor_pesanan,
-                    'notification_type' => $notificationType,
-                ]);
-
                 continue;
             }
 
             $log = $this->notificationLogger->queued(
-                $notificationType,
+                'order_paid_admin',
                 null,
                 $target,
                 'order',
@@ -69,7 +56,7 @@ class WhatsAppService
 
                 $response = Http::withHeaders([
                     'Authorization' => $token,
-                ])->asForm()->connectTimeout(3)->timeout(15)->post($url, [
+                ])->asForm()->timeout(15)->post($url, [
                     'target' => $target,
                     'message' => $message,
                 ]);
@@ -85,12 +72,7 @@ class WhatsAppService
                 }
 
                 $payload = $response->json();
-                $accepted = is_array($payload)
-                    && filter_var(
-                        $payload['status'] ?? false,
-                        FILTER_VALIDATE_BOOLEAN,
-                        FILTER_NULL_ON_FAILURE
-                    ) === true;
+                $accepted = is_array($payload) && ($payload['status'] ?? true) !== false;
 
                 if (! $accepted) {
                     $this->notificationLogger->markFailed(
@@ -117,35 +99,6 @@ class WhatsAppService
                 report($e);
             }
         }
-    }
-
-    private function createdMessage(Order $order): string
-    {
-        $lines = [
-            '*PESANAN BARU*',
-            '',
-            '📦 *INFORMASI PESANAN*',
-            '• ID Pesanan : '.$order->nomor_pesanan,
-            '• Status : Menunggu pembayaran',
-            '• Nama Pemesan : '.$order->nama_penerima,
-            '• No. WA Pemesan : '.($order->nomor_telepon_penerima ?: '-'),
-            '',
-            '🛍️ *BARANG DIPESAN*',
-        ];
-
-        foreach ($order->items as $item) {
-            $varian = trim(implode(' / ', array_filter([$item->warna, $item->ukuran])));
-            $lines[] = '• '.$item->nama_produk.($varian !== '' ? ' ('.$varian.')' : '').' x *'.(int) $item->jumlah.'*';
-        }
-
-        $lines[] = '';
-        $lines[] = '🚚 *ALAMAT PENGIRIMAN*';
-        $lines[] = $order->alamat_pengiriman;
-        $lines[] = '';
-        $lines[] = '💰 *TOTAL PEMBAYARAN*';
-        $lines[] = $this->rupiah($order->total_pembayaran);
-
-        return implode("\n", $lines);
     }
 
     private function paidMessage(Order $order): string

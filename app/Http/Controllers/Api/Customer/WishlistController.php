@@ -21,6 +21,9 @@ class WishlistController extends Controller
                 ->orderBy('urutan'),
         ])
             ->where('id_user', $request->user()->id_user)
+            ->whereHas('product.variants', fn ($query) => $query
+                ->where('status_varian', 'aktif')
+                ->where('stok', '>', 0))
             ->orderByDesc('dibuat_pada')
             ->get();
 
@@ -43,6 +46,9 @@ class WishlistController extends Controller
 
         $product = Product::where('id_product', $validated['id_product'])
             ->where('status_produk', 'aktif')
+            ->whereHas('variants', fn ($query) => $query
+                ->where('status_varian', 'aktif')
+                ->where('stok', '>', 0))
             ->first();
 
         if (! $product) {

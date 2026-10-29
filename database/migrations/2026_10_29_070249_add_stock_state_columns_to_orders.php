@@ -24,7 +24,6 @@ return new class extends Migration
             Schema::table('orders', function (Blueprint $table) {
                 $table->boolean('stok_direservasi')->default(false)->after('status_pesanan');
             });
-
         }
     }
 

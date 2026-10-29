@@ -757,9 +757,24 @@
 
                     // 3. Tampilkan Pop-Up Modal Midtrans Snap (Embed Mode) langsung tanpa redirect
                     await PandansariAPI.bayarSnap(payRes.data, {
-                        onSuccess: (result) => {
+                        onSuccess: async () => {
+                            let statusSynchronized = false;
+
+                            try {
+                                const paymentStatus = await PandansariAPI.lastPayment(orderId);
+                                statusSynchronized = paymentStatus.ok
+                                    && paymentStatus.data?.status_pembayaran === 'dibayar';
+                            } catch (error) {
+                                console.error('[Checkout] Gagal menyinkronkan status pembayaran:', error);
+                            }
+
                             if (typeof PandansariAPI.toast === 'function') {
-                                PandansariAPI.toast('Pembayaran berhasil! Mengalihkan ke Pesanan Saya...', true);
+                                PandansariAPI.toast(
+                                    statusSynchronized
+                                        ? 'Pembayaran berhasil! Mengalihkan ke Pesanan Saya...'
+                                        : 'Pembayaran diterima. Status pesanan sedang disinkronkan...',
+                                    true
+                                );
                             }
                             setTimeout(() => { window.location.href = '/orders'; }, 1000);
                         },

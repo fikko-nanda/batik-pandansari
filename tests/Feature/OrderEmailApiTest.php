@@ -231,25 +231,6 @@ class OrderEmailApiTest extends TestCase
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });
-
-        Schema::create('notification_logs', function (Blueprint $table) {
-            $table->bigIncrements('id_notification_log');
-            $table->string('id_pengguna')->nullable();
-            $table->string('channel', 20);
-            $table->string('provider', 50);
-            $table->string('notification_type', 100);
-            $table->string('recipient_masked')->nullable();
-            $table->string('reference_type', 50)->nullable();
-            $table->string('reference_id', 100)->nullable();
-            $table->string('provider_message_id', 150)->nullable();
-            $table->string('delivery_status', 30)->default('queued');
-            $table->unsignedSmallInteger('attempt_count')->default(0);
-            $table->string('error_code', 100)->nullable();
-            $table->text('error_message')->nullable();
-            $table->timestamp('sent_at')->nullable();
-            $table->timestamp('delivered_at')->nullable();
-            $table->timestamps();
-        });
     }
 
     private function makeUser(string $peran = 'pelanggan'): User
@@ -357,6 +338,7 @@ class OrderEmailApiTest extends TestCase
     // 1. Webhook settlement mengirim email konfirmasi ke pelanggan.
     public function test_settlement_queues_paid_email(): void
     {
+        $this->withoutDefer();
         Mail::fake();
 
         $user = $this->makeUser();
@@ -402,6 +384,7 @@ class OrderEmailApiTest extends TestCase
 
     public function test_settlement_sends_paid_order_to_admin_whatsapp(): void
     {
+        $this->withoutDefer();
         Mail::fake();
         Http::fake([
             'api.fonnte.com/*' => Http::response(['status' => true, 'id' => 'wa-test-1'], 200),
@@ -444,6 +427,7 @@ class OrderEmailApiTest extends TestCase
                 && str_contains($message, '*BARANG DIPESAN*')
                 && str_contains($message, 'Batik Parang')
                 && str_contains($message, 'ID Pesanan : '.$order->nomor_pesanan)
+                && str_contains($message, '*ALAMAT PENGIRIMAN*')
                 && str_contains($message, 'Jl. Contoh No. 10, Surakarta')
                 && str_contains($message, '*TOTAL PEMBAYARAN*')
                 && str_contains($message, 'Rp 100.000,00');
@@ -452,6 +436,7 @@ class OrderEmailApiTest extends TestCase
 
     public function test_whatsapp_failure_does_not_cancel_successful_payment(): void
     {
+        $this->withoutDefer();
         Mail::fake();
         Http::fake([
             'api.fonnte.com/*' => Http::response(['status' => false, 'reason' => 'device disconnected'], 500),
@@ -485,23 +470,13 @@ class OrderEmailApiTest extends TestCase
         ])->assertStatus(200)->assertJsonPath('success', true);
 
         $this->assertSame('dibayar', $order->fresh()->status_pesanan);
-        $this->assertDatabaseHas('notification_logs', [
-            'notification_type' => 'order_paid_admin',
-            'delivery_status' => 'failed',
-        ]);
     }
 
     // 2. Webhook ganda tidak mengirim email dua kali.
     public function test_duplicate_settlement_sends_email_once(): void
     {
+        $this->withoutDefer();
         Mail::fake();
-        Http::fake([
-            'api.fonnte.com/*' => Http::response(['status' => true, 'id' => 'wa-duplicate-test'], 200),
-        ]);
-        config([
-            'services.fonnte.token' => 'fonnte-test-token',
-            'services.fonnte.admin_numbers' => ['081234567890'],
-        ]);
 
         $user = $this->makeUser();
         $variant = $this->makeVariant();
@@ -523,7 +498,6 @@ class OrderEmailApiTest extends TestCase
         $this->postJson('/api/payments/midtrans/notification', $payload)->assertStatus(200);
 
         Mail::assertQueued(OrderPaidMail::class, 1);
-        Http::assertSentCount(1);
     }
 
     // 3. Email konfirmasi memakai alamat email akun pelanggan.
@@ -579,6 +553,7 @@ class OrderEmailApiTest extends TestCase
     // 6. Expire command membatalkan pesanan dan mengirim email pembatalan.
     public function test_expire_command_queues_cancellation_email(): void
     {
+        $this->withoutDefer();
         Mail::fake();
 
         $user = $this->makeUser();
@@ -592,7 +567,7 @@ class OrderEmailApiTest extends TestCase
         $this->artisan('orders:expire')->assertExitCode(0);
 
         $this->assertSame('dibatalkan', $order->fresh()->status_pesanan);
-        $this->assertSame(1, (int) $variant->fresh()->stok_dipesan);
+        $this->assertSame(0, (int) $variant->fresh()->stok_dipesan, 'Reservasi stok dilepas pada pembatalan pertama.');
         Mail::assertQueued(OrderCancelledMail::class, fn ($mail) => $mail->hasTo($user->email));
 
         $this->travel(61)->seconds();
@@ -603,6 +578,7 @@ class OrderEmailApiTest extends TestCase
     // 7. Webhook expire Midtrans juga mengirim email pembatalan.
     public function test_webhook_expire_queues_cancellation_email(): void
     {
+        $this->withoutDefer();
         Mail::fake();
 
         $user = $this->makeUser();
@@ -637,6 +613,7 @@ class OrderEmailApiTest extends TestCase
     // 8. Pengiriman email gagal tidak membatalkan perubahan status pesanan.
     public function test_mail_failure_does_not_break_status_transition(): void
     {
+        $this->withoutDefer();
         Mail::shouldReceive('to->queue')->andThrow(new \RuntimeException('smtp down'));
 
         $user = $this->makeUser();

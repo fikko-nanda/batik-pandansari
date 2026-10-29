@@ -64,6 +64,30 @@ class WishlistCartEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_wishlist_hides_and_rejects_products_without_available_stock(): void
+    {
+        $user = $this->actingAsRole('pelanggan');
+        $catalog = $this->seedCatalog();
+        $this->seedWishlist($user, $catalog['product']);
+        $catalog['variant']->update(['stok' => 0]);
+
+        $this->hit('GET', '/api/wishlist', [
+            'endpoint' => 'GET /api/wishlist',
+            'label' => 'Wishlist tidak menampilkan produk yang stoknya habis',
+            'expected' => 200,
+        ]);
+        $this->assertSame([], $this->recorded[0]['response']['data'] ?? []);
+
+        $this->hit('POST', '/api/wishlist', [
+            'endpoint' => 'POST /api/wishlist',
+            'label' => 'Produk habis tidak dapat ditambahkan ke wishlist',
+            'json' => ['id_product' => $catalog['product']->id_product],
+            'expected' => 404,
+        ]);
+
+        $this->assertRecorded();
+    }
+
     public function test_wishlist_store(): void
     {
         $this->actingAsRole('pelanggan');
