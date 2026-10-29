@@ -40,6 +40,11 @@ class StockReservationService
      */
     public function reserve(array $lines): void
     {
+        usort(
+            $lines,
+            fn (array $a, array $b) => $a['id_variant'] <=> $b['id_variant']
+        );
+
         foreach ($lines as $line) {
             $variant = ProductVariant::whereKey($line['id_variant'])
                 ->lockForUpdate()
@@ -74,7 +79,7 @@ class StockReservationService
      */
     public function release(Order $order): void
     {
-        foreach ($order->items as $item) {
+        foreach ($order->items->sortBy('id_variant') as $item) {
             $variant = ProductVariant::whereKey($item->id_variant)
                 ->lockForUpdate()
                 ->first();
@@ -102,7 +107,7 @@ class StockReservationService
      */
     public function commit(Order $order, ?string $idUser = null): void
     {
-        foreach ($order->items as $item) {
+        foreach ($order->items->sortBy('id_variant') as $item) {
             $variant = ProductVariant::whereKey($item->id_variant)
                 ->lockForUpdate()
                 ->first();
@@ -150,7 +155,7 @@ class StockReservationService
     {
         $kekurangan = [];
 
-        foreach ($order->items as $item) {
+        foreach ($order->items->sortBy('id_variant') as $item) {
             $variant = ProductVariant::whereKey($item->id_variant)
                 ->lockForUpdate()
                 ->first();

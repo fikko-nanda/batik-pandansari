@@ -129,11 +129,16 @@ class ProductVariantController extends Controller
             $dinonaktifkan = 0;
             $saved = [];
 
-            foreach ($items as $item) {
+            foreach ($items as $index => $item) {
                 $data = $this->dataVarianDariItem($item);
 
                 if (! empty($item['id_variant'])) {
-                    $variant = ProductVariant::where('id_variant', $item['id_variant'])->first();
+                    $variant = ProductVariant::where('id_variant', $item['id_variant'])
+                        ->lockForUpdate()
+                        ->firstOrFail();
+
+                    $this->pastikanStokTidakDiBawahReservasi($variant, $data['stok'] ?? null, "items.{$index}.stok");
+
                     $variant->update($data);
                     $diperbarui++;
                 } else {
@@ -205,7 +210,23 @@ class ProductVariantController extends Controller
             'status_varian' => ['sometimes', 'required', 'string', 'in:aktif,nonaktif'],
         ]);
 
-        $variant->update($validated);
+        $variant = DB::transaction(function () use ($id, $validated) {
+            $variant = ProductVariant::whereKey($id)->lockForUpdate()->first();
+
+            if (! $variant) {
+                return null;
+            }
+
+            $this->pastikanStokTidakDiBawahReservasi($variant, $validated['stok'] ?? null, 'stok');
+
+            $variant->update($validated);
+
+            return $variant;
+        });
+
+        if (! $variant) {
+            return $this->variantNotFound();
+        }
 
         return response()->json([
             'success' => true,
@@ -355,6 +376,26 @@ class ProductVariantController extends Controller
 
         throw ValidationException::withMessages([
             'ukuran' => ['Produk harus memiliki minimal 1 varian dengan ukuran yang valid.'],
+        ]);
+    }
+
+    private function pastikanStokTidakDiBawahReservasi(
+        ProductVariant $variant,
+        mixed $stokBaru,
+        string $field
+    ): void {
+        if ($stokBaru === null) {
+            return;
+        }
+
+        $dipesan = (int) $variant->stok_dipesan;
+
+        if ((int) $stokBaru >= $dipesan) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            $field => ["Stok tidak boleh lebih kecil dari jumlah yang sedang dipesan ({$dipesan})."],
         ]);
     }
 

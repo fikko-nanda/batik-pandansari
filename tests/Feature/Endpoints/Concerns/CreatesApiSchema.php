@@ -47,6 +47,7 @@ trait CreatesApiSchema
         'cms_gambar_galeri',
         'cms_kategori',
         'profil_usaha',
+        'zona_pengiriman',
         'fasilitas_usaha',
         'gambar_ukuran',
         'webhook_logs',
@@ -63,6 +64,7 @@ trait CreatesApiSchema
             $table->string('nama_pengguna', 100);
             $table->string('email', 150)->unique();
             $table->string('nomor_telepon', 20)->nullable();
+            $table->string('nomor_telepon_normalized', 20)->nullable()->unique();
             $table->string('kata_sandi', 255)->nullable();
             $table->string('peran', 20)->default('pelanggan');
             $table->timestamp('email_verified_at')->nullable();
@@ -193,7 +195,10 @@ trait CreatesApiSchema
             $table->string('nama_kecamatan', 60);
             $table->string('kode_pos', 10);
             $table->text('alamat_lengkap');
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
             $table->boolean('alamat_utama')->default(false);
+            $table->string('id_tujuan_rajaongkir', 100)->nullable();
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });
@@ -214,6 +219,9 @@ trait CreatesApiSchema
             $table->timestamp('kedaluwarsa_pada')->nullable();
             $table->decimal('subtotal', 12, 2);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);
+            $table->decimal('jarak_km', 8, 3)->nullable();
+            $table->string('zona_pengiriman', 100)->nullable();
+            $table->unsignedInteger('berat_pengiriman_gram')->nullable();
             $table->decimal('diskon', 12, 2)->default(0);
             $table->decimal('pph', 12, 2)->default(0);
             $table->decimal('total_pembayaran', 12, 2);
@@ -424,8 +432,22 @@ trait CreatesApiSchema
             $table->string('nomor_whatsapp', 30)->nullable();
             $table->string('nomor_telepon', 30)->nullable();
             $table->text('alamat_lengkap')->nullable();
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
             $table->string('tautan_google_maps', 500)->nullable();
             $table->longText('jam_operasional')->nullable();
+            $table->timestamp('dibuat_pada')->nullable();
+            $table->timestamp('diperbarui_pada')->nullable();
+        });
+
+        Schema::create('zona_pengiriman', function (Blueprint $table) {
+            $table->string('id_zona', 36)->primary();
+            $table->string('nama_zona', 100);
+            $table->decimal('jarak_min_km', 8, 2);
+            $table->decimal('jarak_maks_km', 8, 2);
+            $table->decimal('biaya_dasar', 12, 2)->default(0);
+            $table->decimal('biaya_per_kg', 12, 2)->default(0);
+            $table->boolean('status_aktif')->default(true);
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });

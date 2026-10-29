@@ -4,9 +4,14 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Rules\StrongPassword;
+use App\Rules\UniqueWhatsAppNumber;
+use App\Rules\WhatsAppNumber;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -36,19 +41,30 @@ class UserController extends Controller
         $validated = $request->validate([
             'nama_pengguna' => ['required', 'string', 'max:100'],
             'email' => ['required', 'string', 'email', 'max:150', 'unique:users,email'],
-            'nomor_telepon' => ['nullable', 'string', 'max:20'],
-            'kata_sandi' => ['required', 'string', 'min:8', 'confirmed'],
+            'nomor_telepon' => ['nullable', 'string', new WhatsAppNumber, new UniqueWhatsAppNumber],
+            'kata_sandi' => ['required', 'string', new StrongPassword, 'confirmed'],
             'peran' => ['nullable', 'string', 'in:pelanggan,admin,teknisi'],
         ]);
 
-        $user = User::create([
-            'id_user' => (string) Str::uuid(),
-            'nama_pengguna' => $validated['nama_pengguna'],
-            'email' => $validated['email'],
-            'nomor_telepon' => $validated['nomor_telepon'] ?? null,
-            'kata_sandi' => $validated['kata_sandi'],
-            'peran' => $validated['peran'] ?? 'pelanggan',
-        ]);
+        try {
+            $user = User::create([
+                'id_user' => (string) Str::uuid(),
+                'nama_pengguna' => $validated['nama_pengguna'],
+                'email' => $validated['email'],
+                'nomor_telepon' => $validated['nomor_telepon'] ?? null,
+                'nomor_telepon_normalized' => User::normalizeWhatsAppNumber($validated['nomor_telepon'] ?? null),
+                'kata_sandi' => $validated['kata_sandi'],
+                'peran' => $validated['peran'] ?? 'pelanggan',
+            ]);
+        } catch (UniqueConstraintViolationException $e) {
+            if (str_contains($e->getMessage(), 'nomor_telepon_normalized')) {
+                throw ValidationException::withMessages([
+                    'nomor_telepon' => ['Nomor WhatsApp sudah terdaftar. Gunakan nomor lain.'],
+                ]);
+            }
+
+            throw $e;
+        }
 
         return response()->json([
             'success' => true,

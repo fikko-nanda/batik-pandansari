@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\Customer;
 
+use App\Exceptions\ShippingException;
 use App\Http\Controllers\Controller;
 use App\Models\Cart;
+use App\Models\CartItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderStatusHistory;
@@ -11,6 +13,7 @@ use App\Models\ProductVariant;
 use App\Models\UserAddress;
 use App\Models\VoucherUsage;
 use App\Services\OrderService;
+use App\Services\ShippingService;
 use App\Services\StockReservationService;
 use App\Services\VoucherService;
 use Illuminate\Database\QueryException;
@@ -27,7 +30,8 @@ class CheckoutController extends Controller
         Request $request,
         VoucherService $voucherService,
         OrderService $orderService,
-        StockReservationService $reservations
+        StockReservationService $reservations,
+        ShippingService $shipping
     ): JsonResponse {
         // Terima `id_user_address` (kontrak resmi) atau `address_id` (alias
         // yang dipakai sebagian frontend) agar kompatibel.
@@ -54,26 +58,14 @@ class CheckoutController extends Controller
             ], 404);
         }
 
-        $cart = Cart::where('id_user', $user->id_user)
-            ->where('status_cart', 'aktif')
-            ->with('items')
-            ->first();
-
-        if (! $cart || $cart->items->isEmpty()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Keranjang Anda kosong.',
-            ], 422);
-        }
-
         return $this->finalizeOrder(
             $validated,
             $address,
-            $cart,
             $user,
             $voucherService,
             $orderService,
-            $reservations
+            $reservations,
+            $shipping
         );
     }
 
@@ -85,26 +77,65 @@ class CheckoutController extends Controller
     private function finalizeOrder(
         array $validated,
         UserAddress $address,
-        Cart $cart,
         $user,
         VoucherService $voucherService,
         OrderService $orderService,
-        StockReservationService $reservations
+        StockReservationService $reservations,
+        ShippingService $shipping
     ): JsonResponse {
         try {
+            $hasCart = Cart::where('id_user', $user->id_user)
+                ->where('status_cart', 'aktif')
+                ->whereHas('items')
+                ->exists();
+
+            if (! $hasCart) {
+                throw ValidationException::withMessages([
+                    'cart' => ['Keranjang Anda kosong.'],
+                ]);
+            }
+
+            // Panggilan HTTP ke OSRM dilakukan sebelum transaksi DB dimulai agar
+            // koneksi lambat tidak menahan lock keranjang/varian.
+            $route = $shipping->routeForAddress($address);
+
             $order = DB::transaction(function () use (
-                $cart,
                 $address,
                 $user,
                 $validated,
                 $voucherService,
                 $orderService,
-                $reservations
+                $reservations,
+                $shipping,
+                $route
             ) {
+                $cart = Cart::where('id_user', $user->id_user)
+                    ->where('status_cart', 'aktif')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $cart) {
+                    throw ValidationException::withMessages([
+                        'cart' => ['Keranjang Anda kosong.'],
+                    ]);
+                }
+
+                $cartItems = CartItem::where('id_cart', $cart->id_cart)
+                    ->orderBy('id_variant')
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($cartItems->isEmpty()) {
+                    throw ValidationException::withMessages([
+                        'cart' => ['Keranjang Anda kosong.'],
+                    ]);
+                }
+
                 $subtotal = 0.0;
+                $beratGram = 0;
                 $lines = [];
 
-                foreach ($cart->items as $cartItem) {
+                foreach ($cartItems as $cartItem) {
                     $variant = ProductVariant::whereKey($cartItem->id_variant)
                         ->lockForUpdate()
                         ->first();
@@ -127,10 +158,19 @@ class CheckoutController extends Controller
                         ]);
                     }
 
+                    $beratItem = (int) $variant->berat_gram;
+
+                    if ($beratItem <= 0) {
+                        throw ValidationException::withMessages([
+                            'cart' => ["Berat varian {$variant->sku} belum diatur admin."],
+                        ]);
+                    }
+
                     $harga = (float) $variant->harga;
                     $lineSubtotal = round($harga * $jumlah, 2);
 
                     $subtotal += $lineSubtotal;
+                    $beratGram += $beratItem * $jumlah;
 
                     $lines[] = [
                         'variant' => $variant,
@@ -140,6 +180,8 @@ class CheckoutController extends Controller
                         'subtotal' => $lineSubtotal,
                     ];
                 }
+
+                $shippingQuote = $shipping->quoteForDistance($route, $beratGram);
 
                 // Reservasi stok: tambah stok_dipesan (stok fisik belum dikurangi).
                 // Stok yang direservasi tidak bisa dibeli pesanan lain sampai
@@ -180,14 +222,18 @@ class CheckoutController extends Controller
 
                 $dasarPph = round(max(0, $subtotal - $diskon), 2);
                 $pph = $orderService->pphFrom($dasarPph);
-                $total = round($dasarPph + $pph, 2);
+                $biayaPengiriman = $shippingQuote['biaya_pengiriman'];
+                $total = round($dasarPph + $pph + $biayaPengiriman, 2);
 
                 $order = $this->createOrder($orderService, [
                     'id_user' => $user->id_user,
                     'status_pesanan' => 'menunggu_pembayaran',
                     'kedaluwarsa_pada' => $orderService->expiryFrom(),
                     'subtotal' => $subtotal,
-                    'biaya_pengiriman' => 0,
+                    'biaya_pengiriman' => $biayaPengiriman,
+                    'jarak_km' => $shippingQuote['jarak_km'],
+                    'zona_pengiriman' => $shippingQuote['zona']['nama_zona'],
+                    'berat_pengiriman_gram' => $shippingQuote['berat_gram'],
                     'diskon' => $diskon,
                     'pph' => $pph,
                     'total_pembayaran' => $total,
@@ -243,7 +289,23 @@ class CheckoutController extends Controller
                 return $order->load('items');
             });
         } catch (ValidationException $e) {
+            $errors = $e->errors();
+
+            if (($errors['cart'][0] ?? null) === 'Keranjang Anda kosong.') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Keranjang Anda kosong.',
+                    'errors' => $errors,
+                ], 422);
+            }
+
             throw $e;
+        } catch (ShippingException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'code' => $e->errorCode(),
+            ], $e->statusCode());
         } catch (Throwable $e) {
             report($e);
 

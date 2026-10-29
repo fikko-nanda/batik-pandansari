@@ -28,6 +28,8 @@ class ProfilUsaha extends Model
         'nomor_whatsapp',
         'nomor_telepon',
         'alamat_lengkap',
+        'latitude',
+        'longitude',
         'tautan_google_maps',
         'jam_operasional',
     ];
@@ -36,6 +38,8 @@ class ProfilUsaha extends Model
     {
         return [
             'id_profil_usaha' => 'integer',
+            'latitude' => 'decimal:7',
+            'longitude' => 'decimal:7',
             'jam_operasional' => 'array',
         ];
     }

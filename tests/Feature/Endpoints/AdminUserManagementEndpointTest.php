@@ -27,8 +27,8 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
                 'nama_pengguna' => 'Pengguna Baru',
                 'email' => 'pengguna.baru@example.com',
                 'nomor_telepon' => '081234567890',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
             ],
             'expected' => 201,
         ]);
@@ -43,8 +43,8 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
 
         $user = User::where('email', 'pengguna.baru@example.com')->first();
         $this->assertNotNull($user);
-        $this->assertNotSame('rahasia123', $user->kata_sandi, 'Kata sandi harus tersimpan ter-hash.');
-        $this->assertTrue(Hash::check('rahasia123', $user->kata_sandi));
+        $this->assertNotSame('Rahasia123#', $user->kata_sandi, 'Kata sandi harus tersimpan ter-hash.');
+        $this->assertTrue(Hash::check('Rahasia123#', $user->kata_sandi));
 
         $this->assertRecorded();
     }
@@ -59,8 +59,8 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
             'json' => [
                 'nama_pengguna' => 'Admin Kedua',
                 'email' => 'admin.kedua@example.com',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
                 'peran' => 'admin',
             ],
             'expected' => 201,
@@ -94,8 +94,8 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
             'json' => [
                 'nama_pengguna' => 'Email Salah',
                 'email' => 'bukan-email',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
             ],
             'expected' => 422,
         ]);
@@ -122,8 +122,8 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
             'json' => [
                 'nama_pengguna' => 'Super User',
                 'email' => 'super.user@example.com',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
                 'peran' => 'superadmin',
             ],
             'expected' => 422,
@@ -133,19 +133,50 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
 
         $this->hit('POST', '/api/users', [
             'endpoint' => 'POST /api/users',
-            'label' => 'Tambah pengguna dengan nomor telepon > 20 karakter',
+            'label' => 'Tambah pengguna dengan nomor telepon tidak valid (lebih dari 13 digit)',
             'json' => [
                 'nama_pengguna' => 'Telepon Panjang',
                 'email' => 'telepon.panjang@example.com',
                 'nomor_telepon' => str_repeat('0', 21),
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
             ],
             'expected' => 422,
         ]);
 
         $this->assertArrayHasKey('nomor_telepon', $this->recorded[4]['response']['errors'] ?? []);
 
+        $this->assertRecorded();
+    }
+
+    public function test_admin_membuat_pengguna_nomor_whatsapp_duplikat(): void
+    {
+        $this->actingAsRole('admin');
+
+        User::create([
+            'id_user' => (string) Str::uuid(),
+            'nama_pengguna' => 'Pemilik Nomor',
+            'email' => 'pemilik.nomor@example.com',
+            'nomor_telepon' => '081255556666',
+            'kata_sandi' => 'Rahasia123#',
+            'peran' => 'pelanggan',
+        ]);
+
+        $this->hit('POST', '/api/users', [
+            'endpoint' => 'POST /api/users',
+            'label' => 'Tambah pengguna dengan nomor WhatsApp milik pengguna lain (422)',
+            'json' => [
+                'nama_pengguna' => 'Nomor Duplikat',
+                'email' => 'nomor.duplikat@example.com',
+                'nomor_telepon' => '6281255556666',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
+            ],
+            'expected' => 422,
+        ]);
+
+        $this->assertArrayHasKey('nomor_telepon', $this->recorded[0]['response']['errors'] ?? []);
+        $this->assertSame([], $this->recorded[0]['db_effect']);
         $this->assertRecorded();
     }
 
@@ -156,8 +187,8 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
         $payload = [
             'nama_pengguna' => 'Pengguna Pertama',
             'email' => 'duplikat@example.com',
-            'kata_sandi' => 'rahasia123',
-            'kata_sandi_confirmation' => 'rahasia123',
+            'kata_sandi' => 'Rahasia123#',
+            'kata_sandi_confirmation' => 'Rahasia123#',
         ];
 
         $this->hit('POST', '/api/users', [
@@ -220,8 +251,8 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
         $payload = [
             'nama_pengguna' => 'Penyusup',
             'email' => 'penyusup@example.com',
-            'kata_sandi' => 'rahasia123',
-            'kata_sandi_confirmation' => 'rahasia123',
+            'kata_sandi' => 'Rahasia123#',
+            'kata_sandi_confirmation' => 'Rahasia123#',
         ];
 
         $this->asGuest();

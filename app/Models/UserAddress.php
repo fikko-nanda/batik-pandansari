@@ -29,12 +29,17 @@ class UserAddress extends Model
         'nama_kecamatan',
         'kode_pos',
         'alamat_lengkap',
+        'latitude',
+        'longitude',
         'alamat_utama',
+        'id_tujuan_rajaongkir',
     ];
 
     protected function casts(): array
     {
         return [
+            'latitude' => 'decimal:7',
+            'longitude' => 'decimal:7',
             'alamat_utama' => 'boolean',
         ];
     }

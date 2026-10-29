@@ -353,6 +353,37 @@ class AdminInventoryEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_penyesuaian_keluar_tidak_boleh_mengurangi_stok_yang_direservasi(): void
+    {
+        $catalog = $this->seedCatalog(5);
+        $variant = $catalog['variant'];
+        $variant->update(['stok_dipesan' => 3]);
+
+        $this->actingAsRole('admin');
+
+        $this->hit('POST', '/api/admin/inventory/adjustments', [
+            'endpoint' => 'POST /api/admin/inventory/adjustments',
+            'label' => 'Penyesuaian keluar melebihi stok tersedia (5 - 3 = 2)',
+            'expected' => 422,
+            'json' => [
+                'id_variant' => $variant->id_variant,
+                'jenis_penyesuaian' => 'keluar',
+                'jumlah' => 3,
+                'alasan' => 'Mengurangi stok yang sudah direservasi',
+            ],
+        ]);
+
+        $this->assertStringContainsString(
+            'Stok tersedia: 2.',
+            implode(' ', (array) ($this->recorded[0]['response']['errors']['jumlah'] ?? []))
+        );
+        $this->assertSame(5, (int) $variant->fresh()->stok);
+        $this->assertSame(3, (int) $variant->fresh()->stok_dipesan);
+        $this->assertSame(0, InventoryMovement::count());
+
+        $this->assertRecorded();
+    }
+
     public function test_penyesuaian_stok_validasi(): void
     {
         $catalog = $this->seedCatalog(10);

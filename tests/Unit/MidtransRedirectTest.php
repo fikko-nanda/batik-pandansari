@@ -68,6 +68,8 @@ class MidtransRedirectTest extends TestCase
 
         $this->assertIsArray($body);
         $this->assertArrayHasKey('callbacks', $body);
+        $this->assertSame('ORD-UJI-0001', $body['transaction_details']['order_id'] ?? null);
+        $this->assertSame(175500, $body['transaction_details']['gross_amount'] ?? null);
 
         $this->assertSame(
             'http://localhost:8000/pembayaran/selesai',
@@ -114,7 +116,7 @@ class MidtransRedirectTest extends TestCase
     {
         $order = new Order;
         $order->nomor_pesanan = 'ORD-UJI-0001';
-        $order->total_pembayaran = 150000;
+        $order->total_pembayaran = 175500;
         $order->nama_penerima = 'Pelanggan Uji';
         $order->nomor_telepon_penerima = '081234567890';
         $order->alamat_pengiriman = 'Jl. Batik No. 1';

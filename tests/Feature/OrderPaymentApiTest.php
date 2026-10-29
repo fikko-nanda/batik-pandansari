@@ -10,13 +10,16 @@ use App\Models\OrderItem;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\ProfilUsaha;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Models\Voucher;
 use App\Models\WebhookLog;
+use App\Models\ZonaPengiriman;
 use App\Services\MidtransService;
 use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
@@ -31,6 +34,36 @@ class OrderPaymentApiTest extends TestCase
         parent::setUp();
 
         $this->createSchema();
+
+        ProfilUsaha::create([
+            'id_profil_usaha' => 1,
+            'nama_usaha' => 'Batik Pandansari',
+            'alamat_lengkap' => 'Wonokerto, Jembangan, Plupuh, Sragen',
+            'latitude' => -7.445,
+            'longitude' => 110.89,
+        ]);
+
+        ZonaPengiriman::create([
+            'id_zona' => (string) Str::uuid(),
+            'nama_zona' => 'Zona Uji',
+            'jarak_min_km' => 0,
+            'jarak_maks_km' => 100,
+            'biaya_dasar' => 5000,
+            'biaya_per_kg' => 2000,
+            'status_aktif' => true,
+        ]);
+
+        Http::fake([
+            rtrim((string) config('services.osm.osrm_url'), '/').'/*' => Http::response([
+                'code' => 'Ok',
+                'routes' => [
+                    [
+                        'distance' => 5000,
+                        'duration' => 900,
+                    ],
+                ],
+            ]),
+        ]);
     }
 
     private function createSchema(): void
@@ -40,6 +73,7 @@ class OrderPaymentApiTest extends TestCase
             $table->string('nama_pengguna');
             $table->string('email')->unique();
             $table->string('nomor_telepon')->nullable();
+            $table->string('nomor_telepon_normalized')->nullable()->unique();
             $table->string('kata_sandi');
             $table->string('peran')->default('pelanggan');
             $table->timestamp('dibuat_pada')->nullable();
@@ -95,7 +129,32 @@ class OrderPaymentApiTest extends TestCase
             $table->string('nama_kecamatan');
             $table->string('kode_pos');
             $table->text('alamat_lengkap');
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
             $table->boolean('alamat_utama')->default(false);
+            $table->string('id_tujuan_rajaongkir', 100)->nullable();
+            $table->timestamp('dibuat_pada')->nullable();
+            $table->timestamp('diperbarui_pada')->nullable();
+        });
+
+        Schema::create('profil_usaha', function (Blueprint $table) {
+            $table->unsignedTinyInteger('id_profil_usaha')->primary();
+            $table->string('nama_usaha');
+            $table->text('alamat_lengkap')->nullable();
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
+            $table->timestamp('dibuat_pada')->nullable();
+            $table->timestamp('diperbarui_pada')->nullable();
+        });
+
+        Schema::create('zona_pengiriman', function (Blueprint $table) {
+            $table->string('id_zona', 36)->primary();
+            $table->string('nama_zona', 100);
+            $table->decimal('jarak_min_km', 8, 2);
+            $table->decimal('jarak_maks_km', 8, 2);
+            $table->decimal('biaya_dasar', 12, 2)->default(0);
+            $table->decimal('biaya_per_kg', 12, 2)->default(0);
+            $table->boolean('status_aktif')->default(true);
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });
@@ -146,6 +205,9 @@ class OrderPaymentApiTest extends TestCase
             $table->timestamp('kedaluwarsa_pada')->nullable();
             $table->decimal('subtotal', 12, 2)->default(0);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);
+            $table->decimal('jarak_km', 8, 2)->nullable();
+            $table->string('zona_pengiriman', 100)->nullable();
+            $table->unsignedInteger('berat_pengiriman_gram')->nullable();
             $table->decimal('diskon', 12, 2)->default(0);
             $table->decimal('pph', 12, 2)->default(0);
             $table->decimal('total_pembayaran', 12, 2)->default(0);
@@ -348,6 +410,8 @@ class OrderPaymentApiTest extends TestCase
             'nama_kecamatan' => 'Banjarsari',
             'kode_pos' => '57134',
             'alamat_lengkap' => 'Jl. Contoh No. 10',
+            'latitude' => -7.5,
+            'longitude' => 110.8,
             'alamat_utama' => true,
         ]);
     }
@@ -492,9 +556,12 @@ class OrderPaymentApiTest extends TestCase
         $this->assertDatabaseHas('orders', [
             'id_user' => $user->id_user,
             'subtotal' => 200000,
-            'biaya_pengiriman' => 0,
+            'biaya_pengiriman' => 7000,
+            'jarak_km' => 5,
+            'zona_pengiriman' => 'Zona Uji',
+            'berat_pengiriman_gram' => 1000,
             'pph' => 22000,
-            'total_pembayaran' => 222000,
+            'total_pembayaran' => 229000,
         ]);
         $this->assertSame('checkout', Cart::where('id_user', $user->id_user)->value('status_cart'));
         $this->assertDatabaseCount('order_items', 1);
@@ -553,7 +620,8 @@ class OrderPaymentApiTest extends TestCase
         ])->assertStatus(201)
             ->assertJsonPath('data.diskon', '20000.00')
             ->assertJsonPath('data.pph', '19800.00')
-            ->assertJsonPath('data.total_pembayaran', '199800.00');
+            ->assertJsonPath('data.biaya_pengiriman', '7000.00')
+            ->assertJsonPath('data.total_pembayaran', '206800.00');
 
         $this->assertDatabaseHas('voucher_usages', [
             'id_user' => $user->id_user,
@@ -1051,6 +1119,49 @@ class OrderPaymentApiTest extends TestCase
         $this->getJson('/api/orders/'.$order->id_order)
             ->assertStatus(200)
             ->assertJsonPath('data.status_pesanan', 'menunggu_pembayaran');
+    }
+
+    public function test_webhook_settles_order_after_expiry_and_commits_released_stock(): void
+    {
+        $user = $this->makeUser();
+        $variant = $this->makeCategoryProductVariant(5);
+        $order = $this->makeOrder($user, $variant, 2, 200000, 'dibatalkan');
+        Payment::create([
+            'id_payment' => (string) Str::uuid(),
+            'id_order' => $order->id_order,
+            'provider' => 'midtrans',
+            'jumlah_pembayaran' => 200000,
+            'status_pembayaran' => 'kedaluwarsa',
+        ]);
+
+        $payload = [
+            'order_id' => $order->nomor_pesanan,
+            'transaction_status' => 'settlement',
+            'fraud_status' => 'accept',
+            'payment_type' => 'qris',
+            'transaction_id' => 'trx-late-settlement',
+            'gross_amount' => '200000.00',
+            'status_code' => '200',
+        ];
+
+        $this->mockNotification($payload);
+        $this->postJson('/api/payments/midtrans/notification', $payload)->assertStatus(200);
+
+        $this->assertSame('dibayar', $order->fresh()->status_pesanan);
+        $this->assertSame(3, (int) $variant->fresh()->stok, 'Stok fisik dikurangi setelah settlement terlambat.');
+        $this->assertDatabaseHas('payments', [
+            'id_order' => $order->id_order,
+            'status_pembayaran' => 'dibayar',
+        ]);
+        $this->assertDatabaseCount('inventory_movements', 1);
+        $this->assertDatabaseCount('order_status_histories', 1);
+
+        $this->postJson('/api/payments/midtrans/notification', $payload)->assertStatus(200);
+
+        $this->assertSame('dibayar', $order->fresh()->status_pesanan);
+        $this->assertSame(3, (int) $variant->fresh()->stok, 'Notifikasi duplikat tidak mengurangi stok lagi.');
+        $this->assertDatabaseCount('inventory_movements', 1);
+        $this->assertDatabaseCount('order_status_histories', 1);
     }
 
     public function test_expire_command_cancels_unpaid_order_and_marks_payment(): void

@@ -46,8 +46,8 @@ class OtpEndpointTest extends EndpointTestCase
                 'nama_pengguna' => 'Pelanggan OTP',
                 'email' => $email,
                 'nomor_telepon' => '081234567890',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
             ],
             'expected' => 201,
         ]);
@@ -225,14 +225,14 @@ class OtpEndpointTest extends EndpointTestCase
             'json' => [
                 'email' => $user->email,
                 'reset_token' => $resetToken,
-                'kata_sandi' => 'sandiBaru123',
-                'kata_sandi_confirmation' => 'sandiBaru123',
+                'kata_sandi' => 'SandiBaru123#',
+                'kata_sandi_confirmation' => 'SandiBaru123#',
             ],
             'expected' => 200,
         ]);
 
         $user->refresh();
-        $this->assertTrue(Hash::check('sandiBaru123', $user->kata_sandi), 'Password baru harus tersimpan ter-hash.');
+        $this->assertTrue(Hash::check('SandiBaru123#', $user->kata_sandi), 'Password baru harus tersimpan ter-hash.');
         $this->assertSame(0, $user->tokens()->count(), 'Semua token Sanctum harus dicabut setelah reset password.');
         $this->assertSame(1, (int) DB::table('password_reset_tokens_custom')->where('email', $user->email)->where('used', true)->count());
 
@@ -242,8 +242,8 @@ class OtpEndpointTest extends EndpointTestCase
             'json' => [
                 'email' => $user->email,
                 'reset_token' => $resetToken,
-                'kata_sandi' => 'sandiLain123',
-                'kata_sandi_confirmation' => 'sandiLain123',
+                'kata_sandi' => 'SandiLain123#',
+                'kata_sandi_confirmation' => 'SandiLain123#',
             ],
             'expected' => 422,
         ]);
@@ -259,7 +259,7 @@ class OtpEndpointTest extends EndpointTestCase
         $this->hit('POST', '/api/login', [
             'endpoint' => 'POST /api/login',
             'label' => 'Login dengan password baru (harus berhasil)',
-            'json' => ['email' => $user->email, 'kata_sandi' => 'sandiBaru123'],
+            'json' => ['email' => $user->email, 'kata_sandi' => 'SandiBaru123#'],
             'expected' => 200,
         ]);
 
@@ -382,8 +382,8 @@ class OtpEndpointTest extends EndpointTestCase
             'json' => [
                 'nama_pengguna' => 'Pelanggan Async',
                 'email' => 'async.register@example.com',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
             ],
             'expected' => 201,
         ]);

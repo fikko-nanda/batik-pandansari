@@ -2,27 +2,28 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cookie;
-use Illuminate\Support\Facades\Http;
-use Throwable;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Menyimpan hak akses panel (admin/teknisi) di cookie terenkripsi HttpOnly.
- * Token API diverifikasi ulang ke backend, jadi peran tidak bisa dipalsukan
- * dari sisi browser.
+ * Token API diverifikasi langsung dari database, jadi peran tidak bisa
+ * dipalsukan dari sisi browser dan tidak membutuhkan request HTTP ke diri
+ * sendiri.
  */
 class PanelSessionController extends Controller
 {
     private const COOKIE = 'pandansari_panel';
 
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'token' => ['required', 'string', 'max:4096'],
         ]);
 
-        $profil = $this->profilBackend($validated['token']);
+        $profil = $this->profilDariToken($validated['token']);
 
         if ($profil === null) {
             Cookie::queue(Cookie::forget(self::COOKIE, '/', config('session.domain')));
@@ -69,7 +70,7 @@ class PanelSessionController extends Controller
         ]);
     }
 
-    public function destroy()
+    public function destroy(): JsonResponse
     {
         Cookie::queue(Cookie::forget(self::COOKIE, '/', config('session.domain')));
 
@@ -80,47 +81,25 @@ class PanelSessionController extends Controller
     }
 
     /**
-     * Verifikasi token ke GET /api/me milik backend.
+     * Ambil profil dari token Sanctum yang masih berlaku.
      *
      * @return array<string, mixed>|null
      */
-    private function profilBackend(string $token): ?array
+    private function profilDariToken(string $token): ?array
     {
-        $base = rtrim((string) config('services.api.url', ''), '/');
+        $accessToken = PersonalAccessToken::findToken($token);
 
-        if ($base === '') {
+        if (! $accessToken || ! $accessToken->tokenable) {
             return null;
         }
 
-        $caBundle = config('services.api.ca_bundle');
-
-        try {
-            $response = Http::withOptions([
-                // Ikuti CA bundle kustom yang sama dengan MediaProxy (Windows dev/ngrok).
-                'verify' => $caBundle ?: true,
-            ])->withToken($token)
-                ->withHeaders([
-                    'Accept' => 'application/json',
-                    'ngrok-skip-browser-warning' => 'true',
-                ])
-                ->connectTimeout(10)
-                ->timeout(20)
-                ->get($base.'/me');
-        } catch (Throwable) {
+        if ($accessToken->expires_at !== null && $accessToken->expires_at->isPast()) {
             return null;
         }
 
-        if (! $response->successful()) {
-            return null;
-        }
-
-        $json = $response->json();
-
-        if (is_array($json['data'] ?? null)) {
-            return $json['data'];
-        }
-
-        return is_array($json) ? $json : null;
+        return [
+            'peran' => $accessToken->tokenable->peran,
+        ];
     }
 
     /** @param array<string, mixed> $profil */
