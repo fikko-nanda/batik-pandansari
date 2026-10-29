@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Public;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Rules\StrongPassword;
 use App\Services\OtpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -215,8 +216,8 @@ class OtpController extends Controller
             'email' => ['required', 'string', 'email', 'max:150'],
             'reset_token' => ['sometimes', 'string'],
             'token' => ['sometimes', 'string'],
-            'kata_sandi' => ['sometimes', 'string', 'min:8', 'confirmed'],
-            'password' => ['sometimes', 'string', 'min:8', 'confirmed'],
+            'kata_sandi' => ['sometimes', 'string', new StrongPassword, 'confirmed'],
+            'password' => ['sometimes', 'string', new StrongPassword, 'confirmed'],
         ]);
 
         if (empty($validated['reset_token'] ?? null) && empty($validated['token'] ?? null)) {

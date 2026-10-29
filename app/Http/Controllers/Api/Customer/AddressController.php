@@ -36,7 +36,10 @@ class AddressController extends Controller
             'nama_kecamatan' => ['required', 'string', 'max:60'],
             'kode_pos' => ['required', 'string', 'max:10'],
             'alamat_lengkap' => ['required', 'string'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90', 'required_with:longitude'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180', 'required_with:latitude'],
             'alamat_utama' => ['nullable', 'boolean'],
+            'id_tujuan_rajaongkir' => ['nullable', 'string', 'max:100'],
         ]);
 
         $user = $request->user();
@@ -62,7 +65,10 @@ class AddressController extends Controller
                 'nama_kecamatan' => $validated['nama_kecamatan'],
                 'kode_pos' => $validated['kode_pos'],
                 'alamat_lengkap' => $validated['alamat_lengkap'],
+                'latitude' => $validated['latitude'] ?? null,
+                'longitude' => $validated['longitude'] ?? null,
                 'alamat_utama' => $isPrimary,
+                'id_tujuan_rajaongkir' => $validated['id_tujuan_rajaongkir'] ?? null,
             ]);
         });
 
@@ -105,7 +111,10 @@ class AddressController extends Controller
             'nama_kecamatan' => ['sometimes', 'required', 'string', 'max:60'],
             'kode_pos' => ['sometimes', 'required', 'string', 'max:10'],
             'alamat_lengkap' => ['sometimes', 'required', 'string'],
+            'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90', 'required_with:longitude'],
+            'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180', 'required_with:latitude'],
             'alamat_utama' => ['sometimes', 'boolean'],
+            'id_tujuan_rajaongkir' => ['sometimes', 'nullable', 'string', 'max:100'],
         ]);
 
         DB::transaction(function () use ($validated, $address, $request) {

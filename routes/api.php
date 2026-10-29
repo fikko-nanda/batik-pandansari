@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\Admin\ShipmentController;
 use App\Http\Controllers\Api\Admin\UserController;
 use App\Http\Controllers\Api\Admin\VoucherController;
 use App\Http\Controllers\Api\Admin\VoucherUsageController;
+use App\Http\Controllers\Api\Admin\ZonaPengirimanController;
 use App\Http\Controllers\Api\Customer\AddressController;
 use App\Http\Controllers\Api\Customer\AuthController;
 use App\Http\Controllers\Api\Customer\CartController;
@@ -29,6 +30,7 @@ use App\Http\Controllers\Api\Customer\CheckoutController;
 use App\Http\Controllers\Api\Customer\GoogleAuthController;
 use App\Http\Controllers\Api\Customer\OrderController as CustomerOrderController;
 use App\Http\Controllers\Api\Customer\PaymentController as CustomerPaymentController;
+use App\Http\Controllers\Api\Customer\ShippingController as CustomerShippingController;
 use App\Http\Controllers\Api\Customer\VoucherController as CustomerVoucherController;
 use App\Http\Controllers\Api\Customer\VoucherUsageController as CustomerVoucherUsageController;
 use App\Http\Controllers\Api\Customer\WishlistController;
@@ -80,6 +82,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/addresses/{id}', [AddressController::class, 'show']);
     Route::put('/addresses/{id}', [AddressController::class, 'update']);
     Route::delete('/addresses/{id}', [AddressController::class, 'destroy']);
+
+    // API Pengiriman (login): cari alamat & hitung ongkir dari keranjang.
+    Route::get('/shipping/address-search', [CustomerShippingController::class, 'searchAddresses'])
+        ->middleware('throttle:shipping-search');
+    Route::post('/shipping/quote', [CustomerShippingController::class, 'quote'])
+        ->middleware('throttle:shipping-quote');
 
     // API Wishlist (login, hanya milik sendiri)
     Route::get('/wishlist', [WishlistController::class, 'index']);
@@ -241,6 +249,12 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     // API Pengiriman (admin)
     Route::get('/admin/shipments', [ShipmentController::class, 'index']);
     Route::put('/admin/shipments/{id}/status', [ShipmentController::class, 'updateStatus']);
+
+    // API Zona & tarif pengiriman (admin)
+    Route::get('/admin/shipping/zones', [ZonaPengirimanController::class, 'index']);
+    Route::post('/admin/shipping/zones', [ZonaPengirimanController::class, 'store']);
+    Route::get('/admin/shipping/zones/{id}', [ZonaPengirimanController::class, 'show']);
+    Route::put('/admin/shipping/zones/{id}', [ZonaPengirimanController::class, 'update']);
 
     // API Inventaris (admin)
     // Route statis wajib didaftarkan sebelum /admin/inventory/{variant_id}

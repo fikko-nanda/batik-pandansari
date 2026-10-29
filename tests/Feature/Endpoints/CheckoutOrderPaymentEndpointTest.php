@@ -68,12 +68,13 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $catalog = $this->seedCatalog(10, 150000);
         $address = $this->makeAddress($user);
         $this->addToCart($user, $catalog['variant'], 2);
+        $this->seedShippingBaseline(5.0);
 
-        $this->note('Checkout tanpa ongkir: total = (subtotal - diskon) + PPh 11%.');
+        $this->note('Checkout dengan ongkir: 5 km, 1 kg, zona uji Rp5.000 + Rp2.000/kg.');
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout sukses (tanpa ongkir)',
+            'label' => 'Checkout sukses (dengan ongkir)',
             'json' => [
                 'id_user_address' => $address->id_user_address,
                 'catatan' => 'Tolong dikemas aman.',
@@ -84,10 +85,13 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertSame('menunggu_pembayaran', $data['status_pesanan'] ?? null);
         $this->assertSame(300000.0, (float) ($data['subtotal'] ?? 0), 'Subtotal 2 x 150.000.');
-        $this->assertSame(0.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Tidak ada ongkir.');
+        $this->assertSame(7000.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Ongkir zona uji 1 kg.');
+        $this->assertSame(5.0, (float) ($data['jarak_km'] ?? 0));
+        $this->assertSame('Zona Uji', $data['zona_pengiriman'] ?? null);
+        $this->assertSame(1000, (int) ($data['berat_pengiriman_gram'] ?? 0));
         $this->assertSame(0.0, (float) ($data['diskon'] ?? 0));
         $this->assertSame(33000.0, (float) ($data['pph'] ?? 0), 'PPh 11% x 300.000.');
-        $this->assertSame(333000.0, (float) ($data['total_pembayaran'] ?? 0));
+        $this->assertSame(340000.0, (float) ($data['total_pembayaran'] ?? 0));
         $this->assertSame('Tolong dikemas aman.', $data['catatan'] ?? null);
         $this->assertCount(1, $data['items'] ?? []);
         $this->assertMatchesRegularExpression('/^ORD-\d{8}-\d{4}$/', (string) ($data['nomor_pesanan'] ?? ''));
@@ -117,6 +121,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $catalog = $this->seedCatalog(10, 150000);
         $address = $this->makeAddress($user);
         $this->addToCart($user, $catalog['variant'], 3);
+        $this->seedShippingBaseline(5.0);
         $voucher = $this->makeVoucher([
             'kode_voucher' => 'COCHK10',
             'tipe_diskon' => 'persentase',
@@ -127,7 +132,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
-            'label' => 'Checkout dengan voucher persen 10% (tanpa ongkir)',
+            'label' => 'Checkout dengan voucher persen 10% (dengan ongkir)',
             'json' => [
                 'id_user_address' => $address->id_user_address,
                 'kode_voucher' => 'COCHK10',
@@ -138,8 +143,9 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertSame(450000.0, (float) ($data['subtotal'] ?? 0), 'Subtotal 3 x 150.000.');
         $this->assertSame(45000.0, (float) ($data['diskon'] ?? 0), 'Diskon 10% x 450.000.');
+        $this->assertSame(9000.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Ongkir zona uji 2 kg.');
         $this->assertSame(44550.0, (float) ($data['pph'] ?? 0), 'PPh 11% x 405.000.');
-        $this->assertSame(449550.0, (float) ($data['total_pembayaran'] ?? 0), '405.000 + 44.550.');
+        $this->assertSame(458550.0, (float) ($data['total_pembayaran'] ?? 0), '405.000 + 44.550 + 9.000.');
 
         $this->assertSame(
             [
@@ -169,6 +175,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $address = $this->makeAddress($user);
         $this->addToCart($user, $variantA, 2);
         $this->addToCart($user, $variantB, 1);
+        $this->seedShippingBaseline(5.0);
         $voucher = $this->makeVoucher([
             'kode_voucher' => 'COPRODUK10',
             'tipe_diskon' => 'persentase',
@@ -191,8 +198,9 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $data = $this->recorded[0]['response']['data'] ?? [];
         $this->assertSame(500000.0, (float) ($data['subtotal'] ?? 0), 'Subtotal 2 x 150.000 + 1 x 200.000.');
         $this->assertSame(30000.0, (float) ($data['diskon'] ?? 0), 'Diskon 10% x 300.000 (produk A saja).');
+        $this->assertSame(9000.0, (float) ($data['biaya_pengiriman'] ?? 0), 'Ongkir zona uji 2 kg.');
         $this->assertSame(51700.0, (float) ($data['pph'] ?? 0), 'PPh 11% x 470.000.');
-        $this->assertSame(521700.0, (float) ($data['total_pembayaran'] ?? 0), '470.000 + 51.700.');
+        $this->assertSame(530700.0, (float) ($data['total_pembayaran'] ?? 0), '470.000 + 51.700 + 9.000.');
 
         $usage = VoucherUsage::where('id_voucher', $voucher->id_voucher)->first();
         $this->assertSame(30000.0, (float) ($usage->jumlah_diskon ?? 0));
@@ -207,6 +215,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $address = $this->makeAddress($user);
         $lain = $this->makeUser('pelanggan');
         $alamatLain = $this->makeAddress($lain);
+        $this->seedShippingBaseline(5.0);
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
@@ -275,6 +284,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $variant = $this->makeVariant($product, 10, 'aktif');
         $address = $this->makeAddress($user);
         $this->addToCart($user, $variant, 1);
+        $this->seedShippingBaseline(5.0);
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
@@ -474,6 +484,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $catalog = $this->seedCatalog(10, 150000);
         $address = $this->makeAddress($user);
         $this->addToCart($user, $catalog['variant'], 2);
+        $this->seedShippingBaseline(5.0);
 
         $this->hit('POST', '/api/checkout', [
             'endpoint' => 'POST /api/checkout',
@@ -507,7 +518,7 @@ class CheckoutOrderPaymentEndpointTest extends EndpointTestCase
         $this->assertStringContainsString('sandbox', (string) ($data['redirect_url'] ?? ''), 'redirect_url menuju sandbox Midtrans.');
         $this->assertSame('menunggu', $data['status_pembayaran'] ?? null);
         $this->assertSame((string) config('services.midtrans.client_key'), (string) ($data['client_key'] ?? ''));
-        $this->assertSame(333000.0, (float) ($data['jumlah_pembayaran'] ?? 0));
+        $this->assertSame(340000.0, (float) ($data['jumlah_pembayaran'] ?? 0));
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9._-]+$/', (string) ($data['snap_token'] ?? ''));
 
         $this->note(

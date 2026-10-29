@@ -11,13 +11,16 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductVariant;
+use App\Models\ProfilUsaha;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Models\Voucher;
 use App\Models\VoucherUsage;
 use App\Models\WishlistItem;
+use App\Models\ZonaPengiriman;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use RuntimeException;
@@ -181,8 +184,12 @@ abstract class EndpointTestCase extends TestCase
         ]);
     }
 
-    protected function makeAddress(User $user, bool $utama = true): UserAddress
-    {
+    protected function makeAddress(
+        User $user,
+        bool $utama = true,
+        float $latitude = -7.5,
+        float $longitude = 110.8
+    ): UserAddress {
         return UserAddress::create([
             'id_user_address' => (string) Str::uuid(),
             'id_user' => $user->id_user,
@@ -194,7 +201,79 @@ abstract class EndpointTestCase extends TestCase
             'nama_kecamatan' => 'Pekalongan Barat',
             'kode_pos' => '51133',
             'alamat_lengkap' => 'Jl. Batik No. 12',
+            'latitude' => $latitude,
+            'longitude' => $longitude,
             'alamat_utama' => $utama,
+        ]);
+    }
+
+    /**
+     * Siapkan origin, satu zona, dan respons OSRM tiruan untuk alur ongkir.
+     *
+     * @param  array<string, mixed>  $zoneOverrides
+     */
+    protected function seedShippingBaseline(float $distanceKm = 5.0, array $zoneOverrides = []): ZonaPengiriman
+    {
+        ProfilUsaha::updateOrCreate(
+            ['id_profil_usaha' => 1],
+            [
+                'nama_usaha' => 'Batik Pandansari',
+                'alamat_lengkap' => 'Wonokerto, Jembangan, Plupuh, Sragen',
+                'latitude' => -7.445,
+                'longitude' => 110.89,
+            ]
+        );
+
+        $zona = ZonaPengiriman::create(array_merge([
+            'id_zona' => (string) Str::uuid(),
+            'nama_zona' => 'Zona Uji',
+            'jarak_min_km' => 0,
+            'jarak_maks_km' => 100,
+            'biaya_dasar' => 5000,
+            'biaya_per_kg' => 2000,
+            'status_aktif' => true,
+        ], $zoneOverrides));
+
+        $this->fakeOsmRoute($distanceKm);
+
+        return $zona;
+    }
+
+    protected function fakeOsmRoute(float $distanceKm = 5.0): void
+    {
+        Http::fake([
+            rtrim((string) config('services.osm.osrm_url'), '/').'/*' => Http::response([
+                'code' => 'Ok',
+                'routes' => [
+                    [
+                        'distance' => $distanceKm * 1000,
+                        'duration' => 900,
+                    ],
+                ],
+            ]),
+        ]);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>|null  $results
+     */
+    protected function fakeOsmGeocoding(?array $results = null): void
+    {
+        $results ??= [[
+            'display_name' => 'Jembangan, Plupuh, Sragen, Jawa Tengah, 57283, Indonesia',
+            'lat' => '-7.4450000',
+            'lon' => '110.8900000',
+            'address' => [
+                'village' => 'Jembangan',
+                'suburb' => 'Plupuh',
+                'county' => 'Sragen',
+                'state' => 'Jawa Tengah',
+                'postcode' => '57283',
+            ],
+        ]];
+
+        Http::fake([
+            rtrim((string) config('services.osm.nominatim_url'), '/').'/search*' => Http::response($results),
         ]);
     }
 

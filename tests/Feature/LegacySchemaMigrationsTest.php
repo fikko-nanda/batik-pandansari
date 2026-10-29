@@ -105,4 +105,42 @@ class LegacySchemaMigrationsTest extends TestCase
 
         $migration->up();
     }
+
+    public function test_shipping_coordinate_migration_fails_before_mutating_when_source_table_is_missing(): void
+    {
+        Schema::create('user_addresses', function (Blueprint $table) {
+            $table->string('id_user_address')->primary();
+            $table->text('alamat_lengkap');
+        });
+
+        $migration = require database_path('migrations/2026_10_29_055436_add_coordinates_to_user_addresses_and_profil_usaha.php');
+
+        try {
+            $migration->up();
+            $this->fail('The migration must not be marked complete when profil_usaha is missing.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(
+                'The user_addresses and profil_usaha tables must exist before adding shipping coordinates.',
+                $exception->getMessage()
+            );
+        }
+
+        $this->assertFalse(Schema::hasColumn('user_addresses', 'latitude'));
+        $this->assertFalse(Schema::hasColumn('user_addresses', 'longitude'));
+    }
+
+    public function test_order_shipping_snapshot_migration_fails_if_orders_table_is_missing(): void
+    {
+        $migration = require database_path('migrations/2026_10_29_055436_add_shipping_snapshot_columns_to_orders.php');
+
+        try {
+            $migration->up();
+            $this->fail('The migration must not be marked complete when orders is missing.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(
+                'The orders table must exist before adding shipping snapshot columns.',
+                $exception->getMessage()
+            );
+        }
+    }
 }

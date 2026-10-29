@@ -46,9 +46,10 @@ class CartController extends Controller
             ->first();
 
         $newJumlah = $validated['jumlah'] + ($item->jumlah ?? 0);
+        $tersedia = $this->availableStock($variant);
 
-        if ($newJumlah > $variant->stok) {
-            return $this->insufficientStock($variant->stok);
+        if ($newJumlah > $tersedia) {
+            return $this->insufficientStock($tersedia);
         }
 
         if ($item) {
@@ -94,8 +95,10 @@ class CartController extends Controller
             ], 422);
         }
 
-        if ($validated['jumlah'] > $variant->stok) {
-            return $this->insufficientStock($variant->stok);
+        $tersedia = $this->availableStock($variant);
+
+        if ($validated['jumlah'] > $tersedia) {
+            return $this->insufficientStock($tersedia);
         }
 
         $item->update(['jumlah' => $validated['jumlah']]);
@@ -156,6 +159,11 @@ class CartController extends Controller
             && $variant->status_varian === 'aktif'
             && $variant->product
             && $variant->product->status_produk === 'aktif';
+    }
+
+    private function availableStock(ProductVariant $variant): int
+    {
+        return max(0, (int) $variant->stok - (int) $variant->stok_dipesan);
     }
 
     private function insufficientStock(int $stok): JsonResponse

@@ -50,23 +50,31 @@ class ProfileEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
-    public function test_profil_update_email_dan_telepon(): void
+    public function test_profil_mempertahankan_email_dan_memperbarui_telepon(): void
     {
         $user = $this->actingAsRole('pelanggan');
 
         $this->hit('PUT', '/api/me', [
             'endpoint' => 'PUT /api/me',
-            'label' => 'Perbarui email & nomor telepon',
+            'label' => 'Perbarui telepon dengan email sama (tetap 200)',
             'json' => [
-                'email' => 'pelanggan.baru@example.com',
+                'email' => strtoupper($user->email),
                 'nomor_telepon' => '089999999999',
             ],
             'expected' => 200,
         ]);
 
         $fresh = User::whereKey($user->id_user)->first();
-        $this->assertSame('pelanggan.baru@example.com', $fresh->email);
+        $this->assertSame($user->email, $fresh->email, 'Email harus tetap sama.');
         $this->assertSame('089999999999', $fresh->nomor_telepon);
+
+        $this->hit('PUT', '/api/me', [
+            'endpoint' => 'PUT /api/me',
+            'label' => 'Perbarui profil dengan email berbeda (422, email immutable)',
+            'json' => ['email' => 'pelanggan.baru@example.com'],
+            'expected' => 422,
+        ]);
+        $this->assertArrayHasKey('email', $this->recorded[1]['response']['errors'] ?? []);
 
         $this->hit('PUT', '/api/me', [
             'endpoint' => 'PUT /api/me',
@@ -74,7 +82,7 @@ class ProfileEndpointTest extends EndpointTestCase
             'json' => ['email' => 'bukan-email'],
             'expected' => 422,
         ]);
-        $this->assertArrayHasKey('email', $this->recorded[1]['response']['errors'] ?? []);
+        $this->assertArrayHasKey('email', $this->recorded[2]['response']['errors'] ?? []);
 
         $this->hit('PUT', '/api/me', [
             'endpoint' => 'PUT /api/me',
@@ -82,14 +90,14 @@ class ProfileEndpointTest extends EndpointTestCase
             'json' => ['nama_pengguna' => ''],
             'expected' => 422,
         ]);
-        $this->assertArrayHasKey('nama_pengguna', $this->recorded[2]['response']['errors'] ?? []);
+        $this->assertArrayHasKey('nama_pengguna', $this->recorded[3]['response']['errors'] ?? []);
 
         $this->assertRecorded();
     }
 
     public function test_profil_update_email_duplikat(): void
     {
-        $this->actingAsRole('pelanggan');
+        $user = $this->actingAsRole('pelanggan');
 
         User::create([
             'id_user' => (string) Str::uuid(),
@@ -102,12 +110,13 @@ class ProfileEndpointTest extends EndpointTestCase
 
         $this->hit('PUT', '/api/me', [
             'endpoint' => 'PUT /api/me',
-            'label' => 'Perbarui profil dengan email milik pengguna lain (422 unique)',
+            'label' => 'Perbarui profil dengan email milik pengguna lain (422)',
             'json' => ['email' => 'milik.orang@example.com'],
             'expected' => 422,
         ]);
 
         $this->assertArrayHasKey('email', $this->recorded[0]['response']['errors'] ?? []);
+        $this->assertSame($user->email, $user->fresh()->email, 'Email tidak boleh berubah.');
         $this->assertRecorded();
     }
 
@@ -124,15 +133,15 @@ class ProfileEndpointTest extends EndpointTestCase
             'label' => 'Ganti kata sandi dengan kata sandi saat ini yang benar',
             'json' => [
                 'kata_sandi_saat_ini' => 'password123',
-                'kata_sandi' => 'rahasia456',
-                'kata_sandi_confirmation' => 'rahasia456',
+                'kata_sandi' => 'Rahasia456#',
+                'kata_sandi_confirmation' => 'Rahasia456#',
             ],
             'expected' => 200,
         ]);
 
         $this->assertTrue($this->recorded[0]['response']['success'] ?? false);
         $this->assertTrue(
-            Hash::check('rahasia456', User::whereKey($user->id_user)->value('kata_sandi')),
+            Hash::check('Rahasia456#', User::whereKey($user->id_user)->value('kata_sandi')),
             'Kata sandi baru harus tersimpan (ter-hash) di database.'
         );
 
@@ -148,7 +157,7 @@ class ProfileEndpointTest extends EndpointTestCase
         $this->hit('POST', '/api/login', [
             'endpoint' => 'POST /api/login',
             'label' => 'Login dengan kata sandi baru setelah diganti (200)',
-            'json' => ['email' => $user->email, 'kata_sandi' => 'rahasia456'],
+            'json' => ['email' => $user->email, 'kata_sandi' => 'Rahasia456#'],
             'expected' => 200,
         ]);
         $this->assertNotEmpty($this->recorded[2]['response']['data']['token'] ?? null, 'Login dengan kata sandi baru harus menghasilkan token.');
@@ -165,8 +174,8 @@ class ProfileEndpointTest extends EndpointTestCase
             'label' => 'Ganti kata sandi dengan kata sandi saat ini yang salah (422)',
             'json' => [
                 'kata_sandi_saat_ini' => 'salah-banget',
-                'kata_sandi' => 'rahasia456',
-                'kata_sandi_confirmation' => 'rahasia456',
+                'kata_sandi' => 'Rahasia456#',
+                'kata_sandi_confirmation' => 'Rahasia456#',
             ],
             'expected' => 422,
         ]);
@@ -185,7 +194,7 @@ class ProfileEndpointTest extends EndpointTestCase
         $this->hit('PUT', '/api/me/password', [
             'endpoint' => 'PUT /api/me/password',
             'label' => 'Ganti kata sandi tanpa token (401)',
-            'json' => ['kata_sandi_saat_ini' => 'password123', 'kata_sandi' => 'rahasia456'],
+            'json' => ['kata_sandi_saat_ini' => 'password123', 'kata_sandi' => 'Rahasia456#'],
             'expected' => 401,
         ]);
 
@@ -194,7 +203,7 @@ class ProfileEndpointTest extends EndpointTestCase
         $this->hit('PUT', '/api/me/password', [
             'endpoint' => 'PUT /api/me/password',
             'label' => 'Ganti kata sandi tanpa kata sandi saat ini (422)',
-            'json' => ['kata_sandi' => 'rahasia456', 'kata_sandi_confirmation' => 'rahasia456'],
+            'json' => ['kata_sandi' => 'Rahasia456#', 'kata_sandi_confirmation' => 'Rahasia456#'],
             'expected' => 422,
         ]);
         $this->assertArrayHasKey('kata_sandi_saat_ini', $this->recorded[1]['response']['errors'] ?? []);
@@ -214,7 +223,7 @@ class ProfileEndpointTest extends EndpointTestCase
         $this->hit('PUT', '/api/me/password', [
             'endpoint' => 'PUT /api/me/password',
             'label' => 'Ganti kata sandi tanpa konfirmasi (422)',
-            'json' => ['kata_sandi_saat_ini' => 'password123', 'kata_sandi' => 'rahasia456'],
+            'json' => ['kata_sandi_saat_ini' => 'password123', 'kata_sandi' => 'Rahasia456#'],
             'expected' => 422,
         ]);
         $this->assertArrayHasKey('kata_sandi', $this->recorded[3]['response']['errors'] ?? []);

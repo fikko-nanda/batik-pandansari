@@ -61,6 +61,16 @@ class AppServiceProvider extends ServiceProvider
         // layanan Google dari satu sumber.
         RateLimiter::for('google-auth', fn (Request $request) => Limit::perMinute(20)->by($request->ip()));
 
+        // Pencarian alamat dan perhitungan ongkir memanggil layanan eksternal
+        // (Nominatim/OSRM), jadi dibatasi per pengguna/IP.
+        RateLimiter::for('shipping-search', fn (Request $request) => Limit::perMinute(
+            (int) config('services.osm.search_per_minute', 20)
+        )->by((string) ($request->user()?->id_user ?? $request->ip())));
+
+        RateLimiter::for('shipping-quote', fn (Request $request) => Limit::perMinute(
+            (int) config('services.osm.quote_per_minute', 30)
+        )->by((string) ($request->user()?->id_user ?? $request->ip())));
+
         // Login dibatasi per email+IP (anti brute force satu akun) sekaligus
         // per IP (anti credential stuffing dari satu sumber).
         RateLimiter::for('login', function (Request $request) {

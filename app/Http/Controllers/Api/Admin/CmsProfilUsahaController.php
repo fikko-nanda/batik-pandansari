@@ -45,6 +45,8 @@ class CmsProfilUsahaController extends Controller
             'nomor_whatsapp' => ['sometimes', 'nullable', 'string', 'max:30'],
             'nomor_telepon' => ['sometimes', 'nullable', 'string', 'max:30'],
             'alamat_lengkap' => ['sometimes', 'nullable', 'string'],
+            'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90', 'required_with:longitude'],
+            'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180', 'required_with:latitude'],
             'tautan_google_maps' => ['sometimes', 'nullable', 'string', 'max:500'],
             'jam_operasional' => ['sometimes', 'nullable', 'array'],
             'jam_operasional.*.hari' => ['required_with:jam_operasional', 'string', 'max:30'],

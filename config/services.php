@@ -81,6 +81,30 @@ return [
     // Client ID/Secret OAuth 2.0 dari Google Cloud Console → Credentials.
     // Dipakai memverifikasi ID Token (aud) dan access token (userinfo) pada
     // login/tautan Google.
+    /*
+    |--------------------------------------------------------------------------
+    | OpenStreetMap (Nominatim + OSRM)
+    |--------------------------------------------------------------------------
+    |
+    | Gunakan endpoint publik hanya untuk pengembangan. Di production, isi URL
+    | instance sendiri dan/atau set OSM_ALLOW_PUBLIC_DEMO=true secara sadar.
+    | Cache dan timeout mencegah permintaan berulang ke penyedia.
+    |
+    */
+    'osm' => [
+        'nominatim_url' => rtrim(env('OSM_NOMINATIM_URL', 'https://nominatim.openstreetmap.org'), '/'),
+        'osrm_url' => rtrim(env('OSM_OSRM_URL', 'https://router.project-osrm.org'), '/'),
+        'user_agent' => env('OSM_USER_AGENT', 'BatikPandansari/1.0'),
+        'timeout' => (int) env('OSM_TIMEOUT', 8),
+        'connect_timeout' => (int) env('OSM_CONNECT_TIMEOUT', 3),
+        'geocode_cache_ttl' => (int) env('OSM_GEOCODE_CACHE_TTL', 2592000),
+        'route_cache_ttl' => (int) env('OSM_ROUTE_CACHE_TTL', 604800),
+        'nominatim_min_interval_seconds' => (int) env('OSM_NOMINATIM_MIN_INTERVAL_SECONDS', 1),
+        'allow_public_demo' => (bool) env('OSM_ALLOW_PUBLIC_DEMO', false),
+        'search_per_minute' => (int) env('OSM_SEARCH_PER_MINUTE', 20),
+        'quote_per_minute' => (int) env('OSM_QUOTE_PER_MINUTE', 30),
+    ],
+
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),

@@ -83,10 +83,12 @@ class InventoryService
                 $stokSesudah = $stokSebelum + $jumlah;
                 $jenisPergerakan = 'penyesuaian_masuk';
             } else {
-                if ($jumlah > $stokSebelum) {
+                $tersedia = max(0, $stokSebelum - (int) $variant->stok_dipesan);
+
+                if ($jumlah > $tersedia) {
                     throw ValidationException::withMessages([
                         'jumlah' => [
-                            "Stok tidak mencukupi untuk {$variant->sku}. Stok tersedia: {$stokSebelum}.",
+                            "Stok tidak mencukupi untuk {$variant->sku}. Stok tersedia: {$tersedia}.",
                         ],
                     ]);
                 }

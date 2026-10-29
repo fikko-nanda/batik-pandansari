@@ -42,6 +42,7 @@ class OrderEmailApiTest extends TestCase
             $table->string('nama_pengguna');
             $table->string('email')->unique();
             $table->string('nomor_telepon')->nullable();
+            $table->string('nomor_telepon_normalized')->nullable()->unique();
             $table->string('kata_sandi');
             $table->string('peran')->default('pelanggan');
             $table->timestamp('dibuat_pada')->nullable();

@@ -39,8 +39,8 @@ class AuthEndpointTest extends EndpointTestCase
                 'nama_pengguna' => 'Budi Santoso',
                 'email' => 'budi.santoso@example.com',
                 'nomor_telepon' => '081234567890',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
             ],
             'expected' => 201,
         ]);
@@ -112,8 +112,8 @@ class AuthEndpointTest extends EndpointTestCase
             'json' => [
                 'nama_pengguna' => 'Pelanggan Baru',
                 'email' => 'konfirmasi@example.com',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia321',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia321#',
             ],
             'expected' => 422,
         ]);
@@ -133,8 +133,8 @@ class AuthEndpointTest extends EndpointTestCase
             'json' => [
                 'nama_pengguna' => 'Peniru',
                 'email' => $existing->email,
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
             ],
             'expected' => 422,
         ]);
@@ -348,8 +348,8 @@ class AuthEndpointTest extends EndpointTestCase
             'json' => [
                 'nama_pengguna' => 'Penyusup',
                 'email' => 'penyusup'.Str::random(4).'@example.com',
-                'kata_sandi' => 'rahasia123',
-                'kata_sandi_confirmation' => 'rahasia123',
+                'kata_sandi' => 'Rahasia123#',
+                'kata_sandi_confirmation' => 'Rahasia123#',
                 'peran' => 'admin',
             ],
             'expected' => 201,

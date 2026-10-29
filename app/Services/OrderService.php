@@ -224,7 +224,7 @@ class OrderService
 
     private function restoreStock(Order $order): void
     {
-        foreach ($order->items as $item) {
+        foreach ($order->items->sortBy('id_variant') as $item) {
             $variant = ProductVariant::whereKey($item->id_variant)->lockForUpdate()->first();
 
             if (! $variant) {

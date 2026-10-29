@@ -245,6 +245,34 @@ class WishlistCartEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_keranjang_menghitung_stok_tersedia_setelah_reservasi(): void
+    {
+        $this->actingAsRole('pelanggan');
+        $catalog = $this->seedCatalog(5);
+        $catalog['variant']->update(['stok_dipesan' => 3]);
+
+        $this->hit('POST', '/api/cart/items', [
+            'endpoint' => 'POST /api/cart/items',
+            'label' => 'Tambah item melebihi stok tersedia (5 - 3 = 2)',
+            'json' => ['id_variant' => $catalog['variant']->id_variant, 'jumlah' => 3],
+            'expected' => 422,
+        ]);
+
+        $this->assertStringContainsString(
+            'Stok tersedia: 2.',
+            (string) ($this->recorded[0]['response']['message'] ?? '')
+        );
+
+        $this->hit('POST', '/api/cart/items', [
+            'endpoint' => 'POST /api/cart/items',
+            'label' => 'Tambah item sesuai stok tersedia',
+            'json' => ['id_variant' => $catalog['variant']->id_variant, 'jumlah' => 2],
+            'expected' => 201,
+        ]);
+
+        $this->assertRecorded();
+    }
+
     public function test_keranjang_store_validasi(): void
     {
         $this->actingAsRole('pelanggan');

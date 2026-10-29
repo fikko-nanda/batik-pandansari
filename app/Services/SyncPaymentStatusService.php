@@ -21,6 +21,9 @@ use Throwable;
  * Penerapan bersifat idempoten: status pembayaran yang sudah terminal
  * (dibayar/ditolak/kedaluwarsa/dibatalkan) tidak diproses ulang, sehingga
  * notifikasi ganda atau sync berulang tidak membuat riwayat/email duplikat.
+ * Pengecualian: settlement yang datang setelah pembayaran/ pesanan
+ * kedaluwarsa atau dibatalkan tetap diterapkan sekali agar dana yang benar-
+ * benar diterima tidak hilang dari catatan.
  */
 class SyncPaymentStatusService
 {
@@ -94,7 +97,9 @@ class SyncPaymentStatusService
             $mapping,
             &$duplicate
         ) {
-            $payment = Payment::where('id_order', $order->id_order)
+            $freshOrder = Order::whereKey($order->id_order)->lockForUpdate()->firstOrFail();
+
+            $payment = Payment::where('id_order', $freshOrder->id_order)
                 ->orderByDesc('dibuat_pada')
                 ->lockForUpdate()
                 ->first();
@@ -102,11 +107,11 @@ class SyncPaymentStatusService
             if (! $payment) {
                 $payment = Payment::create([
                     'id_payment' => (string) Str::uuid(),
-                    'id_order' => $order->id_order,
+                    'id_order' => $freshOrder->id_order,
                     'provider' => 'midtrans',
                     'provider_transaction_id' => $transactionId,
                     'metode_pembayaran' => $paymentType,
-                    'jumlah_pembayaran' => $order->total_pembayaran,
+                    'jumlah_pembayaran' => $freshOrder->total_pembayaran,
                     'status_pembayaran' => 'menunggu',
                     'payment_url' => null,
                     'payment_reference' => null,
@@ -115,7 +120,12 @@ class SyncPaymentStatusService
                 ]);
             }
 
-            if (in_array($payment->status_pembayaran, self::TERMINAL_PAYMENT_STATUSES, true)) {
+            $lateSettlement = $mapping['paid']
+                && in_array($payment->status_pembayaran, ['kedaluwarsa', 'dibatalkan'], true)
+                && in_array($freshOrder->status_pesanan, ['menunggu_pembayaran', 'dibatalkan'], true);
+
+            if (in_array($payment->status_pembayaran, self::TERMINAL_PAYMENT_STATUSES, true)
+                && ! $lateSettlement) {
                 $duplicate = true;
 
                 return;
@@ -132,8 +142,6 @@ class SyncPaymentStatusService
             }
 
             $payment->update($paymentUpdates);
-
-            $freshOrder = Order::whereKey($order->id_order)->lockForUpdate()->firstOrFail();
 
             if ($mapping['order'] !== null && $freshOrder->status_pesanan !== $mapping['order']) {
                 $this->orderService->changeStatus(

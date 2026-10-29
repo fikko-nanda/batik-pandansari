@@ -61,8 +61,8 @@ class SecurityHardeningTest extends TestCase
         $payload = [
             'nama_pengguna' => 'Pendaftar Uji',
             'email' => 'daftar-rate-limit@example.com',
-            'kata_sandi' => 'kata-sandi-kuat',
-            'kata_sandi_confirmation' => 'kata-sandi-kuat',
+            'kata_sandi' => 'KataSandi1@',
+            'kata_sandi_confirmation' => 'KataSandi1@',
         ];
 
         $this->postJson('/api/register', $payload)->assertStatus(201);
