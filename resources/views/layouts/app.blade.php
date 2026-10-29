@@ -18,13 +18,21 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <!-- Google Identity Services (GIS) client for Google Sign-In -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Midtrans Snap.js (Embed Pop-Up Mode) -->
+    @php
+        $midtransClientKey = config('services.midtrans.client_key') ?? env('MIDTRANS_CLIENT_KEY');
+        $midtransSnapUrl = (config('services.midtrans.is_production') ?? env('MIDTRANS_IS_PRODUCTION'))
+            ? 'https://app.midtrans.com/snap/snap.js'
+            : 'https://app.sandbox.midtrans.com/snap/snap.js';
+    @endphp
+    <script src="{{ $midtransSnapUrl }}" data-client-key="{{ $midtransClientKey ?? 'SB-Mid-client-sample' }}"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="flex flex-col min-h-screen text-[#0F1A24] antialiased font-['Plus_Jakarta_Sans',sans-serif] bg-[#FAF8F5] relative overflow-x-hidden">
 
     <x-announcement-bar />
     <x-navbar />
-        <main class="flex-grow w-full overflow-hidden">
+        <main class="flex-grow w-full">
             @yield('content')
         </main>
 

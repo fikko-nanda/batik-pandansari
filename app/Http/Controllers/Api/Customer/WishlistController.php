@@ -33,6 +33,10 @@ class WishlistController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        if ($request->has('product_id') && ! $request->has('id_product')) {
+            $request->merge(['id_product' => $request->input('product_id')]);
+        }
+
         $validated = $request->validate([
             'id_product' => ['required', 'string', 'exists:products,id_product'],
         ]);
@@ -52,12 +56,13 @@ class WishlistController extends Controller
 
         $exists = WishlistItem::where('id_user', $user->id_user)
             ->where('id_product', $product->id_product)
-            ->exists();
+            ->first();
 
         if ($exists) {
             return response()->json([
                 'success' => false,
                 'message' => 'Produk sudah ada di wishlist.',
+                'data' => $exists->load('product'),
             ], 422);
         }
 
@@ -76,8 +81,11 @@ class WishlistController extends Controller
 
     public function destroy(Request $request, string $id): JsonResponse
     {
-        $item = WishlistItem::where('id_wishlist_item', $id)
-            ->where('id_user', $request->user()->id_user)
+        $item = WishlistItem::where('id_user', $request->user()->id_user)
+            ->where(function ($query) use ($id) {
+                $query->where('id_wishlist_item', $id)
+                    ->orWhere('id_product', $id);
+            })
             ->first();
 
         if (! $item) {

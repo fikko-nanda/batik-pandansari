@@ -544,7 +544,8 @@ window.PandansariAPI = {
     /** Alias sesuai spesifikasi: GET /api/wishlist. */
     getWishlist() { return this.wishlist(); },
     async addWishlist(id_product) {
-        const r = await this.fetch('/wishlist', { method: 'POST', body: { id_product } });
+        const pid = typeof id_product === 'object' && id_product !== null ? (id_product.id_product || id_product.product_id) : id_product;
+        const r = await this.fetch('/wishlist', { method: 'POST', body: { id_product: pid, product_id: pid } });
         this.jadwalLencana();
         return r;
     },
@@ -555,6 +556,8 @@ window.PandansariAPI = {
         this.jadwalLencana();
         return r;
     },
+    /** Alias sesuai spesifikasi: DELETE /api/wishlist/{id}. */
+    deleteWishlist(id) { return this.removeWishlist(id); },
 
     /* ---------- Alamat ---------- */
     addresses() { return this.fetch('/addresses'); },
@@ -683,24 +686,31 @@ window.PandansariAPI = {
     },
     lastPayment(id) { return this.fetch(`/orders/${id}/payment`); },
 
-    /* ---------- Midtrans Snap (popup) ---------- */
+    /* ---------- Midtrans Snap (popup modal embed) ---------- */
     /** URL snap.js — boleh dioverride via VITE_SNAP_URL di .env (default: sandbox). */
     _snapUrl() {
         return String(import.meta.env?.VITE_SNAP_URL ?? 'https://app.sandbox.midtrans.com/snap/snap.js').trim();
     },
     /**
      * Muat script snap.js sekali (dengan data-client-key dari response backend).
-     * Resolve window.snap bila siap; throw bila gagal → pemanggil memakai fallback redirect_url.
+     * Resolve window.snap bila siap; throw bila gagal.
      */
     _pastikanSnapScript(clientKey) {
-        if (!clientKey) throw new Error('client_key tidak ada');
+        if (window.snap && typeof window.snap.pay === 'function') {
+            return Promise.resolve(window.snap);
+        }
         const idScript = 'midtrans-snap-script';
         const existing = document.getElementById(idScript);
-        if (existing && existing.dataset.clientKey === clientKey) {
-            if (window.snap?.pay) return window.snap;
-            throw new Error('Snap belum siap');
+        if (existing) {
+            if (window.snap?.pay) return Promise.resolve(window.snap);
+            if (!clientKey || existing.dataset.clientKey === clientKey) {
+                return new Promise((resolve, reject) => {
+                    existing.addEventListener('load', () => window.snap?.pay ? resolve(window.snap) : reject(new Error('Snap belum siap')));
+                });
+            }
+            existing.remove(); // client_key berubah → ganti script
         }
-        if (existing) existing.remove(); // client_key berubah → ganti script
+        if (!clientKey) throw new Error('client_key Midtrans tidak tersedia.');
         return new Promise((resolve, reject) => {
             const s = document.createElement('script');
             s.id = idScript;
@@ -712,31 +722,30 @@ window.PandansariAPI = {
         });
     },
     /**
-     * Buka popup Midtrans Snap utk satu transaksi pembayaran.
+     * Buka popup Midtrans Snap (Embed Modal) utk satu transaksi pembayaran tanpa redirect.
      * Callback (opsional): onSuccess, onPending, onError, onClose.
-     * Jika snap_token/client_key tidak ada ATAU script gagal termuat →
-     * fallback ke redirect_url (alur lama) agar tombol bayar tetap bekerja.
-     * Return: 'snap' (popup dibuka) | 'redirect' (dialihkan).
      */
     async bayarSnap(payment, { onSuccess, onPending, onError, onClose } = {}) {
-        const url = payment?.redirect_url ?? payment?.payment_url;
         const token = payment?.snap_token ?? payment?.token;
         const key = payment?.client_key;
-        try {
-            const snap = await this._pastikanSnapScript(key);
-            snap.pay(token, {
-                // 1) Pembayaran sukses → default redirect ke /orders (Pesanan Saya)
-                onSuccess: (r) => { onSuccess ? onSuccess(r) : (window.location.href = '/orders'); },
-                onPending: (r) => { onPending ? onPending(r) : (window.location.href = '/orders'); },
-                onError: (r) => { onError ? onError(r) : this.toast(r?.message ?? 'Pembayaran gagal, silakan coba lagi.', false); },
-                // 2) Popup ditutup user (tanpa selesai bayar) → pemanggil menentukan re-fetch status
-                onClose: () => { onClose ? onClose() : null; },
-            });
-            return 'snap';
-        } catch {
-            if (url) { window.location.href = url; return 'redirect'; }
-            throw new Error('Midtrans Snap tidak tersedia dan redirect_url kosong.');
+        if (!token) throw new Error('Token Snap Midtrans (snap_token) tidak tersedia.');
+
+        const snap = await this._pastikanSnapScript(key);
+        if (!snap || typeof snap.pay !== 'function') {
+            throw new Error('Modul Midtrans Snap.js belum siap di halaman.');
         }
+
+        snap.pay(token, {
+            // 1) Pembayaran sukses via Pop-Up Modal
+            onSuccess: (r) => { onSuccess ? onSuccess(r) : (window.location.href = '/orders'); },
+            // 2) Pembayaran tertunda (menunggu transfer VA/pembayaran gerai)
+            onPending: (r) => { onPending ? onPending(r) : (window.location.href = '/orders'); },
+            // 3) Error pembayaran
+            onError: (r) => { onError ? onError(r) : this.toast(r?.message ?? 'Pembayaran gagal, silakan coba lagi.', false); },
+            // 4) Modal ditutup user tanpa menyelesaikan pembayaran
+            onClose: () => { onClose ? onClose() : null; },
+        });
+        return 'snap';
     },
 
     /**

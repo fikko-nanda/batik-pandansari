@@ -3,7 +3,7 @@
 @section('content')
 
     <!-- Container Utama Wishlist / Produk Favorit (data dari GET /api/wishlist) -->
-    <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
+    <div class="bg-[#FAF8F5] min-h-screen pt-6 sm:pt-8 pb-12 sm:pb-16 font-['Plus_Jakarta_Sans']"
          x-data="{
             items: [],
             loading: true,

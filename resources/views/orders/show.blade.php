@@ -3,7 +3,7 @@
 @section('content')
 
     <!-- Detail Pesanan (customer) — data dari GET /api/orders/{id}, bayar via Midtrans Snap -->
-    <div class="bg-[#FAF8F5] min-h-screen py-6 sm:py-10 font-['Plus_Jakarta_Sans']"
+    <div class="bg-[#FAF8F5] min-h-screen pt-6 sm:pt-8 pb-12 sm:pb-16 font-['Plus_Jakarta_Sans']"
          x-data="{
             // ID pesanan dari URL /orders/{id} (diisi backend via route closure)
             orderId: '{{ $id ?? '' }}',
