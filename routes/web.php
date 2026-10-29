@@ -48,6 +48,10 @@ Route::get('/media/cms-promo/{filename}', [MediaProxyController::class, 'cmsProm
     ->where('filename', '[A-Za-z0-9._-]+')
     ->name('media.cms-promo');
 
+Route::get('/media/cms-profil/{filename}', [MediaProxyController::class, 'cmsProfil'])
+    ->where('filename', '[A-Za-z0-9._-]+')
+    ->name('media.cms-profil');
+
 Route::get('/media/vouchers/{filename}', [MediaProxyController::class, 'vouchers'])
     ->where('filename', '[A-Za-z0-9._-]+')
     ->name('media.vouchers');
