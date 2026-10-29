@@ -26,7 +26,11 @@
                 return this.items.reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
             },
             get hasOverStock() {
-                return this.items.some(i => i.variant?.stok != null && Number(i.jumlah) > Number(i.variant.stok));
+                return this.items.some(i => {
+                    const stok = i.variant?.stok;
+                    if (stok == null) return false;
+                    return Number(i.jumlah) > Number(stok);
+                });
             },
             get subtotal() {
                 return this.items.reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
@@ -43,10 +47,10 @@
                 return Math.max(0, this.subtotal - this.discountAmount);
             },
             get isCheckoutDisabled() {
-                return this.isLoading || this.needLogin || !this.items.length || !!this.errorMsg || this.hasOverStock;
+                return this.isLoading || this.loadingCart || this.busy || this.needLogin || !this.items.length || !!this.errorMsg || this.hasOverStock;
             },
             get isActionDisabled() {
-                return this.isLoading || !this.items.length || !!this.errorMsg || this.needLogin;
+                return this.isLoading || this.loadingCart || this.busy || !this.items.length || !!this.errorMsg || this.needLogin;
             },
 
             // --- Helper render ---
@@ -80,19 +84,31 @@
                 this.errorMsg = '';
                 try {
                     const res = await PandansariAPI.cart();
+                    console.debug('[Cart][load] res:', res);
                     if (res && res.ok) {
                         const cart = res.data ?? {};
-                        this.items = cart.items ?? (Array.isArray(cart) ? cart : []);
+                        if (Array.isArray(cart)) {
+                            this.items = cart;
+                        } else if (Array.isArray(cart.items)) {
+                            this.items = cart.items;
+                        } else if (Array.isArray(cart.cart_items)) {
+                            this.items = cart.cart_items;
+                        } else {
+                            this.items = [];
+                        }
                         if (!this.items.length) this.msg = '';
                     } else if (res && res.status === 401) {
                         this.needLogin = true;
+                        this.items = [];
                     } else {
                         this.errorMsg = res?.message || 'Gagal memuat keranjang belanja. Silakan coba lagi.';
+                        this.items = [];
                     }
                     return res;
                 } catch (err) {
                     console.error('[Cart] Error loading cart:', err);
                     this.errorMsg = 'Terjadi kesalahan saat memuat data keranjang belanja.';
+                    this.items = [];
                     return { ok: false, message: this.errorMsg };
                 } finally {
                     this.isLoading = false;
@@ -102,7 +118,7 @@
 
             // === Aksi item ===
             async ubahQty(item, delta) {
-                if (this.isLoading || this.busy) return;
+                if (this.isLoading || this.loadingCart || this.busy) return;
                 const stock = item.variant?.stok != null ? Number(item.variant.stok) : 99;
                 const current = Number(item.jumlah || 1);
                 const next = current + delta;
@@ -117,8 +133,10 @@
                     const res = await PandansariAPI.updateCartItem(item.id_cart_item, next);
                     if (res && res.ok) {
                         item.jumlah = next;
+                        if (typeof PandansariAPI?.jadwalLencana === 'function') PandansariAPI.jadwalLencana(100);
                     } else {
                         this.tampil(res?.message || 'Gagal memperbarui kuantitas.', false);
+                        await this.load();
                     }
                 } catch (e) {
                     this.tampil('Gagal memperbarui kuantitas.', false);
@@ -127,7 +145,7 @@
                 }
             },
             async hapusItem(index) {
-                if (this.isLoading || this.busy) return;
+                if (this.isLoading || this.loadingCart || this.busy) return;
                 const item = this.items[index];
                 if (!item) return;
                 this.busy = true;
@@ -135,9 +153,11 @@
                     const res = await PandansariAPI.removeCartItem(item.id_cart_item);
                     if (res && res.ok) {
                         this.items.splice(index, 1);
+                        if (typeof PandansariAPI?.jadwalLencana === 'function') PandansariAPI.jadwalLencana(100);
                         this.tampil('Item berhasil dihapus.', true);
                     } else {
                         this.tampil(res?.message || 'Gagal menghapus item.', false);
+                        await this.load();
                     }
                 } catch (e) {
                     this.tampil('Gagal menghapus item.', false);
@@ -146,16 +166,18 @@
                 }
             },
             async kosongkan() {
-                if (this.isLoading || this.busy || !this.items.length) return;
+                if (this.isLoading || this.loadingCart || this.busy || !this.items.length) return;
                 this.busy = true;
                 try {
                     const res = await PandansariAPI.clearCart();
                     if (res && res.ok) {
                         this.items = [];
                         this.voucher = null;
+                        if (typeof PandansariAPI?.jadwalLencana === 'function') PandansariAPI.jadwalLencana(100);
                         this.tampil('Keranjang berhasil dikosongkan.', true);
                     } else {
                         this.tampil(res?.message || 'Gagal mengosongkan keranjang.', false);
+                        await this.load();
                     }
                 } catch (e) {
                     this.tampil('Gagal mengosongkan keranjang.', false);
@@ -203,24 +225,6 @@
                         const result = window.PandansariAPI.loadCatalogImages();
                         if (result && typeof result.then === 'function') {
                             await result;
-                        }
-                    }
-                } catch (e) {
-                    console.warn('[Cart] Error invoking loadCatalogImages:', e);
-                }
-
-                await this.load();
-            }
-                // Duplicate init block removed
-                try {
-                    if (typeof PandansariAPI?.loadCatalogImages === 'function') {
-                        const p = PandansariAPI.loadCatalogImages();
-                        if (p && typeof p.then === 'function') {
-                            p.then(() => {
-                                this.items = [...this.items];
-                            }).catch(err => {
-                                console.warn('[Cart] loadCatalogImages warning:', err);
-                            });
                         }
                     }
                 } catch (e) {
@@ -346,7 +350,7 @@
                     </template>
 
                     <!-- Loading State -->
-                    <template x-if="isLoading && !needLogin">
+                    <template x-if="(isLoading || loadingCart) && !needLogin && items.length === 0 && !errorMsg">
                         <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm py-16 text-center">
                             <i class="fa-solid fa-circle-notch fa-spin text-xl text-sky-500"></i>
                             <p class="text-xs text-slate-500 mt-3 font-semibold">Memuat keranjang dari server…</p>
@@ -376,8 +380,10 @@
                                             <!-- Interaktif Truncate 1 baris & Auto-Layout Teks Nama Produk -->
                                             <h3 @click="isExpanded = !isExpanded"
                                                 :title="productTitle(item) + (isExpanded ? ' (Klik untuk menciutkan)' : ' (Klik untuk lihat nama lengkap)')"
-                                                :class="isExpanded ? 'whitespace-normal break-words' : 'truncate line-clamp-1 block overflow-hidden text-ellipsis whitespace-nowrap'"
-                                                class="font-bold text-[#0F1A24] text-xs sm:text-base leading-snug cursor-pointer hover:text-[#0369A1] transition select-none"
+                                                :class="isExpanded 
+                                                    ? 'whitespace-normal break-words overflow-visible' 
+                                                    : 'overflow-hidden text-ellipsis whitespace-nowrap'"
+                                                class="font-bold text-[#0F1A24] text-xs sm:text-base leading-snug cursor-pointer hover:text-[#0369A1] transition select-none max-w-full block"
                                                 x-text="productTitle(item)">
                                             </h3>
                                             <p class="text-[10px] sm:text-xs text-slate-500 mt-1 leading-relaxed line-clamp-2" x-text="specLine(item)"></p>
@@ -502,17 +508,18 @@
 
                         <!-- Checkout Button -->
                         <button type="button"
-                                @click="if (!isCheckoutDisabled) window.location.href = '/checkout'"
+                                @click="if (!isCheckoutDisabled && !busy) window.location.href = '/checkout'"
                                 :disabled="isCheckoutDisabled"
+                                :aria-disabled="isCheckoutDisabled ? 'true' : 'false'"
                                 :class="isCheckoutDisabled 
-                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60 shadow-none pointer-events-none' 
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60 shadow-none' 
                                     : 'bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] cursor-pointer shadow-sm active:scale-[0.99]'"
                                 class="w-full inline-flex items-center justify-center gap-2 text-xs font-bold py-3.5 px-4 rounded-xl transition duration-150">
-                            <span x-show="isLoading" class="inline-flex items-center gap-2">
+                            <span x-show="isLoading || loadingCart" class="inline-flex items-center gap-2">
                                 <i class="fa-solid fa-circle-notch fa-spin text-xs"></i>
-                                <span>MEMUAT KERANJANG...</span>
+                                <span>MEMUART KERANJANG...</span>
                             </span>
-                            <span x-show="!isLoading" class="inline-flex items-center gap-2">
+                            <span x-show="!(isLoading || loadingCart)" class="inline-flex items-center gap-2">
                                 <span>LANJUT KE PENGIRIMAN</span>
                                 <i class="fa-solid fa-arrow-right text-xs"></i>
                             </span>
@@ -533,7 +540,7 @@
                         <div class="flex-1 min-w-0">
                             <h4 class="font-bold text-[#0F1A24] text-xs">Butuh Panduan Ukuran & Fitting?</h4>
                             <p class="text-[10px] text-slate-500 truncate">Konsultasikan postur</p>
-                            <a href="https://wa.me/6283820380977?text=Halo%20Batik%20Pandansari,%20saya%20butuh%20panduan%20ukuran%20baju" target="_blank" class="inline-block mt-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold px-3 py-1.5 rounded-lg transition w-full text-center">
+                            <a href="https://wa.me/6283820380977?text=Halo%20Batik%20Pandansari,%20saya%20butuh%20panduan%20ukuran%20baju" target="_blank" rel="noopener noreferrer" class="inline-block mt-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold px-3 py-1.5 rounded-lg transition w-full text-center">
                                 Konsultasi WhatsApp Atelier
                             </a>
                         </div>

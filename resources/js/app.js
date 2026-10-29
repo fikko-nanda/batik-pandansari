@@ -729,11 +729,23 @@ window.PandansariAPI = {
      */
     async keKeranjangProduk(id_product) {
         if (!this.getToken()) return { ok: false, status: 401, login: true };
-        const res = await this.productVariants(id_product);
-        const v = (res.data ?? []).filter(x => x.status_varian !== 'nonaktif');
-        const pick = v.find(x => Number(x.stok) > 0) ?? v[0];
-        if (!pick) return { ok: false, message: 'Produk ini belum memiliki varian aktif. Buka detail produk untuk memilih.' };
-        return this.addCartItem(pick.id_variant, 1);
+        try {
+            const res = await this.productVariants(id_product);
+            const v = (res.data ?? []).filter(x => x.status_varian !== 'nonaktif');
+            const pick = v.find(x => x.stok == null || Number(x.stok) > 0) ?? v[0];
+            if (!pick) return { ok: false, message: 'Produk ini belum memiliki varian aktif. Buka detail produk untuk memilih.' };
+            if (pick.stok != null && Number(pick.stok) <= 0) {
+                return { ok: false, message: 'Stok produk telah habis.' };
+            }
+            const addRes = await this.addCartItem(pick.id_variant, 1);
+            if (addRes && addRes.ok) {
+                this.jadwalLencana(100);
+                this.muatLencana().catch(() => {});
+            }
+            return addRes;
+        } catch (e) {
+            return { ok: false, message: 'Gagal menambahkan ke keranjang.' };
+        }
     },
 
     /**

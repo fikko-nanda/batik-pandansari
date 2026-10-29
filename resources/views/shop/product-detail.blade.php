@@ -177,18 +177,24 @@
                     this.tampilkanNotice('Stok produk telah habis.', false);
                     return;
                 }
-                if (Number(this.qty) > currentStock) {
+                const qtyNum = Number(this.qty);
+                if (qtyNum < 1) { this.tampilkanNotice('Jumlah minimal 1.', false); return; }
+                if (qtyNum > currentStock) {
                     this.tampilkanNotice('Stok tidak mencukupi. Stok tersedia: ' + currentStock + '.', false);
                     return;
                 }
                 this.cartBusy = true;
-                const res = await PandansariAPI.addCartItem(this.selectedVariant.id_variant, this.qty);
+                const res = await PandansariAPI.addCartItem(this.selectedVariant.id_variant, qtyNum);
                 this.cartBusy = false;
                 if (res.ok) {
+                    if (typeof PandansariAPI?.jadwalLencana === 'function') PandansariAPI.jadwalLencana(100);
+                    if (typeof PandansariAPI?.muatLencana === 'function') {
+                        PandansariAPI.muatLencana().catch(() => {});
+                    }
                     if (buyNow) window.location.href = '/cart';
                     else this.tampilkanNotice('Produk berhasil ditambahkan ke keranjang.', true);
                 } else {
-                    this.tampilkanNotice(res.message, false); // mis. 422 stok / varian nonaktif
+                    this.tampilkanNotice(res.message || 'Gagal menambahkan ke keranjang.', false); // mis. 422 stok / varian nonaktif
                 }
             },
 
@@ -256,7 +262,7 @@
                                      :alt="img.label" 
                                      class="w-full h-full block group-hover:scale-105 transition-transform duration-300"
                                      :class="img.isChart ? 'object-contain p-1.5 bg-white' : 'object-cover'"
-                                     :onerror="`this.src='${img.fallback}'; if(activeImage === img.src) activeImage='${img.fallback}';`">
+                                     :onerror="`this.src='${img.fallback || fallbackImage}'; if(activeImage === img.src) { const fb = img.fallback || fallbackImage; activeImage = fb; img.src = fb; }`">
                             </button>
                         </template>
                     </div>

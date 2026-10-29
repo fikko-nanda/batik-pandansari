@@ -16,11 +16,16 @@
             loading: true,
             errorMsg: '',
             page: 1,
-            perPage: 12,
+            perPage: 20,
             total: 0,
             lastPage: 1,
             wishlisted: {},
             fallbackImage: '{{ asset('images/katalog1.webp') }}',
+
+            setPerPageByBreakpoint() {
+                if (typeof window === 'undefined') return;
+                this.perPage = window.innerWidth < 640 ? 10 : 20;
+            },
 
             get activeCategoryLabel() {
                 const c = this.categories.find(c => c.id_category === this.selectedCategory);
@@ -31,6 +36,7 @@
             async loadProducts(page = 1) {
                 this.loading = true;
                 this.errorMsg = '';
+                this.setPerPageByBreakpoint();
                 const res = await PandansariAPI.products({
                     search: this.searchQuery,
                     category: this.selectedCategory,
@@ -166,6 +172,17 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             },
             async init() {
+                this.setPerPageByBreakpoint();
+                const onResize = () => {
+                    const old = this.perPage;
+                    this.setPerPageByBreakpoint();
+                    if (old !== this.perPage && !this.loading) {
+                        this.loadProducts(1);
+                    }
+                };
+                window.addEventListener('resize', onResize);
+                this._onResizeKatalog = onResize;
+
                 // Baca filter dari menu navbar: /katalog?category=<slug> atau /katalog?category_id=<id>
                 const qs = new URLSearchParams(window.location.search);
                 await this.loadCategories();
@@ -218,8 +235,8 @@
             <div class="relative w-full mb-4">
                 <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                 <input type="text"
-                       x-model="searchQuery"
-                       @input.debounce.500ms="if (page === 1) { loadProducts(1) } else { page = 1; loadProducts(1) }"
+                       x-model.debounce.500ms="searchQuery"
+                       @input.debounce.500ms="page = 1; loadProducts(1)"
                        placeholder="Cari kata kunci motif, kain, sarimbit, warna di katalog..."
                        class="w-full pl-11 pr-20 sm:pr-24 py-2.5 sm:py-3 text-xs sm:text-sm bg-white border border-slate-200 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500 font-['Plus_Jakarta_Sans'] placeholder:text-slate-400">
                 <button type="button"
