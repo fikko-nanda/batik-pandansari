@@ -116,116 +116,119 @@
 
             </div>
 
-            <!-- RIGHT SIDE: Form Profil & Informasi Akun (8 Kolom) -->
-            <div class="lg:col-span-8 bg-white p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-sm space-y-6">
+            <!-- RIGHT SIDE: Form Profil & Informasi Akun serta Riwayat Voucher (8 Kolom) -->
+            <div class="lg:col-span-8 space-y-6">
 
-                <!-- Form Header -->
-                <div>
-                    <span class="text-[10px] font-bold tracking-wider uppercase text-slate-400 block mb-1">DATA PRIBADI ANGGOTA</span>
-                    <h1 class="text-2xl sm:text-3xl font-bold text-[#0F1A24]">Profil & Informasi Akun</h1>
-                    <p class="text-xs text-slate-400 mt-1" x-show="user?.dibuat_pada">
-                        Anggota sejak <span class="font-semibold" x-text="formatTanggal(user?.dibuat_pada)"></span>
-                        <span class="ml-2 bg-sky-100 text-[#0369A1] px-2 py-0.5 rounded font-bold uppercase text-[9px]" x-text="user?.peran ?? ''"></span>
-                    </p>
+                <!-- Card Profil & Informasi Akun -->
+                <div class="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-sm space-y-6">
+
+                    <!-- Form Header -->
+                    <div>
+                        <span class="text-[10px] font-bold tracking-wider uppercase text-slate-400 block mb-1">DATA PRIBADI ANGGOTA</span>
+                        <h1 class="text-2xl sm:text-3xl font-bold text-[#0F1A24]">Profil & Informasi Akun</h1>
+                        <p class="text-xs text-slate-400 mt-1" x-show="user?.dibuat_pada">
+                            Anggota sejak <span class="font-semibold" x-text="formatTanggal(user?.dibuat_pada)"></span>
+                            <span class="ml-2 bg-sky-100 text-[#0369A1] px-2 py-0.5 rounded font-bold uppercase text-[9px]" x-text="user?.peran ?? ''"></span>
+                        </p>
+                    </div>
+
+                    <form @submit.prevent="simpan()" class="space-y-5">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+                            <!-- Nama Lengkap Sesuai KTP -->
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                                    NAMA LENGKAP SESUAI KTP <span class="text-red-500">*</span>
+                                </label>
+                                <div class="relative">
+                                    <input type="text"
+                                           x-model="form.nama_pengguna"
+                                           value="{{ auth()->user()?->nama_pengguna ?? auth()->user()?->name ?? '' }}"
+                                           :disabled="saving"
+                                           placeholder="Nama Lengkap"
+                                           class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60">
+                                    <i class="fa-regular fa-id-card absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                </div>
+                            </div>
+
+                            <!-- Alamat Surel (Email) -->
+                            <div>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                                        ALAMAT SUREL (EMAIL) <span class="text-[10px] text-slate-400 font-normal lowercase">(terkunci)</span>
+                                    </label>
+                                </div>
+                                <div class="relative">
+                                    <input type="email"
+                                           x-model="form.email"
+                                           value="{{ auth()->user()?->email ?? '' }}"
+                                           readonly
+                                           disabled
+                                           :disabled="true"
+                                           tabindex="-1"
+                                           class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 text-slate-500 cursor-not-allowed select-none bg-gray-100 focus:outline-none pointer-events-none">
+                                    <i class="fa-solid fa-lock absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                </div>
+                            </div>
+
+                            <!-- Nomor WhatsApp / Seluler -->
+                            <div>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                                        NOMOR WHATSAPP / SELULER
+                                    </label>
+                                </div>
+                                <div class="relative">
+                                    <input type="tel"
+                                           inputmode="numeric"
+                                           pattern="[0-9]*"
+                                           maxlength="13"
+                                           x-model="form.nomor_telepon"
+                                           :disabled="saving"
+                                           @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
+                                           @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
+                                           class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60">
+                                    <i class="fa-solid fa-mobile-screen absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <!-- Pesan hasil simpan -->
+                        <div x-show="msg" x-cloak
+                             :class="msgOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'"
+                             class="text-xs font-bold border rounded-xl px-4 py-3" x-text="msg"></div>
+
+                        <!-- Footer Action Buttons & Link Ubah Sandi -->
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-slate-100">
+                            <a href="/security" class="text-xs font-bold text-slate-700 hover:text-black flex items-center gap-1.5 underline underline-offset-4">
+                                <i class="fa-solid fa-key text-xs"></i>
+                                <span>UBAH KATA SANDI AKUN</span>
+                            </a>
+
+                            <div class="flex items-center gap-2 justify-end">
+                                <button @click="resetForm()"
+                                        type="button"
+                                        :disabled="saving"
+                                        class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-6 py-3 rounded-xl transition cursor-pointer disabled:opacity-60">
+                                    BATAL
+                                </button>
+                                <button type="submit"
+                                        :disabled="saving"
+                                        class="bg-[#0F1A24] hover:bg-slate-800 text-white text-xs font-bold px-6 py-3 rounded-xl transition cursor-pointer shadow-sm disabled:opacity-60">
+                                    <span x-show="!saving">SIMPAN PERUBAHAN</span>
+                                    <span x-show="saving"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>MENYIMPAN...</span>
+                                </button>
+                            </div>
+                        </div>
+
+                    </form>
+
                 </div>
 
-                <form @submit.prevent="simpan()" class="space-y-5">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-
-                        <!-- Nama Lengkap Sesuai KTP -->
-                        <div>
-                            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                                NAMA LENGKAP SESUAI KTP <span class="text-red-500">*</span>
-                            </label>
-                            <div class="relative">
-                                <input type="text"
-                                       x-model="form.nama_pengguna"
-                                       value="{{ auth()->user()?->nama_pengguna ?? auth()->user()?->name ?? '' }}"
-                                       :disabled="saving"
-                                       placeholder="Nama Lengkap"
-                                       class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60">
-                                <i class="fa-regular fa-id-card absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                            </div>
-                        </div>
-
-                        <!-- Alamat Surel (Email) -->
-                        <div>
-                            <div class="flex items-center justify-between mb-1.5">
-                                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                                    ALAMAT SUREL (EMAIL) <span class="text-[10px] text-slate-400 font-normal lowercase">(terkunci)</span>
-                                </label>
-                            </div>
-                            <div class="relative">
-                                <input type="email"
-                                       x-model="form.email"
-                                       value="{{ auth()->user()?->email ?? '' }}"
-                                       readonly
-                                       disabled
-                                       :disabled="true"
-                                       tabindex="-1"
-                                       class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 text-slate-500 cursor-not-allowed select-none bg-gray-100 focus:outline-none pointer-events-none">
-                                <i class="fa-solid fa-lock absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                            </div>
-                        </div>
-
-                        <!-- Nomor WhatsApp / Seluler -->
-                        <div>
-                            <div class="flex items-center justify-between mb-1.5">
-                                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                                    NOMOR WHATSAPP / SELULER
-                                </label>
-                            </div>
-                            <div class="relative">
-                                <input type="tel"
-                                       inputmode="numeric"
-                                       pattern="[0-9]*"
-                                       maxlength="13"
-                                       x-model="form.nomor_telepon"
-                                       :disabled="saving"
-                                       @input="form.nomor_telepon = $event.target.value.replace(/\D/g, ''); $event.target.value = form.nomor_telepon"
-                                       @keydown="if(!['0','1','2','3','4','5','6','7','8','9','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes($event.key) && !$event.ctrlKey && !$event.metaKey) $event.preventDefault()"
-                                       class="w-full text-xs font-semibold border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60">
-                                <i class="fa-solid fa-mobile-screen absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                            </div>
-                        </div>
-
-                    </div>
-
-                   
-
-                    <!-- Pesan hasil simpan -->
-                    <div x-show="msg" x-cloak
-                         :class="msgOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'"
-                         class="text-xs font-bold border rounded-xl px-4 py-3" x-text="msg"></div>
-
-                    <!-- Footer Action Buttons & Link Ubah Sandi -->
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-slate-100">
-                        <a href="/security" class="text-xs font-bold text-slate-700 hover:text-black flex items-center gap-1.5 underline underline-offset-4">
-                            <i class="fa-solid fa-key text-xs"></i>
-                            <span>UBAH KATA SANDI AKUN</span>
-                        </a>
-
-                        <div class="flex items-center gap-2 justify-end">
-                            <button @click="resetForm()"
-                                    type="button"
-                                    :disabled="saving"
-                                    class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-6 py-3 rounded-xl transition cursor-pointer disabled:opacity-60">
-                                BATAL
-                            </button>
-                            <button type="submit"
-                                    :disabled="saving"
-                                    class="bg-[#0F1A24] hover:bg-slate-800 text-white text-xs font-bold px-6 py-3 rounded-xl transition cursor-pointer shadow-sm disabled:opacity-60">
-                                <span x-show="!saving">SIMPAN PERUBAHAN</span>
-                                <span x-show="saving"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i>MENYIMPAN...</span>
-                            </button>
-                        </div>
-                    </div>
-
-                </form>
-
-                {{-- Riwayat pemakaian voucher (GET /voucher-usages/me) --}}
-                <div class="border-t border-slate-100 pt-6 mt-2">
-                    <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
+                <!-- Card Riwayat Pemakaian Voucher -->
+                <div class="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between pb-4 border-b border-slate-100">
                         <h2 class="text-sm font-bold text-[#0F1A24] flex items-center gap-2">
                             <i class="fa-solid fa-ticket text-sky-600"></i> Riwayat Pemakaian Voucher
                         </h2>
@@ -242,7 +245,7 @@
                         <p class="text-[11px] text-slate-400 mt-1">Voucher yang dipakai saat checkout akan tampil di sini.</p>
                     </div>
 
-                    <div class="space-y-2.5">
+                    <div class="space-y-2.5" x-show="vkList.length">
                         <template x-for="vk in vkList" :key="vk.id_voucher_usage ?? vk.id_order">
                             <div class="flex items-center justify-between gap-3 border border-slate-100 rounded-xl px-4 py-3">
                                 <div class="min-w-0">

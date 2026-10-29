@@ -409,8 +409,8 @@
 
             </div>
 
-            <!-- 5. Grid Produk (2 Kolom di HP / Smartphone, 4 Kolom di Desktop) -->
-            <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-10">
+            <!-- 5. Grid Produk (Responsive: 1 Kolom Mobile, 2 Kolom Tablet, 3 Kolom Desktop) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-10 w-full">
 
             <!-- State API: Skeleton / Error / Kosong -->
             <template x-if="loading">

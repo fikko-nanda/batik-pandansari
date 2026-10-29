@@ -50,9 +50,20 @@
                     }
                 });
             },
-            async toggleLike(product) {
+            async toggleWishlist(product) {
                 if (!product) return;
-                if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
+                const hasToken = typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.getToken === 'function' && PandansariAPI.getToken();
+                if (!hasToken) {
+                    if (typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.toast === 'function') {
+                        PandansariAPI.toast('Silakan login terlebih dahulu untuk menyukai produk', false);
+                    } else {
+                        alert('Silakan login terlebih dahulu untuk menyukai produk');
+                    }
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 1200);
+                    return;
+                }
                 const pid = product.id_product || product.product_id;
                 if (!pid) return;
 
@@ -63,6 +74,7 @@
                 const isLiked = !!(product.is_liked ?? this.wishlisted[pid]?.liked);
                 const previousState = isLiked;
 
+                // Optimistic UI update
                 product.is_liked = !isLiked;
                 if (!this.wishlisted[pid]) this.wishlisted[pid] = {};
                 this.wishlisted[pid].liked = !isLiked;
@@ -73,18 +85,30 @@
                         if (!res.ok && res.status !== 404) {
                             product.is_liked = previousState;
                             this.wishlisted[pid].liked = previousState;
+                            if (typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.toast === 'function') {
+                                PandansariAPI.toast(res.message || 'Gagal menghapus dari wishlist.', false);
+                            }
                         } else {
                             product.is_liked = false;
                             this.wishlisted[pid].liked = false;
+                            if (typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.toast === 'function') {
+                                PandansariAPI.toast('Produk dihapus dari wishlist', true);
+                            }
                         }
                     } else {
                         const res = await PandansariAPI.addWishlist(pid);
                         if (res.ok || res.status === 422) {
                             product.is_liked = true;
                             this.wishlisted[pid].liked = true;
+                            if (typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.toast === 'function') {
+                                PandansariAPI.toast('Produk ditambahkan ke wishlist', true);
+                            }
                         } else {
                             product.is_liked = previousState;
                             this.wishlisted[pid].liked = previousState;
+                            if (typeof PandansariAPI !== 'undefined' && typeof PandansariAPI.toast === 'function') {
+                                PandansariAPI.toast(res.message || 'Gagal menambahkan ke wishlist.', false);
+                            }
                         }
                     }
                 } catch (e) {
@@ -95,8 +119,8 @@
                     this.wishlistBusy[pid] = false;
                 }
             },
-            toggleWishlist(product) {
-                return this.toggleLike(product);
+            toggleLike(product) {
+                return this.toggleWishlist(product);
             },
             async muatWishlist() {
                 if (!PandansariAPI.getToken()) return;
@@ -156,8 +180,8 @@
         </div>
 
         <!-- Loading -->
-        <div x-show="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <template x-for="i in 4" :key="i">
+        <div x-show="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
+            <template x-for="i in 3" :key="i">
                 <div class="bg-slate-50 rounded-2xl h-80 animate-pulse"></div>
             </template>
         </div>
@@ -169,7 +193,7 @@
         </div>
 
         <!-- Grid Produk (kartu sama dengan katalog & section pria) -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" x-show="!loading && produk.length">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full" x-show="!loading && produk.length">
             <template x-for="p in produk" :key="p.id_product">
                 <x-shop.product-item />
             </template>

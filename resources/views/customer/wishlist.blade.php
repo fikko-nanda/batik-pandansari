@@ -217,8 +217,8 @@
                 </div>
             </template>
 
-            <!-- 5. Grid Wishlist Cards (3 Kolom Desktop / 2 Kolom Smartphone) -->
-            <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-12" x-show="!needLogin && !loading">
+            <!-- 5. Grid Wishlist Cards (1 Kolom Mobile, 2 Kolom Tablet, 3 Kolom Desktop) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-12 w-full" x-show="!needLogin && !loading">
                 <template x-for="(it, index) in filteredItems" :key="it.id_wishlist_item ?? it.id_wishlist ?? it.id">
                     <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
                         <div class="relative h-52 sm:h-80 bg-slate-100 overflow-hidden">

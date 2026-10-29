@@ -517,10 +517,10 @@
                     <a href="/katalog" class="text-xs font-bold text-slate-600 hover:text-black transition hidden sm:inline">Lihat Seluruh Koleksi Pria & Sarimbit →</a>
                 </div>
 
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 w-full">
                     <template x-for="p in rekomendasi" :key="p.id_product">
                         <a :href="'/detail/' + p.id_product"
-                           class="group bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition p-3 pb-4 flex flex-col justify-between cursor-pointer">
+                           class="group bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition p-3 pb-4 flex flex-col justify-between cursor-pointer w-full">
                             <div class="h-48 bg-slate-100 rounded-xl overflow-hidden mb-3">
                                 <img :src="coverRek(p)" :alt="p.nama_produk ?? 'Produk'"
                                      class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
@@ -533,7 +533,7 @@
                             <span class="mt-3 block text-center bg-slate-100 group-hover:bg-slate-200 text-[#0F1A24] text-[10px] font-bold py-2 rounded-lg transition">Lihat Detail</span>
                         </a>
                     </template>
-                    <p class="col-span-2 lg:col-span-4 text-center text-xs text-slate-400 italic py-6"
+                    <p class="col-span-full text-center text-xs text-slate-400 italic py-6"
                        x-show="!loading && !rekomendasi.length">Belum ada rekomendasi untuk produk ini.</p>
                 </div>
             </div>

@@ -14,8 +14,22 @@
         <span class="absolute top-3 left-3 bg-sky-100 border border-sky-200 text-[#075985] text-[9px] font-bold px-2 py-0.5 rounded uppercase font-['Plus_Jakarta_Sans']">
             {{ $badge }}
         </span>
-        <button class="absolute top-3 right-3 w-7 h-7 bg-white/90 rounded-full flex items-center justify-center text-slate-700 shadow-sm hover:text-rose-500 transition">
-            <i class="fa-regular fa-heart text-xs"></i>
+        <button type="button"
+                @click.stop.prevent="typeof toggleWishlist === 'function' ? toggleWishlist(product) : (typeof toggleLike === 'function' ? toggleLike(product) : null)"
+                class="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-md hover:scale-110 active:scale-95 transition-all duration-200 z-10 cursor-pointer disabled:opacity-50"
+                :class="(typeof product !== 'undefined' && product.is_liked) ? 'text-red-500' : 'text-gray-400'"
+                :title="(typeof product !== 'undefined' && product.is_liked) ? 'Batalkan Suka' : 'Sukai Produk'">
+            <svg xmlns="http://www.w3.org/2000/svg"
+                 class="w-4 h-4 transition-colors duration-150"
+                 :class="(typeof product !== 'undefined' && product.is_liked)
+                     ? 'text-red-500 fill-red-500'
+                     : 'text-gray-400 fill-none stroke-current'"
+                 viewBox="0 0 24 24"
+                 stroke-width="1.8"
+                 stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+            </svg>
         </button>
     </div>
     <div class="p-4 flex-1 flex flex-col justify-between">
