@@ -198,7 +198,7 @@ trait CreatesApiSchema
             $table->decimal('latitude', 10, 7)->nullable();
             $table->decimal('longitude', 10, 7)->nullable();
             $table->boolean('alamat_utama')->default(false);
-            $table->string('id_tujuan_rajaongkir', 100)->nullable();
+            $table->string('id_tujuan_rajaongkir', 20)->nullable();
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
         });
@@ -216,6 +216,7 @@ trait CreatesApiSchema
             $table->string('id_user', 36);
             $table->string('nomor_pesanan', 50)->unique();
             $table->string('status_pesanan', 30)->default('menunggu_pembayaran');
+            $table->boolean('stok_direservasi')->default(false);
             $table->timestamp('kedaluwarsa_pada')->nullable();
             $table->decimal('subtotal', 12, 2);
             $table->decimal('biaya_pengiriman', 12, 2)->default(0);

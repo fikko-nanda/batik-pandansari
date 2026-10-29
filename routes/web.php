@@ -145,6 +145,10 @@ Route::prefix('admin')->middleware('panel:admin')->group(function () {
         return view('admin.orders');
     })->name('admin.orders');
 
+    Route::get('/shipping', function () {
+        return view('admin.shipping');
+    })->name('admin.shipping');
+
     Route::get('/midtrans', function () {
         return view('admin.midtrans');
     })->name('admin.midtrans');

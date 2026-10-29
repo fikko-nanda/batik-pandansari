@@ -90,7 +90,7 @@ class ShippingController extends Controller
                 ]);
             }
 
-            $tersedia = (int) $variant->stok - (int) $variant->stok_dipesan;
+            $tersedia = (int) $variant->stok;
 
             if ($jumlah > $tersedia) {
                 throw ValidationException::withMessages([

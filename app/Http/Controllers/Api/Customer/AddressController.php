@@ -39,7 +39,7 @@ class AddressController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90', 'required_with:longitude'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180', 'required_with:latitude'],
             'alamat_utama' => ['nullable', 'boolean'],
-            'id_tujuan_rajaongkir' => ['nullable', 'string', 'max:100'],
+            'id_tujuan_rajaongkir' => ['nullable', 'string', 'max:20'],
         ]);
 
         $user = $request->user();
@@ -114,7 +114,7 @@ class AddressController extends Controller
             'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90', 'required_with:longitude'],
             'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180', 'required_with:latitude'],
             'alamat_utama' => ['sometimes', 'boolean'],
-            'id_tujuan_rajaongkir' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'id_tujuan_rajaongkir' => ['sometimes', 'nullable', 'string', 'max:20'],
         ]);
 
         DB::transaction(function () use ($validated, $address, $request) {

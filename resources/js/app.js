@@ -136,7 +136,7 @@ window.PandansariAPI = {
 
     /**
      * Fetch dasar: JSON in/out + Bearer token + header bypass ngrok.
-     * Selalu resolve { ok, status, data, meta, message, errors } — bukan throw.
+     * Selalu resolve { ok, status, data, meta, code, message, errors } — bukan throw.
      */
     async fetch(path, { method = 'GET', body = null, raw = false } = {}) {
         const headers = {
@@ -168,6 +168,7 @@ window.PandansariAPI = {
                 status: res.status,
                 data: payload?.data ?? null,
                 meta: payload?.meta ?? null,
+                code: payload?.code ?? null,
                 message: payload?.message ?? ((res.ok) ? 'Berhasil.' : `Terjadi kesalahan server (${res.status}).`),
                 errors: payload?.errors ?? {},
                 // 429 rate-limit kirim ulang OTP: detik sisa tunggu dari backend
@@ -176,7 +177,7 @@ window.PandansariAPI = {
         } catch (e) {
             const timedOut = !!e && (e.name === 'AbortError' || e.name === 'TimeoutError');
             return {
-                ok: false, status: 0, data: null, meta: null, errors: {},
+                ok: false, status: 0, data: null, meta: null, code: null, errors: {},
                 message: timedOut
                     ? `Server tidak merespons selama ${Math.round(timeoutMs / 1000)} detik (timeout). Kemungkinan koneksi lambat atau tunnel ngrok terputus — periksa lalu coba lagi.`
                     : 'Tidak dapat menghubungi server. Pastikan tunnel backend (ngrok) aktif.',
@@ -563,6 +564,12 @@ window.PandansariAPI = {
     addAddress(payload) { return this.fetch('/addresses', { method: 'POST', body: payload }); },
     updateAddress(id, payload) { return this.fetch(`/addresses/${id}`, { method: 'PUT', body: payload }); },
     deleteAddress(id) { return this.fetch(`/addresses/${id}`, { method: 'DELETE' }); },
+    searchShippingAddresses(query) {
+        return this.fetch(`/shipping/address-search?q=${encodeURIComponent(query ?? '')}`);
+    },
+    shippingQuote(id_user_address) {
+        return this.fetch('/shipping/quote', { method: 'POST', body: { id_user_address } });
+    },
 
     /* ---------- Profil & Kata Sandi ---------- */
     /** PUT /me — field terima backend: nama_pengguna, email, nomor_telepon (parsial). */
@@ -948,6 +955,13 @@ window.PandansariAPI = {
                 return PandansariAPI.fetch('/admin/cms/profil-usaha', { method: 'POST', body: payload });
             }
             return PandansariAPI.fetch('/admin/cms/profil-usaha', { method: 'PUT', body: payload });
+        },
+        shippingZones() { return PandansariAPI.fetch('/admin/shipping/zones'); },
+        createShippingZone(payload) {
+            return PandansariAPI.fetch('/admin/shipping/zones', { method: 'POST', body: payload });
+        },
+        updateShippingZone(id, payload) {
+            return PandansariAPI.fetch(`/admin/shipping/zones/${encodeURIComponent(id)}`, { method: 'PUT', body: payload });
         },
         /** GET /admin/cms/fasilitas — semua fasilitas (admin), urut urutan_tampilan. */
         fasilitas() { return PandansariAPI.fetch('/admin/cms/fasilitas'); },

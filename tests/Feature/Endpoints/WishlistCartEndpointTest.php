@@ -245,7 +245,7 @@ class WishlistCartEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
-    public function test_keranjang_menghitung_stok_tersedia_setelah_reservasi(): void
+    public function test_keranjang_menggunakan_stok_fisik_tanpa_mengurangi_reservasi_pesanan(): void
     {
         $this->actingAsRole('pelanggan');
         $catalog = $this->seedCatalog(5);
@@ -253,23 +253,25 @@ class WishlistCartEndpointTest extends EndpointTestCase
 
         $this->hit('POST', '/api/cart/items', [
             'endpoint' => 'POST /api/cart/items',
-            'label' => 'Tambah item melebihi stok tersedia (5 - 3 = 2)',
-            'json' => ['id_variant' => $catalog['variant']->id_variant, 'jumlah' => 3],
+            'label' => 'Tambah sampai seluruh stok fisik meski ada reservasi order lama',
+            'json' => ['id_variant' => $catalog['variant']->id_variant, 'jumlah' => 5],
+            'expected' => 201,
+        ]);
+
+        $this->assertSame('5', (string) ($this->recorded[0]['response']['data']['jumlah'] ?? ''));
+
+        $this->hit('POST', '/api/cart/items', [
+            'endpoint' => 'POST /api/cart/items',
+            'label' => 'Tolak jumlah keranjang yang melampaui stok fisik',
+            'json' => ['id_variant' => $catalog['variant']->id_variant, 'jumlah' => 1],
             'expected' => 422,
         ]);
 
         $this->assertStringContainsString(
-            'Stok tersedia: 2.',
-            (string) ($this->recorded[0]['response']['message'] ?? '')
+            'Stok tersedia: 5.',
+            (string) ($this->recorded[1]['response']['message'] ?? '')
         );
-
-        $this->hit('POST', '/api/cart/items', [
-            'endpoint' => 'POST /api/cart/items',
-            'label' => 'Tambah item sesuai stok tersedia',
-            'json' => ['id_variant' => $catalog['variant']->id_variant, 'jumlah' => 2],
-            'expected' => 201,
-        ]);
-
+        $this->assertSame(3, (int) $catalog['variant']->fresh()->stok_dipesan);
         $this->assertRecorded();
     }
 
