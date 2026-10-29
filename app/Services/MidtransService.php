@@ -36,6 +36,13 @@ class MidtransService
         return config('services.midtrans.client_key');
     }
 
+    public function snapScriptUrl(): string
+    {
+        return $this->isProduction()
+            ? 'https://app.midtrans.com/snap/snap.js'
+            : 'https://app.sandbox.midtrans.com/snap/snap.js';
+    }
+
     public function isProduction(): bool
     {
         return (bool) config('services.midtrans.is_production');
@@ -54,12 +61,19 @@ class MidtransService
                 'gross_amount' => (int) round((float) $order->total_pembayaran),
             ],
             'customer_details' => $this->customerDetails($order),
-            // Batas waktu pembayaran 12 jam, sejalan dengan reservasi stok.
-            // Midtrans akan menutup transaksi otomatis setelah waktu ini.
+            // Gunakan sisa waktu dari batas yang dibuat saat checkout agar
+            // pembuatan token tidak memulai ulang masa pembayaran 15 menit.
             'expiry' => [
                 'start_time' => now()->format('Y-m-d H:i:s O'),
-                'unit' => 'hour',
-                'duration' => OrderService::PAYMENT_WINDOW_HOURS,
+                'unit' => 'minute',
+                'duration' => max(
+                    1,
+                    intdiv(
+                        max(0, ($order->kedaluwarsa_pada ?? now()->addMinutes(OrderService::PAYMENT_WINDOW_MINUTES))
+                            ->getTimestamp() - now()->getTimestamp()),
+                        60
+                    )
+                ),
             ],
             // Arahkan pengguna kembali ke halaman hasil pembayaran milik sendiri
             // agar tidak berakhir di example.com bawaan akun Midtrans. Status

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Endpoints;
 
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -365,6 +366,27 @@ class AdminUserManagementEndpointTest extends EndpointTestCase
         foreach (array_slice($rows, 1) as $row) {
             $this->assertCount(6, $row, 'Setiap baris CSV harus memiliki 6 kolom.');
         }
+
+        DB::table('users')->where('id_user', $first->id_user)
+            ->update(['dibuat_pada' => '2026-02-01 23:59:59']);
+        DB::table('users')->where('id_user', $second->id_user)
+            ->update(['dibuat_pada' => '2026-02-02 00:00:00']);
+
+        $dateRange = $this->hit('GET', '/api/admin/users/export?peran=pelanggan&start_date=2026-02-01&end_date=2026-02-01', [
+            'endpoint' => 'GET /api/admin/users/export',
+            'label' => 'Filter tanggal pengguna dengan batas akhir inklusif',
+            'expected' => 200,
+        ]);
+        $dateRows = $this->csvRows($dateRange);
+        $this->assertCount(2, $dateRows);
+        $this->assertSame($first->email, $dateRows[1][2]);
+
+        $invalidDates = $this->hit('GET', '/api/admin/users/export?start_date=invalid', [
+            'endpoint' => 'GET /api/admin/users/export',
+            'label' => 'Tanggal mulai pengguna yang tidak valid ditolak',
+            'expected' => 422,
+        ]);
+        $this->assertSame(422, $invalidDates->status());
 
         $this->assertRecorded();
     }

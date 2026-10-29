@@ -220,10 +220,21 @@
                 this.busyPay = true;
                 try {
                     const res = await PandansariAPI.payOrder(this.orderId);
-                    if (!res.ok) { PandansariAPI.toast(res.message ?? 'Gagal menyiapkan pembayaran.', false); return; }
-                    // Response: { snap_token, redirect_url, client_key } — bayarSnap
-                    // otomatis fallback ke redirect_url bila popup Snap gagal dimuat.
-                    await PandansariAPI.bayarSnap(res.data ?? {}, {
+                    if (!res.ok) {
+                        PandansariAPI.toast(
+                            `${res.message || 'Gagal memproses pembayaran.'} Silakan coba lagi atau hubungi admin.`,
+                            false
+                        );
+                        return;
+                    }
+                    if (!res.data?.snap_token) {
+                        PandansariAPI.toast(
+                            'Token pembayaran Midtrans tidak tersedia. Silakan coba lagi atau hubungi admin.',
+                            false
+                        );
+                        return;
+                    }
+                    await PandansariAPI.bayarSnap(res.data, {
                         // Pembayaran sukses → langsung alihkan ke /orders (Pesanan Saya)
                         onSuccess: () => {
                             this.isPaidSuccess = true;
@@ -245,7 +256,13 @@
                         },
                     });
                 } catch (e) {
-                    PandansariAPI.toast(e?.message ?? 'Pembayaran gagal dibuka, silakan coba lagi.', false);
+                    console.error('[OrderDetail] Gagal memproses pembayaran:', e);
+                    PandansariAPI.toast(
+                        e?.message
+                            ? `Gagal memproses pembayaran: ${e.message}`
+                            : 'Gagal memproses pembayaran. Silakan hubungi admin atau coba lagi nanti.',
+                        false
+                    );
                 } finally {
                     this.busyPay = false;
                 }
@@ -428,7 +445,7 @@
                             <div class="mt-5">
                                 <button @click="bayarSekarang()" :disabled="busyPay"
                                         class="w-full inline-flex items-center justify-center gap-2 bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold py-3.5 px-4 rounded-xl transition shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
-                                    <i class="fa-solid fa-credit-card" :class="busyPay && 'fa-beat-fade'"></i>
+                                    <i class="fa-solid" :class="busyPay ? 'fa-circle-notch fa-spin' : 'fa-credit-card'"></i>
                                     <span x-text="busyPay ? 'MEMBUKA PEMBAYARAN…' : 'BAYAR SEKARANG (QRIS / VA / E-WALLET)'"></span>
                                 </button>
                                 <p class="mt-3 text-[11px] text-slate-500 leading-relaxed text-center">

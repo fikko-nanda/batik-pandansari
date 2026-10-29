@@ -14,6 +14,8 @@
     perPage: 8,
     searchQuery: '',
     selectedTab: 'ALL',        // '' | menunggu_pembayaran | dibayar | diproses | dikirim | selesai | dibatalkan
+    exportStartDate: '',
+    exportEndDate: '',
     summary: null,
     loading: true,
     notice: '', noticeOk: true,
@@ -137,21 +139,18 @@
         this.statusBusy = false;
     },
 
-    // === Ekspor CSV (client-side, dari halaman aktif) ===
-    eksporCsv() {
-        const Q = '\x22';
-        const head = ['nomor_pesanan','tanggal','penerima','kota','total','ongkir','status'];
-        const rows = this.orders.map(o => [
-            o.nomor_pesanan, o.dibuat_pada, o.nama_penerima, o.kode_tujuan_pengiriman,
-            o.total_pembayaran, o.biaya_pengiriman, o.status_pesanan,
-        ]);
-        const csv = [head, ...rows].map(r => r.map(c => Q + String(c ?? '').split(Q).join(Q + Q) + Q).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'pesanan.csv';
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    async eksporCsv() {
+        if (this.exportStartDate && this.exportEndDate && this.exportEndDate < this.exportStartDate) {
+            this.pesan(false, 'Tanggal akhir tidak boleh sebelum tanggal mulai.');
+            return;
+        }
+        const res = await PandansariAPI.admin.ordersExport({
+            status: this.selectedTab !== 'ALL' ? this.selectedTab : undefined,
+            search: this.searchQuery.trim() || undefined,
+            start_date: this.exportStartDate || undefined,
+            end_date: this.exportEndDate || undefined,
+        });
+        this.pesan(res.ok, res.ok ? 'CSV seluruh pesanan sesuai filter berhasil diunduh.' : res.message);
     },
 
     async init() {
@@ -196,10 +195,18 @@
             </p>
         </div>
 
-        <button type="button" @click="eksporCsv()" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
-            <i class="fa-solid fa-file-export text-xs"></i>
-            <span>Ekspor CSV (halaman ini)</span>
-        </button>
+        <div class="flex flex-wrap items-end gap-2">
+            <label class="text-[10px] font-bold text-slate-500">Mulai
+                <input type="date" x-model="exportStartDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs">
+            </label>
+            <label class="text-[10px] font-bold text-slate-500">Akhir
+                <input type="date" x-model="exportEndDate" class="block rounded-lg border border-slate-300 px-2 py-2 text-xs">
+            </label>
+            <button type="button" @click="eksporCsv()" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
+                <i class="fa-solid fa-file-export text-xs"></i>
+                <span>Ekspor semua hasil</span>
+            </button>
+        </div>
     </div>
 
     <!-- Pesan -->

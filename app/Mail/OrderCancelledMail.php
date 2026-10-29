@@ -35,7 +35,7 @@ class OrderCancelledMail extends Mailable implements ShouldQueue
             'order' => $order,
             'namaPelanggan' => $order->user?->nama_pengguna ?? $order->nama_penerima,
             'tanggalPesan' => $order->dibuat_pada,
-            'batasJam' => OrderService::PAYMENT_WINDOW_HOURS,
+            'batasMenit' => OrderService::PAYMENT_WINDOW_MINUTES,
             'brand' => config('mail.brand', []),
         ];
 

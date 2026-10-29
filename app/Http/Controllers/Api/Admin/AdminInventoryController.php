@@ -31,6 +31,8 @@ class AdminInventoryController extends Controller
             'status_stok' => ['nullable', 'string', 'in:semua,aman,menipis,kritis'],
             'sort' => ['nullable', 'string', 'in:stok,stok_minimum,harga,sku,dibuat_pada'],
             'order' => ['nullable', 'string', 'in:asc,desc'],
+            'start_date' => ['nullable', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:start_date'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -388,6 +390,8 @@ class AdminInventoryController extends Controller
             'search' => ['nullable', 'string', 'max:150'],
             'category' => ['nullable', 'string', 'max:36'],
             'status_stok' => ['nullable', 'string', 'in:semua,aman,menipis,kritis'],
+            'start_date' => ['nullable', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:start_date'],
         ]);
 
         $filename = 'inventaris-'.now()->format('Y-m-d').'.csv';
@@ -474,6 +478,14 @@ class AdminInventoryController extends Controller
                         $validated['category']
                     )
                 )
+            )
+            ->when(
+                ! empty($validated['start_date']),
+                fn ($query) => $query->whereDate('dibuat_pada', '>=', $validated['start_date'])
+            )
+            ->when(
+                ! empty($validated['end_date']),
+                fn ($query) => $query->whereDate('dibuat_pada', '<=', $validated['end_date'])
             )
             ->when(
                 $statusStok === 'kritis',
