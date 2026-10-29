@@ -36,12 +36,9 @@
 
                 <!-- Log Webhook -->
                 <a href="{{ route('teknisi.webhook-logs') }}"
-                   class="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition {{ request()->routeIs('teknisi.webhook-logs') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60' }}">
-                    <div class="flex items-center gap-3">
-                        <i class="fa-solid fa-bolt text-sm w-4"></i>
-                        <span>Log Webhook</span>
-                    </div>
-                    <span class="text-[9px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded font-mono font-extrabold border border-sky-400/30">LIVE</span>
+                   class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition {{ request()->routeIs('teknisi.webhook-logs') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60' }}">
+                    <i class="fa-solid fa-bolt text-sm w-4"></i>
+                    <span>Log Webhook</span>
                 </a>
 
                 <!-- Log Notifikasi -->

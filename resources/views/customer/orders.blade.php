@@ -366,7 +366,7 @@
                     <div class="relative w-full flex-1">
                         <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
                         <input type="text" 
-                               x-model="searchQuery"
+                               x-model.debounce.300ms="searchQuery"
                                placeholder="Cari nomor pesanan atau nama produk..." 
                                class="w-full text-xs font-medium border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-sm">
                     </div>

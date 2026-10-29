@@ -2,253 +2,7 @@
 
 @section('content')
 <div class="bg-[#FAF8F5] min-h-screen py-6 font-['Plus_Jakarta_Sans']"
-     x-data="{
-        // === State dari API ===
-        addresses: [],
-        selectedAddressId: null,
-        alamatAktif: null,
-        items: [],
-        voucher: null,
-
-        // === State UI ===
-        loading: true,
-        needLogin: false,
-        errorMsg: '',
-        catatan: '',
-        isLoading: false,
-        submitMsg: '',
-        submitOk: false,
-        fallbackImage: '{{ asset('images/katalog1.webp') }}',
-
-        voucherCode: '',
-        voucherMsg: '',
-        voucherOk: false,
-        busyVoucher: false,
-
-        // Nomor WhatsApp admin untuk konfirmasi
-        waNumber: '6283820380977',
-
-        get selectedAddress() {
-            return this.addresses.find(a => (a.id_user_address || a.id) === this.selectedAddressId) ?? null;
-        },
-        get subtotal() {
-            return this.items.reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
-        },
-        get discountAmount() {
-            if (!this.voucher) return 0;
-            let d = this.voucher.tipe_diskon === 'persentase'
-                ? this.subtotal * Number(this.voucher.nilai_diskon) / 100
-                : Number(this.voucher.nilai_diskon);
-            if (this.voucher.maksimal_diskon) d = Math.min(d, Number(this.voucher.maksimal_diskon));
-            return Math.round(Math.min(d, this.subtotal));
-        },
-        // Pajak Penjualan (PPN) 11% — dihitung dari dasar setelah diskon (subtotal − diskon).
-        get ppnAmount() {
-            return Math.round((this.subtotal - this.discountAmount) * 0.11);
-        },
-        get totalPembayaran() {
-            // Subtotal − Diskon + PPN 11%
-            return Math.max(0, (this.subtotal - this.discountAmount) + this.ppnAmount);
-        },
-        get itemCount() {
-            return this.items.reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
-        },
-
-        // === Helper render ===
-        formatRupiah(number) { return PandansariAPI.formatRp(number); },
-        titleOf(i) { return i.variant?.product?.nama_produk ?? 'Produk'; },
-        variantLabel(i) {
-            const v = i.variant;
-            if (!v) return '';
-            return [v.ukuran && ('Size ' + v.ukuran), v.warna].filter(Boolean).join(' • ');
-        },
-        priceOf(i) { return Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1); },
-        imageOf(i) {
-            return PandansariAPI.getProductImage(i) || PandansariAPI.coverUrl(i.variant?.product?.images) || this.fallbackImage;
-        },
-
-        // === Loader ===
-        async loadCart() {
-            const res = await PandansariAPI.cart();
-            if (res.ok) {
-                const cart = res.data ?? {};
-                this.items = cart.items ?? (Array.isArray(cart) ? cart : []);
-            } else if (res.status === 401) {
-                this.needLogin = true;
-            } else {
-                this.errorMsg = res.message;
-            }
-            return res;
-        },
-        async loadAddresses() {
-            const res = await PandansariAPI.addresses();
-            if (res.ok) {
-                this.addresses = res.data?.data ?? res.data ?? [];
-                const utama = this.addresses.find(a => a.alamat_utama ?? a.is_primary) ?? this.addresses[0];
-                if (utama) {
-                    this.alamatAktif = utama;
-                    this.selectedAddressId = utama.id_user_address || utama.id;
-                }
-            }
-            return res;
-        },
-        async applyVoucher() {
-            if (!this.voucherCode.trim()) return;
-            this.busyVoucher = true;
-            const res = await PandansariAPI.validateVoucher(this.voucherCode.trim().toUpperCase(), this.subtotal);
-            this.busyVoucher = false;
-            if (res.ok) {
-                this.voucher = res.data;
-                this.voucherOk = true;
-                this.voucherMsg = res.message;
-            } else {
-                this.voucher = null;
-                this.voucherOk = false;
-                this.voucherMsg = res.message;
-            }
-        },
-        hapusVoucher() { this.voucher = null; this.voucherMsg = ''; this.voucherOk = false; this.voucherCode = ''; },
-
-        voucherList: [], voucherListPesan: '',
-        async muatVoucher() {
-            const r = await PandansariAPI.availableVouchers(this.subtotal);
-            if (r.ok) {
-                this.voucherList = (r.data ?? []).filter(v => {
-                    const st = String(v.status_voucher ?? v.status ?? '').toLowerCase();
-                    return !st || ['aktif', 'dipublikasikan', 'published', 'active'].includes(st);
-                });
-                this.voucherListPesan = this.voucherList.length ? '' : 'Belum ada voucher tersedia.';
-            } else {
-                this.voucherList = [];
-                this.voucherListPesan = r.message;
-            }
-        },
-
-        // === Format Pesan WhatsApp ===
-        waMessage(order) {
-            const alamat = this.alamatAktif;
-            const user = (window.PandansariAPI && PandansariAPI.getUser && PandansariAPI.getUser()) || {};
-            const orderNumber = order?.nomor_pesanan ?? order?.id_order ?? order?.id ?? '-';
-            const orderId = order?.id_order ?? order?.id ?? orderNumber;
-
-            const lines = [];
-            lines.push('Halo Batik Pandansari, saya telah membuat pesanan di website.');
-            lines.push('');
-            lines.push('Nomor Pesanan: ' + orderNumber);
-            lines.push('Nama: ' + (alamat?.nama_penerima || user.nama_pengguna || user.nama || '-'));
-            lines.push('No. HP: ' + (alamat?.nomor_telepon || user.nomor_telepon || '-'));
-            if (alamat) {
-                const alamatLengkap = [
-                    alamat.alamat_lengkap,
-                    alamat.nama_kecamatan,
-                    alamat.nama_kota,
-                    alamat.nama_provinsi,
-                    alamat.kode_pos,
-                ].filter(Boolean).join(', ');
-                lines.push('Alamat: ' + (alamatLengkap || '-'));
-            }
-            lines.push('');
-            lines.push('Item Pesanan:');
-            this.items.forEach((item, index) => {
-                const nama = this.titleOf(item);
-                const varian = this.variantLabel(item);
-                const jumlah = Number(item.jumlah ?? 1);
-                const harga = this.formatRupiah(this.priceOf(item));
-                lines.push(`${index + 1}. ${nama}${varian ? ' (' + varian + ')' : ''} x${jumlah} — ${harga}`);
-            });
-            lines.push('');
-            lines.push('Subtotal: ' + this.formatRupiah(this.subtotal));
-            if (this.discountAmount > 0) {
-                lines.push('Diskon Voucher: -' + this.formatRupiah(this.discountAmount));
-            }
-            lines.push('PPN 11%: +' + this.formatRupiah(this.ppnAmount));
-            lines.push('Total Sementara: ' + this.formatRupiah(this.totalPembayaran));
-            if (this.catatan.trim()) {
-                lines.push('Catatan: ' + this.catatan.trim());
-            }
-            lines.push('');
-            lines.push('Tautan Pembayaran Midtrans Anda:');
-            lines.push(window.location.origin + '/orders/' + orderId);
-            lines.push('');
-            lines.push('Mohon konfirmasi pesanan & ongkirnya. Terima kasih!');
-            return lines.join('\n');
-        },
-
-        // === Buka WA & Redirect Kembali ke Website untuk Pembayaran Midtrans ===
-        openWhatsAppAndRedirect(order) {
-            const orderId = order?.id_order ?? order?.id ?? order?.nomor_pesanan;
-            const waUrl = 'https://wa.me/' + this.waNumber + '?text=' + encodeURIComponent(this.waMessage(order));
-            
-            // 1. Buka Chat WhatsApp Admin di Tab Baru
-            window.open(waUrl, '_blank', 'noopener');
-
-            // 2. Redirect Halaman Lokal ke Detail Pesanan / Midtrans Payment
-            const targetUrl = orderId ? `/orders/${orderId}` : '/orders';
-            setTimeout(() => {
-                window.location.href = targetUrl;
-            }, 1000);
-        },
-
-        // === Submit Checkout ===
-        async handleCheckout() {
-            if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
-            this.submitMsg = ''; this.submitOk = false;
-
-            if (!this.selectedAddressId) { this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.'; return; }
-            if (!this.items.length) { this.submitMsg = 'Keranjang Anda kosong.'; return; }
-
-            // Validasi stok: hanya blokir jika kuantitas melebihi stok yang ada (quantity > stock)
-            const overStock = this.items.find(i => i.variant?.stok != null && Number(i.jumlah) > Number(i.variant.stok));
-            if (overStock) {
-                this.submitMsg = 'Jumlah pesanan untuk "' + this.titleOf(overStock) + '" melebihi stok yang tersedia (' + overStock.variant.stok + '). Mohon sesuaikan kuantitas di keranjang.';
-                return;
-            }
-            const zeroStock = this.items.find(i => i.variant?.stok != null && Number(i.variant.stok) <= 0);
-            if (zeroStock) {
-                this.submitMsg = 'Produk "' + this.titleOf(zeroStock) + '" telah habis. Silakan hapus item tersebut dari keranjang sebelum memesan.';
-                return;
-            }
-
-            const payload = {
-                id_user_address: this.selectedAddressId,
-                kode_voucher: this.voucherCode.trim() || undefined,
-                catatan: this.catatan.trim() || undefined,
-                is_manual_shipping: true,
-                shipping_cost: 0,
-            };
-
-            this.isLoading = true;
-            const res = await PandansariAPI.checkout(payload);
-            this.isLoading = false;
-
-            if (!res.ok) {
-                if (res.status === 401) {
-                    this.submitMsg = 'Sesi Anda berakhir. Silakan login kembali.';
-                    setTimeout(() => { window.location.href = '/login'; }, 1200);
-                } else {
-                    this.submitMsg = res.message || 'Pesanan gagal dibuat. Silakan coba lagi.';
-                }
-                return;
-            }
-
-            this.submitOk = true;
-            this.openWhatsAppAndRedirect(res.data ?? {});
-        },
-
-        async init() {
-            try {
-                if (typeof PandansariAPI?.loadCatalogImages === 'function') {
-                    const p = PandansariAPI.loadCatalogImages();
-                    if (p && typeof p.then === 'function') {
-                        p.then(() => { this.items = [...this.items]; }).catch(() => {});
-                    }
-                }
-            } catch (_) {}
-            await Promise.all([this.loadCart(), this.loadAddresses()]);
-            this.muatVoucher();
-            this.loading = false;
-        }
-     }">
+     x-data="checkoutPage">
 
     <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
 
@@ -468,4 +222,371 @@
         </div>
     </div>
 </div>
+
+<script>
+    /**
+     * Komponen Alpine.js Halaman Checkout
+     * Mengelola pemilihan alamat, ringkasan keranjang, voucher promo,
+     * dan checkout pesanan (WhatsApp konfirmasi & pembayaran Midtrans).
+     */
+    function checkoutPage() {
+        return {
+            // === State dari API ===
+            addresses: [],
+            selectedAddressId: null,
+            alamatAktif: null,
+            items: [],
+            voucher: null,
+
+            // === State UI ===
+            loading: true,
+            needLogin: false,
+            errorMsg: '',
+            catatan: '',
+            isLoading: false,
+            submitMsg: '',
+            submitOk: false,
+            fallbackImage: '{{ asset('images/katalog1.webp') }}',
+
+            voucherCode: '',
+            voucherMsg: '',
+            voucherOk: false,
+            busyVoucher: false,
+
+            // Nomor WhatsApp admin untuk konfirmasi
+            waNumber: '6283820380977',
+
+            voucherList: [],
+            voucherListPesan: '',
+
+            // === Getters & Komputasi ===
+            get selectedAddress() {
+                return (this.addresses || []).find(a => (a.id_user_address || a.id) === this.selectedAddressId) ?? null;
+            },
+
+            get subtotal() {
+                return (this.items || []).reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
+            },
+
+            get discountAmount() {
+                if (!this.voucher) return 0;
+                let d = this.voucher.tipe_diskon === 'persentase'
+                    ? (this.subtotal * Number(this.voucher.nilai_diskon)) / 100
+                    : Number(this.voucher.nilai_diskon);
+                if (this.voucher.maksimal_diskon) {
+                    d = Math.min(d, Number(this.voucher.maksimal_diskon));
+                }
+                return Math.round(Math.min(d, this.subtotal));
+            },
+
+            // Pajak Penjualan (PPN) 11% — dihitung dari dasar setelah diskon (subtotal − diskon)
+            get ppnAmount() {
+                return Math.round((this.subtotal - this.discountAmount) * 0.11);
+            },
+
+            get totalPembayaran() {
+                // Subtotal − Diskon + PPN 11%
+                return Math.max(0, (this.subtotal - this.discountAmount) + this.ppnAmount);
+            },
+
+            get itemCount() {
+                return (this.items || []).reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
+            },
+
+            // === Helper Render ===
+            formatRupiah(number) {
+                try {
+                    return typeof PandansariAPI?.formatRp === 'function'
+                        ? PandansariAPI.formatRp(number)
+                        : ('Rp ' + Number(number ?? 0).toLocaleString('id-ID'));
+                } catch (e) {
+                    return 'Rp ' + Number(number ?? 0).toLocaleString('id-ID');
+                }
+            },
+
+            titleOf(i) {
+                return i?.variant?.product?.nama_produk ?? 'Produk';
+            },
+
+            variantLabel(i) {
+                const v = i?.variant;
+                if (!v) return '';
+                return [v.ukuran && ('Size ' + v.ukuran), v.warna].filter(Boolean).join(' • ');
+            },
+
+            priceOf(i) {
+                return Number(i?.variant?.harga ?? 0) * Number(i?.jumlah ?? 1);
+            },
+
+            imageOf(i) {
+                try {
+                    if (typeof PandansariAPI?.getProductImage === 'function') {
+                        const img = PandansariAPI.getProductImage(i);
+                        if (img) return img;
+                    }
+                    if (typeof PandansariAPI?.coverUrl === 'function') {
+                        const cover = PandansariAPI.coverUrl(i?.variant?.product?.images);
+                        if (cover) return cover;
+                    }
+                } catch (e) {
+                    console.warn('[Checkout] Error imageOf:', e);
+                }
+                return this.fallbackImage;
+            },
+
+            // === Loader ===
+            async loadCart() {
+                try {
+                    if (!window.PandansariAPI || typeof PandansariAPI.cart !== 'function') {
+                        throw new Error('PandansariAPI.cart tidak tersedia.');
+                    }
+                    const res = await PandansariAPI.cart();
+                    if (res && res.ok) {
+                        const cart = res.data ?? {};
+                        this.items = Array.isArray(cart.items) ? cart.items : (Array.isArray(cart) ? cart : []);
+                    } else if (res && res.status === 401) {
+                        this.needLogin = true;
+                        this.items = [];
+                    } else {
+                        this.errorMsg = res?.message || 'Gagal memuat keranjang belanja.';
+                    }
+                    return res;
+                } catch (err) {
+                    console.error('[Checkout] Error loadCart:', err);
+                    this.errorMsg = 'Gagal memuat keranjang belanja.';
+                    return { ok: false, message: this.errorMsg };
+                }
+            },
+
+            async loadAddresses() {
+                try {
+                    if (!window.PandansariAPI || typeof PandansariAPI.addresses !== 'function') {
+                        throw new Error('PandansariAPI.addresses tidak tersedia.');
+                    }
+                    const res = await PandansariAPI.addresses();
+                    if (res && res.ok) {
+                        this.addresses = res.data?.data ?? res.data ?? [];
+                        const utama = this.addresses.find(a => a.alamat_utama ?? a.is_primary) ?? this.addresses[0];
+                        if (utama) {
+                            this.alamatAktif = utama;
+                            this.selectedAddressId = utama.id_user_address || utama.id;
+                        }
+                    }
+                    return res;
+                } catch (err) {
+                    console.error('[Checkout] Error loadAddresses:', err);
+                    return { ok: false };
+                }
+            },
+
+            async applyVoucher() {
+                if (!this.voucherCode.trim()) return;
+                this.busyVoucher = true;
+                try {
+                    const res = await PandansariAPI.validateVoucher(this.voucherCode.trim().toUpperCase(), this.subtotal);
+                    if (res && res.ok) {
+                        this.voucher = res.data;
+                        this.voucherOk = true;
+                        this.voucherMsg = res.message;
+                    } else {
+                        this.voucher = null;
+                        this.voucherOk = false;
+                        this.voucherMsg = res?.message || 'Kode voucher tidak valid.';
+                    }
+                } catch (err) {
+                    console.error('[Checkout] Error applyVoucher:', err);
+                    this.voucher = null;
+                    this.voucherOk = false;
+                    this.voucherMsg = 'Gagal memvalidasi voucher.';
+                } finally {
+                    this.busyVoucher = false;
+                }
+            },
+
+            hapusVoucher() {
+                this.voucher = null;
+                this.voucherMsg = '';
+                this.voucherOk = false;
+                this.voucherCode = '';
+            },
+
+            async muatVoucher() {
+                try {
+                    if (!window.PandansariAPI || typeof PandansariAPI.availableVouchers !== 'function') return;
+                    const r = await PandansariAPI.availableVouchers(this.subtotal);
+                    if (r && r.ok) {
+                        this.voucherList = (r.data ?? []).filter(v => {
+                            const st = String(v.status_voucher ?? v.status ?? '').toLowerCase();
+                            return !st || ['aktif', 'dipublikasikan', 'published', 'active'].includes(st);
+                        });
+                        this.voucherListPesan = this.voucherList.length ? '' : 'Belum ada voucher tersedia.';
+                    } else {
+                        this.voucherList = [];
+                        this.voucherListPesan = r?.message || '';
+                    }
+                } catch (err) {
+                    console.error('[Checkout] Error muatVoucher:', err);
+                }
+            },
+
+            // === Format Pesan WhatsApp ===
+            waMessage(order) {
+                const alamat = this.alamatAktif;
+                const user = (window.PandansariAPI && PandansariAPI.getUser && PandansariAPI.getUser()) || {};
+                const orderNumber = order?.nomor_pesanan ?? order?.id_order ?? order?.id ?? '-';
+                const orderId = order?.id_order ?? order?.id ?? orderNumber;
+
+                const lines = [];
+                lines.push('Halo Batik Pandansari, saya telah membuat pesanan di website.');
+                lines.push('');
+                lines.push('Nomor Pesanan: ' + orderNumber);
+                lines.push('Nama: ' + (alamat?.nama_penerima || user.nama_pengguna || user.nama || '-'));
+                lines.push('No. HP: ' + (alamat?.nomor_telepon || user.nomor_telepon || '-'));
+                if (alamat) {
+                    const alamatLengkap = [
+                        alamat.alamat_lengkap,
+                        alamat.nama_kecamatan,
+                        alamat.nama_kota,
+                        alamat.nama_provinsi,
+                        alamat.kode_pos,
+                    ].filter(Boolean).join(', ');
+                    lines.push('Alamat: ' + (alamatLengkap || '-'));
+                }
+                lines.push('');
+                lines.push('Item Pesanan:');
+                (this.items || []).forEach((item, index) => {
+                    const nama = this.titleOf(item);
+                    const varian = this.variantLabel(item);
+                    const jumlah = Number(item.jumlah ?? 1);
+                    const harga = this.formatRupiah(this.priceOf(item));
+                    lines.push(`${index + 1}. ${nama}${varian ? ' (' + varian + ')' : ''} x${jumlah} — ${harga}`);
+                });
+                lines.push('');
+                lines.push('Subtotal: ' + this.formatRupiah(this.subtotal));
+                if (this.discountAmount > 0) {
+                    lines.push('Diskon Voucher: -' + this.formatRupiah(this.discountAmount));
+                }
+                lines.push('PPN 11%: +' + this.formatRupiah(this.ppnAmount));
+                lines.push('Total Sementara: ' + this.formatRupiah(this.totalPembayaran));
+                if (this.catatan.trim()) {
+                    lines.push('Catatan: ' + this.catatan.trim());
+                }
+                lines.push('');
+                lines.push('Tautan Pembayaran Midtrans Anda:');
+                lines.push(window.location.origin + '/orders/' + orderId);
+                lines.push('');
+                lines.push('Mohon konfirmasi pesanan & ongkirnya. Terima kasih!');
+                return lines.join('\n');
+            },
+
+            // === Buka WA & Redirect Kembali ke Website untuk Pembayaran Midtrans ===
+            openWhatsAppAndRedirect(order) {
+                const orderId = order?.id_order ?? order?.id ?? order?.nomor_pesanan;
+                const waUrl = 'https://wa.me/' + this.waNumber + '?text=' + encodeURIComponent(this.waMessage(order));
+
+                // 1. Buka Chat WhatsApp Admin di Tab Baru
+                window.open(waUrl, '_blank', 'noopener');
+
+                // 2. Redirect Halaman Lokal ke Detail Pesanan / Midtrans Payment
+                const targetUrl = orderId ? `/orders/${orderId}` : '/orders';
+                setTimeout(() => {
+                    window.location.href = targetUrl;
+                }, 1000);
+            },
+
+            // === Submit Checkout ===
+            async handleCheckout() {
+                if (!window.PandansariAPI || !PandansariAPI.getToken()) {
+                    window.location.href = '/login';
+                    return;
+                }
+                this.submitMsg = '';
+                this.submitOk = false;
+
+                if (!this.selectedAddressId) {
+                    this.submitMsg = 'Pilih alamat pengiriman terlebih dahulu.';
+                    return;
+                }
+                if (!this.items.length) {
+                    this.submitMsg = 'Keranjang Anda kosong.';
+                    return;
+                }
+
+                // Validasi stok: hanya blokir jika kuantitas melebihi stok yang ada (quantity > stock)
+                const overStock = this.items.find(i => i.variant?.stok != null && Number(i.jumlah) > Number(i.variant.stok));
+                if (overStock) {
+                    this.submitMsg = 'Jumlah pesanan untuk "' + this.titleOf(overStock) + '" melebihi stok yang tersedia (' + overStock.variant.stok + '). Mohon sesuaikan kuantitas di keranjang.';
+                    return;
+                }
+                const zeroStock = this.items.find(i => i.variant?.stok != null && Number(i.variant.stok) <= 0);
+                if (zeroStock) {
+                    this.submitMsg = 'Produk "' + this.titleOf(zeroStock) + '" telah habis. Silakan hapus item tersebut dari keranjang sebelum memesan.';
+                    return;
+                }
+
+                const payload = {
+                    id_user_address: this.selectedAddressId,
+                    kode_voucher: this.voucherCode.trim() || undefined,
+                    catatan: this.catatan.trim() || undefined,
+                    is_manual_shipping: true,
+                    shipping_cost: 0,
+                };
+
+                this.isLoading = true;
+                try {
+                    const res = await PandansariAPI.checkout(payload);
+                    if (!res.ok) {
+                        if (res.status === 401) {
+                            this.submitMsg = 'Sesi Anda berakhir. Silakan login kembali.';
+                            setTimeout(() => { window.location.href = '/login'; }, 1200);
+                        } else {
+                            this.submitMsg = res.message || 'Pesanan gagal dibuat. Silakan coba lagi.';
+                        }
+                        return;
+                    }
+
+                    this.submitOk = true;
+                    this.openWhatsAppAndRedirect(res.data ?? {});
+                } catch (err) {
+                    console.error('[Checkout] Error checkout:', err);
+                    this.submitMsg = 'Terjadi kesalahan saat memproses pesanan. Silakan coba lagi.';
+                } finally {
+                    this.isLoading = false;
+                }
+            },
+
+            // Alias method untuk submit/checkout
+            checkout() {
+                return this.handleCheckout();
+            },
+
+            submit() {
+                return this.handleCheckout();
+            },
+
+            async init() {
+                try {
+                    if (typeof PandansariAPI?.loadCatalogImages === 'function') {
+                        const p = PandansariAPI.loadCatalogImages();
+                        if (p && typeof p.then === 'function') {
+                            p.then(() => { this.items = [...this.items]; }).catch(() => {});
+                        }
+                    }
+                } catch (_) {}
+                await Promise.all([this.loadCart(), this.loadAddresses()]);
+                this.muatVoucher();
+                this.loading = false;
+            }
+        };
+    }
+
+    // Registrasi Alpine Component
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('checkoutPage', () => checkoutPage());
+    });
+
+    if (window.Alpine) {
+        Alpine.data('checkoutPage', () => checkoutPage());
+    }
+</script>
 @endsection
