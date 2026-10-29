@@ -3,7 +3,7 @@
 @section('content')
 
     <!-- Container Utama Detail Produk dengan Alpine.js (data dari GET /api/products/{id}) -->
-    <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
+    <div class="bg-[#FAF8F5] min-h-screen pt-6 sm:pt-8 pb-12 sm:pb-16 font-['Plus_Jakarta_Sans']"
          x-data="{
             // Data dari API
             productId: '{{ $id ?? '' }}',
@@ -21,6 +21,8 @@
             selectedUkuran: '',
             qty: 1,
             cartBusy: false,
+            is_liked: false,
+            isLoadingWishlist: false,
             notice: '',       // pesan sukses/eror aksi (keranjang/wishlist)
             noticeOk: false,
             rekomendasi: [],  // produk serupa dari kategori sama (GET /products?category=...)
@@ -192,12 +194,72 @@
                 }
             },
 
-            async simpanWishlist() {
+            async cekStatusWishlist() {
+                if (!PandansariAPI.getToken()) return;
+                try {
+                    const res = await PandansariAPI.wishlist();
+                    if (res.ok && Array.isArray(res.data)) {
+                        const found = res.data.some(it => (it.id_product ?? it.product?.id_product) === this.productId);
+                        this.is_liked = found;
+                        if (this.product) this.product.is_liked = found;
+                    }
+                } catch (e) {
+                    console.warn('[Detail] cekStatusWishlist error:', e);
+                }
+            },
+
+            async toggleLike(product = null) {
                 if (!await this.requireLogin()) return;
-                const res = await PandansariAPI.addWishlist(this.productId);
-                if (res.ok) this.tampilkanNotice('Produk disimpan ke wishlist.', true);
-                else if (res.status === 422) this.tampilkanNotice('Produk sudah ada di wishlist.', true);
-                else this.tampilkanNotice(res.message, false);
+                if (this.isLoadingWishlist) return;
+
+                this.isLoadingWishlist = true;
+                const pid = this.productId || product?.id_product;
+                const isLiked = !!(this.is_liked || this.product?.is_liked);
+                const previousState = isLiked;
+
+                // Optimistic UI update
+                this.is_liked = !isLiked;
+                if (this.product) this.product.is_liked = !isLiked;
+
+                try {
+                    if (isLiked) {
+                        // UN-LIKE: Hapus dari wishlist via DELETE /api/wishlist/{productId}
+                        const res = await PandansariAPI.removeWishlist(pid);
+                        if (!res.ok && res.status !== 404) {
+                            // Rollback jika request gagal
+                            this.is_liked = previousState;
+                            if (this.product) this.product.is_liked = previousState;
+                            this.tampilkanNotice(res.message || 'Gagal menghapus dari wishlist.', false);
+                        } else {
+                            this.is_liked = false;
+                            if (this.product) this.product.is_liked = false;
+                            this.tampilkanNotice('Produk dihapus dari wishlist.', true);
+                        }
+                    } else {
+                        // LIKE: Tambah ke wishlist via POST /api/wishlist dengan payload { product_id }
+                        const res = await PandansariAPI.addWishlist(pid);
+                        if (res.ok || res.status === 422) {
+                            this.is_liked = true;
+                            if (this.product) this.product.is_liked = true;
+                            this.tampilkanNotice('Produk berhasil disimpan ke wishlist.', true);
+                        } else {
+                            // Rollback jika request gagal
+                            this.is_liked = previousState;
+                            if (this.product) this.product.is_liked = previousState;
+                            this.tampilkanNotice(res.message || 'Gagal menambahkan ke wishlist.', false);
+                        }
+                    }
+                } catch (e) {
+                    this.is_liked = previousState;
+                    if (this.product) this.product.is_liked = previousState;
+                    this.tampilkanNotice('Terjadi kesalahan saat memperbarui wishlist.', false);
+                } finally {
+                    this.isLoadingWishlist = false;
+                }
+            },
+
+            async simpanWishlist() {
+                return this.toggleLike(this.product);
             },
 
             tampilkanNotice(msg, ok) {
@@ -209,6 +271,7 @@
             async init() {
                 await this.load();
                 this.loadRekomendasi();
+                this.cekStatusWishlist();
             }
          }">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
@@ -396,10 +459,13 @@
                         </div>
 
                         <!-- Tombol Wishlist -->
-                        <button type="button" @click="simpanWishlist()"
-                                class="w-full bg-slate-50 hover:bg-rose-50 text-slate-600 hover:text-rose-500 border border-slate-200 text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer">
-                            <i class="fa-regular fa-heart text-xs"></i>
-                            <span>Simpan ke Wishlist</span>
+                        <button type="button" @click="toggleLike(product)"
+                                :disabled="isLoadingWishlist"
+                                class="w-full border text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                :class="is_liked ? 'bg-rose-50 text-red-500 border-rose-200' : 'bg-slate-50 hover:bg-rose-50 text-slate-600 hover:text-rose-500 border-slate-200'"
+                                :title="is_liked ? 'Hapus dari Wishlist' : 'Simpan ke Wishlist'">
+                            <i :class="is_liked ? 'fa-solid fa-heart text-red-500 fill-current' : 'fa-regular fa-heart text-gray-400 stroke-current'" class="text-xs transition-colors duration-150"></i>
+                            <span x-text="isLoadingWishlist ? 'MEMPROSES…' : (is_liked ? 'Tersimpan di Wishlist (Batalkan Suka)' : 'Simpan ke Wishlist')"></span>
                         </button>
 
                         <!-- WhatsApp Consultation Button -->

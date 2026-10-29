@@ -22,7 +22,18 @@
             next() { this.activeSlide = (this.activeSlide + 1) % this.slides.length; },
             prev() { this.activeSlide = (this.activeSlide - 1 + this.slides.length) % this.slides.length; },
             timer: null,
-            startTimer() { clearInterval(this.timer); this.timer = setInterval(() => { this.next() }, 5000); },
+            startTimer() {
+                this.stopTimer();
+                if (this.slides && this.slides.length > 1) {
+                    this.timer = setInterval(() => { this.next() }, 5000);
+                }
+            },
+            stopTimer() {
+                if (this.timer) {
+                    clearInterval(this.timer);
+                    this.timer = null;
+                }
+            },
             /** Ambil slide dari CMS (GET /cms/hero); fallback tetap slide statis bila kosong/gagal. */
             async muatCms() {
                 try {
@@ -47,8 +58,10 @@
             }
          }"
          x-init="muatCms(); startTimer()"
-         @mouseenter="clearInterval(timer)"
-         @mouseleave="startTimer()">
+         @mouseenter="stopTimer()"
+         @mouseleave="startTimer()"
+         @touchstart.passive="stopTimer()"
+         @touchend.passive="startTimer()">
 
     <!-- CONTAINER HERO FULL WIDTH -->
     <div class="relative w-full min-h-[520px] md:min-h-[580px] flex items-center shadow-2xl">
@@ -101,18 +114,18 @@
             </div>
         </div>
 
-        <!-- Navigasi Arrow -->
-        <button @click="prev()" class="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/40 border border-white/20 text-white flex items-center justify-center hover:bg-black/70 backdrop-blur-md transition z-20 cursor-pointer">
+        <!-- Navigasi Arrow: Sembunyikan di Mobile (HP), Tampilkan hanya di Desktop (md:flex) -->
+        <button @click="prev(); startTimer()" class="hidden md:flex absolute left-4 md:left-8 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/40 border border-white/20 text-white items-center justify-center hover:bg-black/70 backdrop-blur-md transition z-20 cursor-pointer">
             <i class="fa-solid fa-chevron-left text-sm"></i>
         </button>
-        <button @click="next()" class="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/40 border border-white/20 text-white flex items-center justify-center hover:bg-black/70 backdrop-blur-md transition z-20 cursor-pointer">
+        <button @click="next(); startTimer()" class="hidden md:flex absolute right-4 md:right-8 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/40 border border-white/20 text-white items-center justify-center hover:bg-black/70 backdrop-blur-md transition z-20 cursor-pointer">
             <i class="fa-solid fa-chevron-right text-sm"></i>
         </button>
 
-        <!-- Indikator Slide (Dots) -->
-        <div class="absolute bottom-6 left-6 sm:left-10 md:left-16 z-20 flex items-center gap-2">
+        <!-- Indikator Slide (Dots): Sembunyikan di Mobile (HP), Tampilkan hanya di Desktop (md:flex) -->
+        <div class="hidden md:flex absolute bottom-6 left-6 sm:left-10 md:left-16 z-20 items-center gap-2">
             <template x-for="(slide, index) in slides" :key="index">
-                <button @click="activeSlide = index" 
+                <button @click="activeSlide = index; startTimer()" 
                         class="h-2 rounded-full transition-all duration-300 cursor-pointer"
                         :class="activeSlide === index ? 'w-8 bg-[#ADD8E6]' : 'w-2 bg-white/40 hover:bg-white/70'"></button>
             </template>

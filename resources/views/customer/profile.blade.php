@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="bg-[#FAF8F5] min-h-screen py-6 font-['Plus_Jakarta_Sans']"
+<div class="bg-[#FAF8F5] min-h-screen pt-6 sm:pt-8 pb-12 sm:pb-16 font-['Plus_Jakarta_Sans']"
      x-data="customerProfile">
 
     <!-- Gate: belum login -->
@@ -223,46 +223,46 @@
 
                 </form>
 
-            </div>
+                {{-- Riwayat pemakaian voucher (GET /voucher-usages/me) --}}
+                <div class="border-t border-slate-100 pt-6 mt-2">
+                    <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
+                        <h2 class="text-sm font-bold text-[#0F1A24] flex items-center gap-2">
+                            <i class="fa-solid fa-ticket text-sky-600"></i> Riwayat Pemakaian Voucher
+                        </h2>
+                        <span class="text-[10px] text-slate-400">
+                            <span x-text="vkList.length"></span> penggunaan
+                        </span>
+                    </div>
 
-            <!-- Riwayat pemakaian voucher (GET /voucher-usages/me) -->
-            <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 mt-8">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-                    <h2 class="text-sm font-bold text-[#0F1A24] flex items-center gap-2">
-                        <i class="fa-solid fa-ticket text-sky-600"></i> Riwayat Pemakaian Voucher
-                    </h2>
-                    <span class="text-[10px] text-slate-400">
-                        <span x-text="vkList.length"></span> penggunaan
-                    </span>
-                </div>
+                    <p x-show="vkMsg" x-cloak class="text-xs text-rose-600 font-semibold" x-text="vkMsg"></p>
 
-                <p x-show="vkMsg" x-cloak class="text-xs text-rose-600 font-semibold" x-text="vkMsg"></p>
+                    <div x-show="!vkList.length && !vkMsg" class="text-center py-8">
+                        <i class="fa-solid fa-ticket text-3xl text-slate-200 block mb-2"></i>
+                        <p class="text-xs font-bold text-[#0F1A24]">Belum ada voucher terpakai</p>
+                        <p class="text-[11px] text-slate-400 mt-1">Voucher yang dipakai saat checkout akan tampil di sini.</p>
+                    </div>
 
-                <div x-show="!vkList.length && !vkMsg" class="text-center py-8">
-                    <i class="fa-solid fa-ticket text-3xl text-slate-200 block mb-2"></i>
-                    <p class="text-xs font-bold text-[#0F1A24]">Belum ada voucher terpakai</p>
-                    <p class="text-[11px] text-slate-400 mt-1">Voucher yang dipakai saat checkout akan tampil di sini.</p>
-                </div>
-
-                <div class="space-y-2.5">
-                    <template x-for="vk in vkList" :key="vk.id_voucher_usage ?? vk.id_order">
-                        <div class="flex items-center justify-between gap-3 border border-slate-100 rounded-xl px-4 py-3">
-                            <div class="min-w-0">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-[10px] font-mono font-bold text-sky-800 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5" x-text="vk.voucher?.kode_voucher ?? 'VOUCHER'"></span>
-                                    <span class="text-xs font-bold text-slate-700 truncate" x-text="vk.voucher?.nama_voucher ?? ''"></span>
+                    <div class="space-y-2.5">
+                        <template x-for="vk in vkList" :key="vk.id_voucher_usage ?? vk.id_order">
+                            <div class="flex items-center justify-between gap-3 border border-slate-100 rounded-xl px-4 py-3">
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-[10px] font-mono font-bold text-sky-800 bg-sky-50 border border-sky-100 rounded px-1.5 py-0.5" x-text="vk.voucher?.kode_voucher ?? 'VOUCHER'"></span>
+                                        <span class="text-xs font-bold text-slate-700 truncate" x-text="vk.voucher?.nama_voucher ?? ''"></span>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400 mt-0.5">
+                                        Tanggal: <span x-text="vkTanggal(vk.digunakan_pada ?? vk.dibuat_pada)"></span>
+                                    </p>
                                 </div>
-                                <p class="text-[10px] text-slate-400 mt-0.5">
-                                    Tanggal: <span x-text="vkTanggal(vk.digunakan_pada ?? vk.dibuat_pada)"></span>
-                                </p>
+                                <div class="text-right shrink-0 space-y-1">
+                                    <div class="text-xs font-bold text-[#0F1A24]" x-text="'- ' + PandansariAPI.formatRp(vk.jumlah_diskon)"></div>
+                                    <span class="text-[9px] font-bold rounded-full px-2 py-0.5 inline-block" :class="vkWarna(vk.status_penggunaan)" x-text="vkLabel(vk.status_penggunaan)"></span>
+                                </div>
                             </div>
-                            <div class="text-right shrink-0 space-y-1">
-                                <div class="text-xs font-bold text-[#0F1A24]" x-text="'- ' + PandansariAPI.formatRp(vk.jumlah_diskon)"></div>
-                                <span class="text-[9px] font-bold rounded-full px-2 py-0.5 inline-block" :class="vkWarna(vk.status_penggunaan)" x-text="vkLabel(vk.status_penggunaan)"></span>
-                            </div>
-                        </div>
-                    </template>
+                        </template>
+                    </div>
                 </div>
+
             </div>
 
         </div>

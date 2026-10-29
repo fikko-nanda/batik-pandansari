@@ -15,9 +15,9 @@
                     Menghidupkan kemegahan wastra Nusantara melalui mahakarya batik tulis dan cap dengan mutu dan autentik.
                 </p>
                 <div class="flex gap-2 pt-1">
-                    <a href="https://www.instagram.com/_pandansari_/" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-instagram"></i></a>
-                    <a href="https://www.tiktok.com/@batikpandansari" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-tiktok"></i></a>
-                    <a href="https://wa.me/6283820380977" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-whatsapp"></i></a>
+                    <a href="https://www.instagram.com/_pandansari_/" target="_blank" rel="noopener noreferrer" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-instagram"></i></a>
+                    <a href="https://www.tiktok.com/@batikpandansari" target="_blank" rel="noopener noreferrer" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-tiktok"></i></a>
+                    <a href="https://wa.me/6283820380977" target="_blank" rel="noopener noreferrer" class="w-8 h-8 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 transition"><i class="fa-brands fa-whatsapp"></i></a>
                 </div>
             </div>
 
@@ -26,9 +26,9 @@
                     <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span> KOLEKSI WASTRA
                 </h5>
                 <ul class="space-y-2.5 text-slate-600">
-                    <li class="flex justify-between items-center"><span>Kemeja & Hem Pria</span></li>
-                    <li class="flex justify-between items-center"><span>Dress & Tunik Wanita</span></li>
-                    <li class="flex justify-between items-center"><span>Batik Anak-Anak & Remaja</span></li>
+                    <li class="flex justify-between items-center"><a href="/katalog?category=pria" class="hover:text-slate-900 transition">Kemeja & Hem Pria</a></li>
+                    <li class="flex justify-between items-center"><a href="/katalog?category=wanita" class="hover:text-slate-900 transition">Dress & Tunik Wanita</a></li>
+                    <li class="flex justify-between items-center"><a href="/katalog?category=anak" class="hover:text-slate-900 transition">Batik Anak-Anak & Remaja</a></li>
                 </ul>
             </div>
 
@@ -37,10 +37,10 @@
                     <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span> TOKO RESMI
                 </h5>
                 <ul class="space-y-2.5 text-slate-600">
-                    <li><a href="https://shopee.co.id/batik_pandansari_" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-solid fa-bag-shopping text-[#EE4D2D]"></i> Shopee Mall</a></li>
-                    <li><a href="https://www.tiktok.com/@batikpandansari" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-brands fa-tiktok text-slate-900"></i> TikTok Shop</a></li>
-                    <li><a href="https://tk.tokopedia.com/ZSgDUVn5g/" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-solid fa-store text-[#059669]"></i> Tokopedia</a></li>
-                    <li><a href="https://www.instagram.com/_pandansari_/" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-brands fa-instagram text-[#F43F5E]"></i> Instagram</a></li>
+                    <li><a href="https://shopee.co.id/batik_pandansari_" target="_blank" rel="noopener noreferrer" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-solid fa-bag-shopping text-[#EE4D2D]"></i> Shopee Mall</a></li>
+                    <li><a href="https://www.tiktok.com/@batikpandansari" target="_blank" rel="noopener noreferrer" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-brands fa-tiktok text-slate-900"></i> TikTok Shop</a></li>
+                    <li><a href="https://tk.tokopedia.com/ZSgDUVn5g/" target="_blank" rel="noopener noreferrer" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-solid fa-store text-[#059669]"></i> Tokopedia</a></li>
+                    <li><a href="https://www.instagram.com/_pandansari_/" target="_blank" rel="noopener noreferrer" class="hover:text-slate-900 flex items-center gap-2"><i class="fa-brands fa-instagram text-[#F43F5E]"></i> Instagram</a></li>
                 </ul>
             </div>
 
@@ -63,6 +63,8 @@
         <div class="pt-6 flex flex-col md:flex-row justify-between items-center gap-4 text-slate-400 text-[11px]">
             <p>© 2026 BATIK PANDANSARI. SELURUH HAK CIPTA DILINDUNGI.</p>
             <div class="flex flex-wrap gap-6">
+                <a href="{{ route('home') }}" class="hover:text-slate-600">Beranda</a>
+                <a href="/katalog" class="hover:text-slate-600">Katalog Koleksi</a>
                 <a href="{{ route('terms') }}" class="hover:text-slate-600">Ketentuan Pemesanan</a>
                 <a href="{{ route('privacy') }}" class="hover:text-slate-600">Kebijakan Privasi</a>
             </div>

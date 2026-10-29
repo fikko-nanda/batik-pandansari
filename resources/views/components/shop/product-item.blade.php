@@ -10,10 +10,17 @@
             <span x-text="(p.category?.nama_kategori ?? 'KOLEKSI').toUpperCase()"></span>
         </span>
 
-        <button @click="toggleWishlist(p)" type="button"
-                class="absolute top-2 right-2 sm:top-3 sm:right-3 w-6 h-6 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:text-rose-500 hover:scale-110 active:scale-95 transition-all duration-200 z-10 cursor-pointer"
-                :class="wishlisted[p.id_product] ? 'text-rose-500' : ''">
-            <i class="" :class="wishlisted[p.id_product] ? 'fa-solid fa-heart text-rose-500' : 'fa-regular fa-heart' + ' text-[10px] sm:text-xs'"></i>
+        <!-- Tombol Toggle Like / Wishlist -->
+        <button @click.stop.prevent="typeof toggleLike === 'function' ? toggleLike(p) : toggleWishlist(p)"
+                type="button"
+                class="absolute top-2 right-2 sm:top-3 sm:right-3 w-7 h-7 sm:w-8 sm:h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-md hover:scale-110 active:scale-95 transition-all duration-200 z-10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                :class="(p.is_liked || (typeof wishlisted !== 'undefined' && wishlisted[p.id_product]?.liked)) ? 'text-red-500' : 'text-gray-400'"
+                :disabled="p.isLoading || p.isLoadingWishlist || (typeof wishlistBusy !== 'undefined' && wishlistBusy[p.id_product])"
+                :title="(p.is_liked || (typeof wishlisted !== 'undefined' && wishlisted[p.id_product]?.liked)) ? 'Batalkan Suka' : 'Sukai Produk'">
+            <i class="text-[11px] sm:text-xs transition-colors duration-150"
+               :class="(p.is_liked || (typeof wishlisted !== 'undefined' && wishlisted[p.id_product]?.liked))
+                   ? 'fa-solid fa-heart text-red-500 fill-current'
+                   : 'fa-regular fa-heart text-gray-400 stroke-current'"></i>
         </button>
 
         <div class="hidden sm:flex absolute inset-0 bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2 p-4 pointer-events-none">

@@ -6,6 +6,7 @@
             produk: [],
             loading: true,
             wishlisted: {},
+            wishlistBusy: {},
             fallbackImage: '{{ asset('images/katalog1.webp') }}',
 
             // --- Helper kartu (sama seperti katalog & section pria) ---
@@ -49,11 +50,72 @@
                     }
                 });
             },
-            async toggleWishlist(p) {
+            async toggleLike(product) {
+                if (!product) return;
                 if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
-                if (this.wishlisted[p.id_product]) return;
-                const res = await PandansariAPI.addWishlist(p.id_product);
-                if (res.ok || res.status === 422) this.wishlisted[p.id_product] = true; // 422 = sudah ada
+                const pid = product.id_product || product.product_id;
+                if (!pid) return;
+
+                if (product.isLoading || this.wishlistBusy[pid]) return;
+                product.isLoading = true;
+                this.wishlistBusy[pid] = true;
+
+                const isLiked = !!(product.is_liked ?? this.wishlisted[pid]?.liked);
+                const previousState = isLiked;
+
+                product.is_liked = !isLiked;
+                if (!this.wishlisted[pid]) this.wishlisted[pid] = {};
+                this.wishlisted[pid].liked = !isLiked;
+
+                try {
+                    if (isLiked) {
+                        const res = await PandansariAPI.removeWishlist(pid);
+                        if (!res.ok && res.status !== 404) {
+                            product.is_liked = previousState;
+                            this.wishlisted[pid].liked = previousState;
+                        } else {
+                            product.is_liked = false;
+                            this.wishlisted[pid].liked = false;
+                        }
+                    } else {
+                        const res = await PandansariAPI.addWishlist(pid);
+                        if (res.ok || res.status === 422) {
+                            product.is_liked = true;
+                            this.wishlisted[pid].liked = true;
+                        } else {
+                            product.is_liked = previousState;
+                            this.wishlisted[pid].liked = previousState;
+                        }
+                    }
+                } catch (e) {
+                    product.is_liked = previousState;
+                    this.wishlisted[pid].liked = previousState;
+                } finally {
+                    product.isLoading = false;
+                    this.wishlistBusy[pid] = false;
+                }
+            },
+            toggleWishlist(product) {
+                return this.toggleLike(product);
+            },
+            async muatWishlist() {
+                if (!PandansariAPI.getToken()) return;
+                try {
+                    const res = await PandansariAPI.wishlist();
+                    if (res.ok && Array.isArray(res.data)) {
+                        const map = {};
+                        res.data.forEach(item => {
+                            const pid = item.id_product ?? item.product?.id_product;
+                            if (pid) map[pid] = { liked: true };
+                        });
+                        this.wishlisted = map;
+                        if (Array.isArray(this.produk)) {
+                            this.produk.forEach(p => {
+                                if (map[p.id_product]) p.is_liked = true;
+                            });
+                        }
+                    }
+                } catch (e) {}
             },
             async keKeranjang(p) {
                 const res = await PandansariAPI.keKeranjangProduk(p.id_product);
@@ -70,8 +132,13 @@
                     data = res.ok ? (res.data ?? []) : [];
                 }
                 this.loading = false;
-                this.produk = data;
+                this.produk = data.map(p => {
+                    p.is_liked = false;
+                    p.isLoading = false;
+                    return p;
+                });
                 this.muatVarianProduk(this.produk);
+                this.muatWishlist();
             }
          }">
     <div class="max-w-[1280px] mx-auto px-4 sm:px-6">

@@ -3,7 +3,7 @@
 @section('content')
 
     <!-- Container Utama Keranjang Belanja Interaktif dengan Alpine.js (data dari GET /api/cart) -->
-    <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
+    <div class="bg-[#FAF8F5] min-h-screen pt-6 sm:pt-8 pb-12 sm:pb-16 font-['Plus_Jakarta_Sans']"
          x-data="cartComponent()">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
 

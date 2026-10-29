@@ -3,7 +3,7 @@
 @section('content')
 
     <!-- Container Utama Katalog dengan Alpine.js Data Binding Interaktif (data dari GET /api) -->
-    <div class="bg-[#FAF8F5] min-h-screen py-4 sm:py-8 font-['Plus_Jakarta_Sans']"
+    <div class="bg-[#FAF8F5] min-h-screen pt-6 sm:pt-8 pb-12 sm:pb-16 font-['Plus_Jakarta_Sans']"
          x-data="{
             selectedCategory: '',
             searchQuery: '',
@@ -19,7 +19,8 @@
             perPage: 12,
             total: 0,
             lastPage: 1,
-            wishlisted: {},
+            wishlisted: {},       // { [id_product]: { liked: true, wishlistId: id } }
+            wishlistBusy: {},     // { [id_product]: true } — mencegah klik ganda
             fallbackImage: '{{ asset('images/katalog1.webp') }}',
 
             get activeCategoryLabel() {
@@ -39,7 +40,12 @@
                 });
                 this.loading = false;
                 if (res.ok) {
-                    this.products = res.data ?? [];
+                    this.products = (res.data ?? []).map(p => {
+                        const pid = p.id_product;
+                        p.is_liked = !!(this.wishlisted[pid]?.liked || p.is_liked);
+                        p.isLoading = false;
+                        return p;
+                    });
                     this.total = res.meta?.total ?? this.products.length;
                     this.lastPage = res.meta?.last_page ?? 1;
                     this.page = res.meta?.current_page ?? page;
@@ -110,12 +116,71 @@
                     }
                 });
             },
-            async toggleWishlist(p) {
-                if (!PandansariAPI.getToken()) { window.location.href = '/login'; return; }
-                if (this.wishlisted[p.id_product]) return;
-                const res = await PandansariAPI.addWishlist(p.id_product);
-                if (res.ok || res.status === 422) this.wishlisted[p.id_product] = true; // 422 = sudah ada
-                else this.errorMsg = res.message;
+            async toggleLike(product) {
+                if (!product) return;
+                if (!PandansariAPI.getToken()) {
+                    window.location.href = '/login';
+                    return;
+                }
+                const pid = product.id_product || product.product_id;
+                if (!pid) return;
+
+                // Pencegahan spam klik / multiple-click
+                if (product.isLoading || this.wishlistBusy[pid]) return;
+
+                // Set loading flag
+                product.isLoading = true;
+                this.wishlistBusy[pid] = true;
+
+                // Periksa status is_liked saat ini
+                const isLiked = !!(product.is_liked ?? this.wishlisted[pid]?.liked);
+                const previousState = isLiked;
+
+                // Optimistic UI update: langsung ubah state
+                product.is_liked = !isLiked;
+                if (!this.wishlisted[pid]) this.wishlisted[pid] = {};
+                this.wishlisted[pid].liked = !isLiked;
+
+                try {
+                    if (isLiked) {
+                        // UN-LIKE: Hapus dari wishlist via DELETE /api/wishlist/{productId}
+                        const res = await PandansariAPI.removeWishlist(pid);
+                        if (!res.ok && res.status !== 404) {
+                            // Rollback jika request gagal
+                            product.is_liked = previousState;
+                            this.wishlisted[pid].liked = previousState;
+                            this.errorMsg = res.message || 'Gagal menghapus dari wishlist.';
+                        } else {
+                            product.is_liked = false;
+                            this.wishlisted[pid].liked = false;
+                            this.wishlisted[pid].wishlistId = null;
+                        }
+                    } else {
+                        // LIKE: Tambah ke wishlist via POST /api/wishlist dengan payload { product_id }
+                        const res = await PandansariAPI.addWishlist(pid);
+                        if (res.ok || res.status === 422) {
+                            product.is_liked = true;
+                            this.wishlisted[pid].liked = true;
+                            this.wishlisted[pid].wishlistId = res.data?.id_wishlist_item ?? res.data?.id ?? null;
+                        } else {
+                            // Rollback jika request gagal
+                            product.is_liked = previousState;
+                            this.wishlisted[pid].liked = previousState;
+                            this.errorMsg = res.message || 'Gagal menambahkan ke wishlist.';
+                        }
+                    }
+                } catch (e) {
+                    // Rollback jika terjadi error
+                    product.is_liked = previousState;
+                    this.wishlisted[pid].liked = previousState;
+                    console.error('[Wishlist] Toggle like error:', e);
+                } finally {
+                    product.isLoading = false;
+                    this.wishlistBusy[pid] = false;
+                }
+            },
+            toggleWishlist(product) {
+                return this.toggleLike(product);
             },
             async keKeranjang(p) {
                 const res = await PandansariAPI.keKeranjangProduk(p.id_product);
@@ -192,7 +257,43 @@
                 // Kata kunci dari pencarian navbar: /katalog?q=...
                 this.searchQuery = qs.get('q') ?? '';
 
-                await this.loadProducts(1);
+                // Muat produk & wishlist secara paralel
+                await Promise.all([
+                    this.loadProducts(1),
+                    this.muatWishlist(),
+                ]);
+            },
+
+            // Muat wishlist yang sudah ada agar ikon hati langsung filled
+            async muatWishlist() {
+                if (!PandansariAPI.getToken()) return;
+                try {
+                    const res = await PandansariAPI.wishlist();
+                    if (res.ok && Array.isArray(res.data)) {
+                        const map = {};
+                        res.data.forEach(item => {
+                            const pid = item.id_product ?? item.product?.id_product;
+                            if (pid) {
+                                map[pid] = {
+                                    liked: true,
+                                    wishlistId: item.id_wishlist_item ?? item.id_wishlist ?? item.id ?? pid,
+                                };
+                            }
+                        });
+                        this.wishlisted = map;
+
+                        // Sinkronkan ke objek produk di array products
+                        if (Array.isArray(this.products)) {
+                            this.products.forEach(p => {
+                                if (map[p.id_product]) {
+                                    p.is_liked = true;
+                                }
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Katalog] muatWishlist error:', e);
+                }
             }
          }">
         <div class="max-w-[1280px] mx-auto px-4 sm:px-6">
