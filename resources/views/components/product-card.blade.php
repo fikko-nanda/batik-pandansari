@@ -1,27 +1,49 @@
 @props([
+    'product' => null,
     'badge' => 'TERBARU',
     'subtitle' => 'SOLO • ATELIER WANITA',
     'title' => 'Tunik Batik Cheongsam',
     'description' => null,
     'price' => 'Rp 1.280.000',
     'material' => 'Katun Primis Super',
-    'image' => asset('images/w1.png')
+    'image' => null,
 ])
 
-<div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition">
+@php
+    if ($product) {
+        $title = $product->nama_produk ?? $title;
+        $subtitle = strtoupper($product->category?->nama_kategori ?? $subtitle);
+        $badge = strtoupper($product->category?->nama_kategori ?? $badge);
+        $material = $product->bahan_kain ?? $material;
+        $image = $product->image_url ?? $product->image_path ?? $image;
+        if ($image && !str_starts_with($image, 'http') && !str_starts_with($image, '/')) {
+            $image = asset('storage/' . $image);
+        }
+        $minP = $product->variants?->where('status_varian', 'aktif')->min('harga');
+        if ($minP) {
+            $price = 'Rp ' . number_format($minP, 0, ',', '.');
+        }
+    }
+    $image = $image ?: asset('images/placeholder.jpg');
+@endphp
+
+<div x-data="{ product: (typeof product !== 'undefined' ? product : {{ $product ? Js::from($product) : '{ is_liked: false }' }}) }" class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition">
     <div class="relative h-64 bg-slate-50">
-        <img src="{{ $image }}" alt="{{ $title }}" class="w-full h-full object-cover">
+        <img src="{{ $image }}"
+             alt="{{ $title }}"
+             class="w-full h-full object-cover"
+             onerror="this.onerror=null; this.src='/images/placeholder.jpg';">
         <span class="absolute top-3 left-3 bg-sky-100 border border-sky-200 text-[#075985] text-[9px] font-bold px-2 py-0.5 rounded uppercase font-['Plus_Jakarta_Sans']">
             {{ $badge }}
         </span>
         <button type="button"
-                @click.stop.prevent="typeof toggleWishlist === 'function' ? toggleWishlist(product) : (typeof toggleLike === 'function' ? toggleLike(product) : null)"
+                @click.stop.prevent="toggleWishlist(product)"
                 class="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-md hover:scale-110 active:scale-95 transition-all duration-200 z-10 cursor-pointer disabled:opacity-50"
-                :class="(typeof product !== 'undefined' && product.is_liked) ? 'text-red-500' : 'text-gray-400'"
-                :title="(typeof product !== 'undefined' && product.is_liked) ? 'Batalkan Suka' : 'Sukai Produk'">
+                :class="product.is_liked ? 'text-red-500' : 'text-gray-400'"
+                :title="product.is_liked ? 'Batalkan Suka' : 'Sukai Produk'">
             <svg xmlns="http://www.w3.org/2000/svg"
                  class="w-4 h-4 transition-colors duration-150"
-                 :class="(typeof product !== 'undefined' && product.is_liked)
+                 :class="product.is_liked
                      ? 'text-red-500 fill-red-500'
                      : 'text-gray-400 fill-none stroke-current'"
                  viewBox="0 0 24 24"

@@ -65,7 +65,26 @@ class ProductImage extends Model
      */
     protected function url(): Attribute
     {
-        return Attribute::get(fn () => Storage::disk('public')->url($this->path_gambar));
+        return Attribute::get(function () {
+            if (! $this->path_gambar) {
+                return asset('images/placeholder.jpg');
+            }
+            if (str_starts_with($this->path_gambar, 'http://') || str_starts_with($this->path_gambar, 'https://')) {
+                return $this->path_gambar;
+            }
+
+            return Storage::disk('public')->url($this->path_gambar);
+        });
+    }
+
+    public function getUrlGambarAttribute(): string
+    {
+        return $this->url;
+    }
+
+    public function getImagePathAttribute(): ?string
+    {
+        return $this->path_gambar;
     }
 
     public function product()

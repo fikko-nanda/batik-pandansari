@@ -23,10 +23,8 @@ return new class extends Migration
             $table->timestamp('dibuat_pada')->nullable();
             $table->timestamp('diperbarui_pada')->nullable();
 
-            $table->index(
-                ['status_aktif', 'jarak_min_km', 'jarak_maks_km'],
-                'idx_zona_pengiriman_aktif_jarak'
-            );
+            $table->index(['jarak_min_km', 'jarak_maks_km'], 'idx_zona_jarak');
+            $table->index('status_aktif', 'idx_zona_status');
         });
     }
 

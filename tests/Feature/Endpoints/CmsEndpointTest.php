@@ -520,6 +520,43 @@ class CmsEndpointTest extends EndpointTestCase
         $this->assertRecorded();
     }
 
+    public function test_admin_profil_usaha_titik_asal_pengiriman(): void
+    {
+        $this->actingAsRole('admin');
+
+        $this->hit('PUT', '/api/admin/cms/profil-usaha', [
+            'endpoint' => 'PUT /api/admin/cms/profil-usaha',
+            'label' => 'Simpan titik asal pengiriman (latitude + longitude)',
+            'json' => [
+                'nama_usaha' => 'Batik Pandansari',
+                'latitude' => -7.445123,
+                'longitude' => 110.890012,
+            ],
+            'expected' => 200,
+        ]);
+        $this->assertEqualsWithDelta(
+            -7.445123,
+            (float) ($this->recorded[0]['response']['data']['latitude'] ?? 0),
+            1e-6
+        );
+        $this->assertEqualsWithDelta(
+            110.890012,
+            (float) ($this->recorded[0]['response']['data']['longitude'] ?? 0),
+            1e-6
+        );
+
+        $this->hit('PUT', '/api/admin/cms/profil-usaha', [
+            'endpoint' => 'PUT /api/admin/cms/profil-usaha',
+            'label' => 'Hapus titik asal pengiriman (null)',
+            'json' => ['latitude' => null, 'longitude' => null],
+            'expected' => 200,
+        ]);
+        $this->assertNull($this->recorded[1]['response']['data']['latitude'] ?? null);
+        $this->assertNull($this->recorded[1]['response']['data']['longitude'] ?? null);
+
+        $this->assertRecorded();
+    }
+
     // ------------------------------------------------------------------
     // Fasilitas
     // ------------------------------------------------------------------

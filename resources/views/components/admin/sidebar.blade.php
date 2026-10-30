@@ -65,6 +65,13 @@
                         <i class="fa-solid fa-credit-card text-sm"></i>
                         <span>Gerbang Midtrans</span>
                     </a>
+
+                    <!-- Zona Pengiriman & Tarif (titik asal + zona biaya dasar / per kg) -->
+                    <a href="{{ route('admin.shipping') }}" @click="if (window.innerWidth < 1024) { sidebarOpen = false }"
+                    class="flex items-center gap-2.5 sm:gap-3 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition {{ request()->routeIs('admin.shipping') ? 'bg-sky-500/20 text-sky-400 border border-sky-400/30' : 'text-slate-300 hover:bg-slate-800' }}">
+                        <i class="fa-solid fa-route text-sm"></i>
+                        <span>Zona Pengiriman &amp; Tarif</span>
+                    </a>
                 </div>
             </div>
 

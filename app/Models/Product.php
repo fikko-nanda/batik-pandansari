@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
 {
@@ -19,6 +20,10 @@ class Product extends Model
     const CREATED_AT = 'dibuat_pada';
 
     const UPDATED_AT = 'diperbarui_pada';
+
+    protected $appends = [
+        'image_url',
+    ];
 
     protected $fillable = [
         'id_product',
@@ -37,6 +42,44 @@ class Product extends Model
         return [
             'berat_produk' => 'integer',
         ];
+    }
+
+    /**
+     * Accessor URL Gambar Utama Produk: $product->image_url
+     */
+    public function getImageUrlAttribute(): string
+    {
+        $firstImage = $this->images
+            ?->where('type', ProductImage::TYPE_PRODUK)
+            ?->sortByDesc('is_primary')
+            ?->first()
+            ?? $this->images?->first();
+
+        $path = $firstImage?->path_gambar ?? $firstImage?->image_path;
+
+        if ($path) {
+            if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+                return $path;
+            }
+
+            return Storage::disk('public')->url($path);
+        }
+
+        return asset('images/placeholder.jpg');
+    }
+
+    /**
+     * Alias path berkas gambar: $product->image_path
+     */
+    public function getImagePathAttribute(): ?string
+    {
+        $firstImage = $this->images
+            ?->where('type', ProductImage::TYPE_PRODUK)
+            ?->sortByDesc('is_primary')
+            ?->first()
+            ?? $this->images?->first();
+
+        return $firstImage?->path_gambar ?? $firstImage?->image_path;
     }
 
     public function category(): BelongsTo

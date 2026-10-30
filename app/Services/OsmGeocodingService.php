@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Exceptions\ShippingException;
 use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
@@ -17,7 +16,7 @@ class OsmGeocodingService
     private const LAST_REQUEST_CACHE_KEY = 'osm:nominatim-last-request-at';
 
     /**
-     * Cari alamat Indonesia melalui Nominatim dan normalisasi hasilnya.
+     * Cari alamat Indonesia melalui Nominatim atau Photon dan normalisasi hasilnya.
      *
      * @return array<int, array{
      *     label: string,
@@ -57,11 +56,41 @@ class OsmGeocodingService
      */
     private function requestSearch(string $query): array
     {
+        // 1. Coba Nominatim terlebih dahulu
         try {
-            $minimumInterval = max(0, (int) config('services.osm.nominatim_min_interval_seconds', 1));
-            $connectTimeout = max(1, (int) config('services.osm.connect_timeout', 3));
-            $timeout = max(1, (int) config('services.osm.timeout', 8));
+            $nominatimResults = $this->requestNominatim($query);
+            if (! empty($nominatimResults)) {
+                return $nominatimResults;
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
 
+        // 2. Fallback ke Photon (OpenStreetMap search by Komoot) jika Nominatim bermasalah / timeout / rate-limited
+        try {
+            $photonResults = $this->requestPhoton($query);
+            if (! empty($photonResults)) {
+                return $photonResults;
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
+
+        return [];
+    }
+
+    /**
+     * Pencarian via Nominatim OpenStreetMap
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function requestNominatim(string $query): array
+    {
+        $minimumInterval = max(0, (int) config('services.osm.nominatim_min_interval_seconds', 1));
+        $connectTimeout = max(3, (int) config('services.osm.connect_timeout', 8));
+        $timeout = max(5, (int) config('services.osm.timeout', 12));
+
+        try {
             $response = Cache::lock(
                 'osm:nominatim-request',
                 max(10, $minimumInterval + $connectTimeout + $timeout + 5)
@@ -87,67 +116,52 @@ class OsmGeocodingService
                     max(1, $minimumInterval + 1)
                 );
 
-                return Http::withHeaders([
-                    'User-Agent' => (string) config('services.osm.user_agent'),
+                $client = Http::withHeaders([
+                    'User-Agent' => (string) config('services.osm.user_agent', 'BatikPandansariApp/1.0 (admin@batikpandansari.com)'),
                     'Accept' => 'application/json',
                 ])
                     ->connectTimeout($connectTimeout)
                     ->timeout($timeout)
-                    ->get(rtrim((string) config('services.osm.nominatim_url'), '/').'/search', [
-                        'q' => $query,
-                        'format' => 'jsonv2',
-                        'addressdetails' => 1,
-                        'limit' => 5,
-                        'countrycodes' => 'id',
-                        'accept-language' => 'id',
-                    ]);
+                    ->retry(2, 200);
+
+                $caBundle = config('services.osm.ca_bundle') ?: config('services.api.ca_bundle');
+                $verify = config('services.osm.verify_ssl');
+
+                if ($caBundle && file_exists($caBundle)) {
+                    $client = $client->withOptions(['verify' => $caBundle]);
+                } elseif ($verify === false || ($verify === null && (PHP_OS_FAMILY === 'Windows' || ! app()->environment('production')))) {
+                    $client = $client->withoutVerifying();
+                }
+
+                $params = [
+                    'q' => $query,
+                    'format' => 'jsonv2',
+                    'addressdetails' => 1,
+                    'limit' => 5,
+                    'countrycodes' => 'id',
+                    'accept-language' => 'id',
+                ];
+
+                if ($email = config('services.osm.email')) {
+                    $params['email'] = $email;
+                }
+
+                return $client->get(rtrim((string) config('services.osm.nominatim_url'), '/').'/search', $params);
             });
         } catch (LockTimeoutException) {
-            throw new ShippingException(
-                'Layanan pencarian alamat sedang sibuk. Coba lagi beberapa saat.',
-                429,
-                'SHIPPING_GEOCODING_BUSY'
-            );
-        } catch (ConnectionException) {
-            throw new ShippingException(
-                'Layanan pencarian alamat tidak dapat dihubungi.',
-                502,
-                'SHIPPING_GEOCODING_UNAVAILABLE'
-            );
-        } catch (Throwable $e) {
-            report($e);
-
-            throw new ShippingException(
-                'Layanan pencarian alamat gagal memproses permintaan.',
-                502,
-                'SHIPPING_GEOCODING_FAILED'
-            );
+            return [];
+        } catch (Throwable) {
+            return [];
         }
 
-        if ($response->status() === 429) {
-            throw new ShippingException(
-                'Layanan pencarian alamat sedang membatasi permintaan. Coba lagi beberapa saat.',
-                429,
-                'SHIPPING_GEOCODING_RATE_LIMITED'
-            );
-        }
-
-        if (! $response->successful()) {
-            throw new ShippingException(
-                'Layanan pencarian alamat sedang tidak tersedia.',
-                502,
-                'SHIPPING_GEOCODING_UNAVAILABLE'
-            );
+        if (! $response || ! $response->successful()) {
+            return [];
         }
 
         $payload = $response->json();
 
         if (! is_array($payload)) {
-            throw new ShippingException(
-                'Respons layanan pencarian alamat tidak valid.',
-                502,
-                'SHIPPING_GEOCODING_INVALID_RESPONSE'
-            );
+            return [];
         }
 
         $results = [];
@@ -178,6 +192,97 @@ class OsmGeocodingService
                 'nama_kota' => $this->firstString($address, ['city', 'town', 'municipality', 'county']),
                 'nama_kecamatan' => $this->firstString($address, ['suburb', 'village', 'district', 'neighbourhood']),
                 'kode_pos' => $this->firstString($address, ['postcode']),
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Pencarian fallback via Photon OpenStreetMap (Komoot)
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function requestPhoton(string $query): array
+    {
+        $connectTimeout = max(3, (int) config('services.osm.connect_timeout', 8));
+        $timeout = max(5, (int) config('services.osm.timeout', 12));
+        $photonUrl = (string) config('services.osm.photon_url', 'https://photon.komoot.io/api');
+
+        $client = Http::withHeaders([
+            'User-Agent' => (string) config('services.osm.user_agent', 'BatikPandansariApp/1.0 (admin@batikpandansari.com)'),
+            'Accept' => 'application/json',
+        ])
+            ->connectTimeout($connectTimeout)
+            ->timeout($timeout)
+            ->retry(2, 200);
+
+        $caBundle = config('services.osm.ca_bundle') ?: config('services.api.ca_bundle');
+        $verify = config('services.osm.verify_ssl');
+
+        if ($caBundle && file_exists($caBundle)) {
+            $client = $client->withOptions(['verify' => $caBundle]);
+        } elseif ($verify === false || ($verify === null && (PHP_OS_FAMILY === 'Windows' || ! app()->environment('production')))) {
+            $client = $client->withoutVerifying();
+        }
+
+        $response = $client->get(rtrim($photonUrl, '/'), [
+            'q' => $query,
+            'limit' => 5,
+        ]);
+
+        if (! $response->successful()) {
+            return [];
+        }
+
+        $payload = $response->json();
+        $features = $payload['features'] ?? null;
+        if (! is_array($features)) {
+            return [];
+        }
+
+        $results = [];
+        foreach ($features as $f) {
+            if (! is_array($f)) {
+                continue;
+            }
+            $coords = $f['geometry']['coordinates'] ?? null;
+            if (! is_array($coords) || count($coords) < 2) {
+                continue;
+            }
+            $lon = (float) $coords[0];
+            $lat = (float) $coords[1];
+
+            if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
+                continue;
+            }
+
+            $props = is_array($f['properties'] ?? null) ? $f['properties'] : [];
+
+            // Filter agar fokus alamat Indonesia jika countrycode tersedia
+            $countryCode = strtolower((string) ($props['countrycode'] ?? ''));
+            if ($countryCode !== '' && $countryCode !== 'id') {
+                continue;
+            }
+
+            $name = $props['name'] ?? null;
+            $district = $props['district'] ?? null;
+            $city = $props['city'] ?? $props['county'] ?? null;
+            $state = $props['state'] ?? null;
+            $postcode = $props['postcode'] ?? null;
+            $country = $props['country'] ?? 'Indonesia';
+
+            $parts = array_filter([$name, $district, $city, $state, $postcode, $country]);
+            $label = implode(', ', $parts);
+
+            $results[] = [
+                'label' => $label,
+                'latitude' => $lat,
+                'longitude' => $lon,
+                'nama_provinsi' => $state ? (string) $state : null,
+                'nama_kota' => $city ? (string) $city : null,
+                'nama_kecamatan' => ($district ?: $name) ? (string) ($district ?: $name) : null,
+                'kode_pos' => $postcode ? (string) $postcode : null,
             ];
         }
 
