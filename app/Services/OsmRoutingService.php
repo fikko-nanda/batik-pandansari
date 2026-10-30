@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Exceptions\ShippingException;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -66,47 +65,36 @@ class OsmRoutingService
         );
 
         try {
-            $response = Http::withHeaders([
-                'User-Agent' => (string) config('services.osm.user_agent'),
+            $client = Http::withHeaders([
+                'User-Agent' => (string) config('services.osm.user_agent', 'BatikPandansariApp/1.0 (admin@batikpandansari.com)'),
                 'Accept' => 'application/json',
             ])
-                ->connectTimeout((int) config('services.osm.connect_timeout', 3))
-                ->timeout((int) config('services.osm.timeout', 8))
-                ->get($url, [
-                    'overview' => 'false',
-                    'alternatives' => 'false',
-                    'steps' => 'false',
-                ]);
-        } catch (ConnectionException) {
-            throw new ShippingException(
-                'Layanan perhitungan jarak pengiriman tidak dapat dihubungi.',
-                502,
-                'SHIPPING_ROUTING_UNAVAILABLE'
-            );
+                ->connectTimeout((int) config('services.osm.connect_timeout', 8))
+                ->timeout((int) config('services.osm.timeout', 12))
+                ->retry(2, 200);
+
+            $caBundle = config('services.osm.ca_bundle') ?: config('services.api.ca_bundle');
+            $verify = config('services.osm.verify_ssl');
+
+            if ($caBundle && file_exists($caBundle)) {
+                $client = $client->withOptions(['verify' => $caBundle]);
+            } elseif ($verify === false || ($verify === null && (PHP_OS_FAMILY === 'Windows' || ! app()->environment('production')))) {
+                $client = $client->withoutVerifying();
+            }
+
+            $response = $client->get($url, [
+                'overview' => 'false',
+                'alternatives' => 'false',
+                'steps' => 'false',
+            ]);
         } catch (Throwable $e) {
             report($e);
 
-            throw new ShippingException(
-                'Layanan perhitungan jarak pengiriman gagal memproses permintaan.',
-                502,
-                'SHIPPING_ROUTING_FAILED'
-            );
+            return $this->fallbackHaversineRoute($originLatitude, $originLongitude, $destinationLatitude, $destinationLongitude);
         }
 
         if (! $response->successful()) {
-            if ($response->status() === 429) {
-                throw new ShippingException(
-                    'Layanan perhitungan jarak sedang membatasi permintaan. Coba lagi beberapa saat.',
-                    429,
-                    'SHIPPING_ROUTING_RATE_LIMITED'
-                );
-            }
-
-            throw new ShippingException(
-                'Layanan perhitungan jarak pengiriman sedang tidak tersedia.',
-                502,
-                'SHIPPING_ROUTING_UNAVAILABLE'
-            );
+            return $this->fallbackHaversineRoute($originLatitude, $originLongitude, $destinationLatitude, $destinationLongitude);
         }
 
         $payload = $response->json();
@@ -148,6 +136,32 @@ class OsmRoutingService
             'jarak_km' => round($distanceMeters / 1000, 3),
             'durasi_menit' => (int) ceil($durationSeconds / 60),
             'provider' => 'OSRM',
+        ];
+    }
+
+    private function fallbackHaversineRoute(
+        float $originLatitude,
+        float $originLongitude,
+        float $destinationLatitude,
+        float $destinationLongitude
+    ): array {
+        $earthRadiusKm = 6371.0;
+
+        $dLat = deg2rad($destinationLatitude - $originLatitude);
+        $dLon = deg2rad($destinationLongitude - $originLongitude);
+
+        $a = sin($dLat / 2) * sin($dLat / 2) +
+            cos(deg2rad($originLatitude)) * cos(deg2rad($destinationLatitude)) *
+            sin($dLon / 2) * sin($dLon / 2);
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        $jarakKm = max(0.5, round($earthRadiusKm * $c * 1.3, 3));
+        $durasiMenit = (int) ceil($jarakKm * 2);
+
+        return [
+            'jarak_km' => $jarakKm,
+            'durasi_menit' => $durasiMenit,
+            'provider' => 'Estimasi Jarak Darat (Fallback)',
         ];
     }
 

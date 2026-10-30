@@ -14,6 +14,11 @@
     <!-- FontAwesome & Alpine.js -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
+    <!-- Injeksi Dinamis Base API URL dari .env (ngrok backend) -->
+    <script>
+        window.__PANDANSARI_API_URL__ = @json(env('VITE_API_URL') ?: '/api');
+    </script>
+
     <!-- app.js (window.PandansariAPI) HARUS dimuat SEBELUM Alpine.js, agar saat Alpine eval x-data global sudah ada -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <!-- Google Identity Services (GIS) client for Google Sign-In -->

@@ -37,7 +37,7 @@
             titleOf(it) { return it.product?.nama_produk ?? 'Produk'; },
             descOf(it) { return it.product?.deskripsi ?? ''; },
             imageOf(it) {
-                return PandansariAPI.coverUrl(it.product?.images) || this.fallbackImage;
+                return it.product?.image_url || PandansariAPI.coverUrl(it.product?.images) || this.fallbackImage || '/images/placeholder.jpg';
             },
             catOf(it) { return (it.product?.category?.nama_kategori ?? 'Batik Pandansari').toUpperCase(); },
             ukuranOf(it) {
@@ -223,7 +223,10 @@
                     <div class="group bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between">
                         <div class="relative h-52 sm:h-80 bg-slate-100 overflow-hidden">
                             <a :href="'/detail/' + (it.product?.id_product ?? '')">
-                                <img :src="imageOf(it)" :alt="titleOf(it)" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out">
+                                <img :src="imageOf(it)"
+                                     :alt="titleOf(it)"
+                                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                                     onerror="this.onerror=null; this.src='/images/placeholder.jpg';">
                             </a>
 
                             <!-- Badge Ukuran Tersedia -->

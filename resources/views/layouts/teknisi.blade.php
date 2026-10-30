@@ -10,6 +10,11 @@
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
 
+    <!-- Injeksi Dinamis Base API URL dari .env (ngrok backend) -->
+    <script>
+        window.__PANDANSARI_API_URL__ = @json(env('VITE_API_URL') ?: '/api');
+    </script>
+
     <!-- app.js (window.PandansariAPI) sebelum Alpine -->
     @vite(['resources/js/app.js', 'resources/js/teknisi.js'])
 

@@ -189,51 +189,6 @@
                         </div>
                     </template>
 
-                    <!-- 4. Kupon & Voucher Section -->
-                    <div class="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
-                        <h3 class="font-bold text-[#0F1A24] text-xs sm:text-sm flex items-center gap-2">
-                            <i class="fa-solid fa-ticket text-sky-600"></i>
-                            <span>Kupon & Voucher Hak Istimewa</span>
-                        </h3>
-
-                        <!-- Input Code Form -->
-                        <div class="flex items-center gap-2">
-                            <div class="relative flex-1">
-                                <i class="fa-solid fa-tag absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                                <input type="text" x-model="couponCode" @keydown.enter="if (!isActionDisabled) applyVoucher()" :disabled="isActionDisabled" placeholder="Masukkan kode voucher..." class="w-full pl-9 pr-3 py-2.5 text-xs font-mono uppercase font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                            </div>
-                            <button @click="applyVoucher()" type="button" :disabled="busyVoucher || isActionDisabled || !couponCode.trim()"
-                                    class="bg-[#BAE6FD] hover:bg-sky-200 text-[#0F1A24] text-xs font-bold px-4 sm:px-6 py-2.5 rounded-xl transition shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                                <span x-show="!busyVoucher">GUNAKAN</span>
-                                <span x-show="busyVoucher"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
-                            </button>
-                        </div>
-
-                        <!-- Pesan hasil validasi voucher -->
-                        <p x-show="voucherMsg" class="text-[11px] font-semibold flex items-center gap-1.5"
-                           :class="voucherOk ? 'text-emerald-600' : 'text-rose-600'">
-                            <i :class="voucherOk ? 'fa-solid fa-circle-check' : 'fa-solid fa-triangle-exclamation'"></i>
-                            <span x-text="voucherMsg"></span>
-                        </p>
-
-                        <!-- Active Coupon Alert -->
-                        <template x-if="voucher">
-                            <div class="flex items-center justify-between p-3 bg-sky-50/80 border border-sky-200 rounded-xl text-xs">
-                                <div class="flex items-center gap-2 text-[#0369A1]">
-                                    <i class="fa-solid fa-circle-check text-sky-600"></i>
-                                    <div>
-                                        <span class="font-bold font-mono" x-text="voucher.nama_voucher ?? voucher.kode_voucher ?? 'VOUCHER'"></span>
-                                        <span class="bg-sky-200 text-[#0369A1] font-bold px-1.5 py-0.5 rounded text-[10px] ml-1">Hemat <span x-text="formatRupiah(discountAmount)"></span></span>
-                                        <p class="text-[10px] text-slate-500 mt-0.5">Diskon diaplikasikan saat checkout.</p>
-                                    </div>
-                                </div>
-                                <button @click="hapusVoucher()" type="button" class="text-slate-400 hover:text-slate-700 p-1 cursor-pointer">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </button>
-                            </div>
-                        </template>
-                    </div>
-
                 </div>
 
                 <!-- Right Column: Ringkasan Pesanan (4 Cols) -->
@@ -252,13 +207,6 @@
                                 <span>Subtotal (<span x-text="selectedCount"></span> Item)</span>
                                 <span class="font-bold text-slate-900" x-text="formatRupiah(subtotal)"></span>
                             </div>
-
-                            <template x-if="voucher">
-                                <div class="flex justify-between text-rose-600">
-                                    <span class="truncate mr-2"><i class="fa-solid fa-ticket text-[10px] mr-1"></i><span x-text="voucher.nama_voucher ?? 'Voucher'"></span></span>
-                                    <span class="font-bold" x-text="'- ' + formatRupiah(discountAmount)"></span>
-                                </div>
-                            </template>
 
                             <div class="flex justify-between">
                                 <span>Estimasi Ongkir</span>
@@ -324,7 +272,7 @@
 <script>
     /**
      * Komponen Alpine.js Keranjang Belanja (Cart)
-     * Mengelola state item, kupon voucher, kalkulasi harga, dan integrasi PandansariAPI.
+     * Mengelola state item, kalkulasi harga, dan integrasi PandansariAPI.
      */
     function cartComponent() {
         return {
@@ -339,13 +287,6 @@
             msgOk: false,
             fallbackImage: '{{ asset('images/katalog1.webp') }}',
 
-            // === State Voucher Promo ===
-            couponCode: '',
-            voucher: null,          // { nama_voucher, tipe_diskon, nilai_diskon, maksimal_diskon, ... }
-            voucherMsg: '',
-            voucherOk: false,
-            busyVoucher: false,
-
             // === Getters & Komputasi ===
             get selectedCount() {
                 return (this.items || []).reduce((s, i) => s + Number(i.jumlah ?? 1), 0);
@@ -359,31 +300,13 @@
                 return (this.items || []).reduce((s, i) => s + (Number(i.variant?.harga ?? 0) * Number(i.jumlah ?? 1)), 0);
             },
 
-            get discountAmount() {
-                if (!this.voucher) return 0;
-                let d = this.voucher.tipe_diskon === 'persentase'
-                    ? (this.subtotal * Number(this.voucher.nilai_diskon)) / 100
-                    : Number(this.voucher.nilai_diskon);
-
-                if (this.voucher.maksimal_diskon) {
-                    d = Math.min(d, Number(this.voucher.maksimal_diskon));
-                }
-
-                return Math.round(Math.min(d, this.subtotal));
-            },
-
             get totalTagihan() {
-                return Math.max(0, this.subtotal - this.discountAmount);
+                return this.subtotal;
             },
 
             get isCheckoutDisabled() {
                 const count = (this.items || []).length;
                 return this.isLoading || this.needLogin || !count || !!this.errorMsg || this.hasOverStock;
-            },
-
-            get isActionDisabled() {
-                const count = (this.items || []).length;
-                return this.isLoading || !count || !!this.errorMsg || this.needLogin;
             },
 
             // === Helper Render UI ===
@@ -530,7 +453,6 @@
                     const res = await PandansariAPI.clearCart();
                     if (res && res.ok) {
                         this.items = [];
-                        this.voucher = null;
                         this.tampil('Keranjang berhasil dikosongkan.', true);
                     } else {
                         this.tampil(res?.message || 'Gagal mengosongkan keranjang.', false);
@@ -541,39 +463,6 @@
                 } finally {
                     this.busy = false;
                 }
-            },
-
-            // === Aksi Voucher Promo ===
-            async applyVoucher() {
-                if (this.isActionDisabled || this.busyVoucher || !this.couponCode.trim()) return;
-
-                this.busyVoucher = true;
-                try {
-                    const res = await PandansariAPI.validateVoucher(this.couponCode.trim().toUpperCase(), this.subtotal);
-                    if (res && res.ok) {
-                        this.voucher = res.data;
-                        this.voucherOk = true;
-                        this.voucherMsg = res.message;
-                    } else {
-                        this.voucher = null;
-                        this.voucherOk = false;
-                        this.voucherMsg = res?.message || 'Kode voucher tidak valid.';
-                    }
-                } catch (e) {
-                    console.error('[Cart] Error validateVoucher:', e);
-                    this.voucher = null;
-                    this.voucherOk = false;
-                    this.voucherMsg = 'Gagal memvalidasi voucher.';
-                } finally {
-                    this.busyVoucher = false;
-                }
-            },
-
-            hapusVoucher() {
-                this.voucher = null;
-                this.voucherMsg = '';
-                this.voucherOk = false;
-                this.couponCode = '';
             },
 
             tampil(msg, ok) {

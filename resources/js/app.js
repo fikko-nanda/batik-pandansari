@@ -43,7 +43,11 @@
  *   - Tail 'api' diakhir '/api' → semua panggilan jadi '.../api/me', dll.
  *   - Ubah .env → WAJIB restart Vite (composer dev) atau build ulang (npm run build).
  */
-const API_URL = String(import.meta.env?.VITE_API_URL || '/api').trim().replace(/\/+$/, '');
+const API_URL = String(
+    (typeof window !== 'undefined' && window.__PANDANSARI_API_URL__) ||
+    import.meta.env?.VITE_API_URL ||
+    '/api'
+).trim().replace(/\/+$/, '');
 if (!API_URL) {
     console.debug('[PandansariAPI] Default API URL aktif: /api');
 }
@@ -715,11 +719,12 @@ window.PandansariAPI = {
     /**
      * Buka popup Midtrans Snap utk satu transaksi pembayaran.
      * Callback (opsional): onSuccess, onPending, onError, onClose.
-     * Jika snap_token/client_key tidak ada ATAU script gagal termuat →
-     * fallback ke redirect_url (alur lama) agar tombol bayar tetap bekerja.
+     * redirectFallback (default true): bila script Snap gagal termuat, alihkan
+     * ke redirect_url (alur lama). Kirim false agar caller (mis. checkout)
+     * TETAP di halaman dan menangani error sendiri — tanpa pengalihan halaman.
      * Return: 'snap' (popup dibuka) | 'redirect' (dialihkan).
      */
-    async bayarSnap(payment, { onSuccess, onPending, onError, onClose } = {}) {
+    async bayarSnap(payment, { onSuccess, onPending, onError, onClose, redirectFallback = true } = {}) {
         const url = payment?.redirect_url ?? payment?.payment_url;
         const token = payment?.snap_token ?? payment?.token;
         const key = payment?.client_key;
@@ -735,9 +740,10 @@ window.PandansariAPI = {
                 onClose: () => { onClose ? onClose() : null; },
             });
             return 'snap';
-        } catch {
-            if (url) { window.location.href = url; return 'redirect'; }
-            throw new Error('Midtrans Snap tidak tersedia dan redirect_url kosong.');
+        } catch (err) {
+            console.error('[Midtrans] Pop-up Snap gagal dimuat:', err);
+            if (redirectFallback && url) { window.location.href = url; return 'redirect'; }
+            throw new Error('Pop-up pembayaran Midtrans gagal dimuat. Muat ulang halaman lalu coba lagi.');
         }
     },
 
@@ -1372,6 +1378,83 @@ window.PandansariAPI = {
 };
 
 window.PandansariAPI._init();
+
+/**
+ * Global Handler Toggle Wishlist / Like:
+ * Mencegah event bubbling, menangani optimis UI state, validasi autentikasi,
+ * sinkronisasi API backend (add/remove), dan rollback jika terjadi kegagalan.
+ */
+window.toggleWishlist = async function (product) {
+    if (!product) return;
+    const pid = product.id_product || product.product_id || product.id;
+    if (!pid) return;
+
+    if (!window.PandansariAPI?.getToken?.()) {
+        if (typeof window.PandansariAPI?.toast === 'function') {
+            window.PandansariAPI.toast('Silakan login terlebih dahulu untuk menyukai produk', false);
+        } else {
+            alert('Silakan login terlebih dahulu untuk menyukai produk');
+        }
+        setTimeout(() => {
+            window.location.href = '/login';
+        }, 1200);
+        return;
+    }
+
+    if (product.isLoading || product.isLoadingWishlist) return;
+    product.isLoading = true;
+    product.isLoadingWishlist = true;
+
+    const previousState = !!product.is_liked;
+    const newState = !previousState;
+
+    // Optimistic UI update
+    product.is_liked = newState;
+
+    try {
+        if (previousState) {
+            // UN-LIKE: Hapus dari wishlist via DELETE /api/wishlist/{productId}
+            const res = await window.PandansariAPI.removeWishlist(pid);
+            if (!res.ok && res.status !== 404) {
+                // Rollback jika request gagal
+                product.is_liked = previousState;
+                if (typeof window.PandansariAPI?.toast === 'function') {
+                    window.PandansariAPI.toast(res.message || 'Gagal menghapus dari wishlist.', false);
+                }
+            } else {
+                product.is_liked = false;
+                if (typeof window.PandansariAPI?.toast === 'function') {
+                    window.PandansariAPI.toast('Produk dihapus dari wishlist', true);
+                }
+            }
+        } else {
+            // LIKE: Tambah ke wishlist via POST /api/wishlist
+            const res = await window.PandansariAPI.addWishlist(pid);
+            if (res.ok || res.status === 422) {
+                product.is_liked = true;
+                if (typeof window.PandansariAPI?.toast === 'function') {
+                    window.PandansariAPI.toast('Produk ditambahkan ke wishlist', true);
+                }
+            } else {
+                // Rollback jika request gagal
+                product.is_liked = previousState;
+                if (typeof window.PandansariAPI?.toast === 'function') {
+                    window.PandansariAPI.toast(res.message || 'Gagal menambahkan ke wishlist.', false);
+                }
+            }
+        }
+    } catch (err) {
+        product.is_liked = previousState;
+        console.error('[Wishlist] Toggle error:', err);
+    } finally {
+        product.isLoading = false;
+        product.isLoadingWishlist = false;
+        if (typeof window.PandansariAPI?.jadwalLencana === 'function') {
+            window.PandansariAPI.jadwalLencana();
+        }
+    }
+};
+window.toggleLike = window.toggleWishlist;
 
 // Store global untuk badge navbar (Keranjang & Wishlist) — dibaca via $store.lencana.
 document.addEventListener('alpine:init', () => {

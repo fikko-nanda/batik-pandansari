@@ -304,7 +304,7 @@
                              :alt="activeImageItem?.label ?? 'Foto Produk'" 
                              class="w-full h-full block transition-all duration-300"
                              :class="activeImageIsChart ? 'object-contain p-4 bg-white' : 'object-cover'"
-                             onerror="this.src='https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?q=80&w=800&auto=format&fit=crop'">
+                             onerror="this.onerror=null; this.src='/images/placeholder.jpg';">
                     </div>
 
                     <!-- 2. THUMBNAIL (ASPECT-SQUARE, TANPA OVERLAY TEKS — KLIK UNTUK GANTI GAMBAR UTAMA) -->

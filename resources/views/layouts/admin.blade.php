@@ -7,6 +7,10 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Dashboard Admin - Pandansari Pusat Kurasi Wastra</title>
     
+    <!-- Injeksi Dinamis Base API URL dari .env (ngrok backend) -->
+    <script>
+        window.__PANDANSARI_API_URL__ = @json(env('VITE_API_URL') ?: '/api');
+    </script>
     <!-- Tailwind CSS via Vite -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <!-- Alpine.js -->

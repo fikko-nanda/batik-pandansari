@@ -146,7 +146,7 @@
             },
 
             async init() {
-                const res = await PandansariAPI.products({ page: 1, per_page: 4 });
+                const res = await PandansariAPI.products({ category: 'pakaian-pria', page: 1, per_page: 4 });
                 this.loading = false;
                 this.produk = (res.ok ? (res.data ?? []) : []).map(p => {
                     p.is_liked = false;
@@ -166,7 +166,7 @@
                     <h2 class="text-2xl font-bold text-[#0F1A24] tracking-wide font-['Plus_Jakarta_Sans']">MEN'S WEAR</h2>
                 </div>
             </div>
-            <a href="/katalog" class="text-xs font-bold text-slate-800 uppercase px-5 py-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 font-['Plus_Jakarta_Sans']">
+            <a href="/katalog?category=pakaian-pria" class="text-xs font-bold text-slate-800 uppercase px-5 py-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 font-['Plus_Jakarta_Sans']">
                 VIEW ALL
             </a>
         </div>
@@ -180,13 +180,13 @@
 
         <!-- Kosong -->
         <div x-show="!loading && !produk.length" class="bg-slate-50 rounded-2xl py-10 text-center">
-            <p class="text-sm font-bold text-[#0F1A24]">Belum ada produk tersedia</p>
-            <a href="/katalog" class="inline-block mt-3 bg-[#0F1A24] text-white text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-slate-800 transition">LIHAT KATALOG →</a>
+            <p class="text-sm font-bold text-[#0F1A24]">Belum ada produk pria tersedia</p>
+            <a href="/katalog?category=pakaian-pria" class="inline-block mt-3 bg-[#0F1A24] text-white text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-slate-800 transition">LIHAT KATALOG →</a>
         </div>
 
         <!-- Grid Produk (kartu sama dengan katalog) -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full" x-show="!loading && produk.length">
-            <template x-for="p in produk" :key="p.id_product">
+            <template x-for="product in produk" :key="product.id_product">
                 <x-shop.product-item />
             </template>
         </div>

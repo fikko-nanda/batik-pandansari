@@ -2,7 +2,7 @@
 
 @section('content')
 <div class="bg-[#FAF8F5] min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 font-['Plus_Jakarta_Sans']">
-    <!-- Pembungkus Utama: x-data="loginForm()" dipasang di sini agar mencakup seluruh Form, Alert, & Tombol Google -->
+    <!-- Pembungkus Utama: x-data="loginForm()" mencakup Form, Alert, Divider, & Opsi Login Google -->
     <div x-data="loginForm()" class="max-w-md w-full space-y-6 bg-white p-8 sm:p-10 rounded-2xl border border-slate-200/80 shadow-sm">
 
         <!-- Header Section -->
@@ -21,93 +21,84 @@
                 <span x-text="errorMessage"></span>
             </div>
         </template>
+        @if(session('error'))
+            <div role="alert" class="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl px-4 py-3 flex items-start gap-2">
+                <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+                <span>{{ session('error') }}</span>
+            </div>
+        @endif
 
-        <!-- Form Login Email + Password -->
-        <form @submit.prevent="submit()" class="space-y-4">
-            <!-- Email -->
-            <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1.5">Alamat Email</label>
-                <div class="relative">
+        <div class="space-y-4">
+            <!-- Form Login Utama -->
+            <form method="POST" action="{{ route('login') }}" @submit.prevent="submit()" class="space-y-4">
+                @csrf
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Alamat Email</label>
                     <input type="email"
+                           name="email"
                            x-model="email"
                            required
-                           placeholder="contoh: arya.pandansari@gmail.com"
-                           class="w-full text-xs font-medium border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                    <i class="fa-regular fa-envelope absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                           placeholder="nama@email.com"
+                           class="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Kata Sandi</label>
+                    <div class="relative">
+                        <input :type="showPassword ? 'text' : 'password'"
+                               name="password"
+                               x-model="password"
+                               @input="kata_sandi = password"
+                               required
+                               placeholder="••••••••"
+                               class="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-xs text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10">
+                        <button type="button"
+                                @click="showPassword = !showPassword"
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition cursor-pointer">
+                            <i class="fa-regular" :class="showPassword ? 'fa-eye-slash' : 'fa-eye'"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs">
+                    <label class="flex items-center gap-2 cursor-pointer text-gray-600 font-medium">
+                        <input type="checkbox" name="remember" x-model="remember" class="rounded text-blue-600 focus:ring-blue-500">
+                        <span>Ingat Saya</span>
+                    </label>
+                    <a href="{{ route('password.request') }}" class="text-blue-600 font-semibold hover:underline">Lupa Kata Sandi?</a>
+                </div>
+
+                <button type="submit"
+                        :disabled="loading"
+                        class="w-full py-3 bg-slate-900 text-white font-bold text-xs uppercase rounded-lg hover:bg-slate-800 transition shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                    <span x-show="!loading">MASUK KE AKUN</span>
+                    <span x-show="loading" class="inline-flex items-center gap-2"><i class="fa-solid fa-circle-notch fa-spin"></i> MEMPROSES...</span>
+                </button>
+            </form>
+
+            <!-- Divider -->
+            <div class="relative my-4 flex items-center justify-center">
+                <div class="border-t border-gray-200 w-full"></div>
+                <span class="bg-white px-3 text-xs text-gray-400 font-medium absolute">atau masuk dengan</span>
             </div>
 
-            <!-- Password -->
-            <div>
-                <div class="flex items-center justify-between mb-1.5">
-                    <label class="block text-xs font-bold text-slate-700">Kata Sandi</label>
-                    <a href="/forgot-password" class="text-xs font-semibold text-sky-600 hover:underline">Lupa Kata Sandi?</a>
-                </div>
-                <div class="relative">
-                    <input :type="showPassword ? 'text' : 'password'"
-                           x-model="kata_sandi"
-                           required
-                           placeholder="••••••••"
-                           class="w-full text-xs font-medium border border-slate-200 rounded-xl px-4 py-3 bg-slate-50/60 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 pr-10">
-                    <button type="button"
-                            @click="showPassword = !showPassword"
-                            class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition">
-                        <i class="fa-regular" :class="showPassword ? 'fa-eye-slash' : 'fa-eye'"></i>
-                    </button>
-                </div>
-            </div>
+            <!-- Opsi Login Google (Alternatif SSO) -->
+            <a href="/auth/google"
+               class="w-full flex items-center justify-center gap-2 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-sm font-semibold text-gray-700 shadow-sm cursor-pointer">
+                <svg class="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Masuk dengan Google</span>
+            </a>
 
-            <!-- Remember Me -->
-            <div class="flex items-center justify-between pt-1">
-                <label class="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-600">
-                    <input type="checkbox" class="rounded border-slate-300 text-black focus:ring-black w-4 h-4">
-                    <span>Ingat saya di perangkat ini</span>
-                </label>
-            </div>
-
-            <!-- Submit Button -->
-            <button type="submit"
-                    :disabled="loading"
-                    class="w-full bg-[#0F1A24] hover:bg-slate-800 text-white font-bold text-xs py-3.5 rounded-xl transition shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
-                <span x-show="!loading">MASUK SEKARANG</span>
-                <span x-show="loading" class="inline-flex items-center gap-2"><i class="fa-solid fa-circle-notch fa-spin"></i> MEMPROSES...</span>
-            </button>
-        </form>
-
-        <!-- Divider -->
-        <div class="relative flex py-2 items-center">
-            <div class="flex-grow border-t border-slate-100"></div>
-            <span class="flex-shrink mx-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">atau</span>
-            <div class="flex-grow border-t border-slate-100"></div>
+            <!-- Footer Tautan Register -->
+            <p class="text-center text-xs text-gray-500 mt-4">
+                Belum memiliki akun? <a href="{{ route('register') }}" class="text-blue-600 font-bold hover:underline">Daftar Anggota Baru</a>
+            </p>
         </div>
-
-        <!-- Tombol Google Login (Terjangkau oleh scope x-data) -->
-        <button type="button"
-                @click="loginViaGoogle()"
-                :disabled="loadingGoogle"
-                class="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2.5 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
-            <svg x-show="!loadingGoogle" class="w-4 h-4" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            <span x-show="!loadingGoogle">Masuk Akun via Google</span>
-            <span x-show="loadingGoogle" class="inline-flex items-center gap-2"><i class="fa-solid fa-circle-notch fa-spin"></i> MENGHUBUNGKAN…</span>
-        </button>
-
-        <!-- Fallback resmi Google: tampil bila One Tap/prompt tidak bisa ditampilkan -->
-        <div x-show="googleFallback" x-cloak class="space-y-2">
-            <p class="text-[11px] text-center text-slate-500 leading-relaxed"
-               x-text="googleHint || 'Google meminta konfirmasi langsung dari Anda. Pilih akun lewat tombol di bawah.'"></p>
-            <div x-ref="googleFallbackButton" class="flex justify-center min-h-[40px]"></div>
-        </div>
-
-        <!-- Footer Card -->
-        <p class="text-center text-xs text-slate-500 pt-2">
-            Belum memiliki akun ?
-            <a href="/register" class="font-bold text-[#0369A1] hover:underline">Daftar Anggota Baru</a>
-        </p>
 
     </div>
 </div>
@@ -116,34 +107,30 @@
 function loginForm() {
     return {
         email: '',
+        password: '',
         kata_sandi: '',
         showPassword: false,
+        remember: false,
         loading: false,
         loadingGoogle: false,
         errorMessage: '',
 
         /* --- Status Google Identity Services (GIS) --- */
-        googleSiap: false,       // google.accounts.id sudah diinisialisasi
-        googleFallback: false,   // tampilkan tombol resmi Google bila prompt tidak bisa tampil
-        googleHint: '',          // pesan pendamping pada area fallback
+        googleSiap: false,
+        googleFallback: false,
+        googleHint: '',
         googleTimeout: null,
 
         init() {
-            // Muat script GSI & inisialisasi lebih awal (tidak memblokir render halaman).
             this.siapkanGoogle();
         },
 
         /* ---------- Google Identity Services (ID Token / JWT) ---------- */
         googleClientId() {
-            // Prioritas: VITE_GOOGLE_CLIENT_ID via PandansariAPI; konstanta hanya cadangan.
             const dariEnv = window.PandansariAPI?.googleClientId?.() ?? '';
             return String(dariEnv || '1066530639857-ghnjm2t78aqqgcpar17ilbc3fjl91vus.apps.googleusercontent.com').trim();
         },
 
-        /**
-         * Inisialisasi GIS dengan google.accounts.id.initialize.
-         * Callback menerima `response.credential` = ID Token (JWT) yang diverifikasi backend.
-         */
         async siapkanGoogle() {
             try {
                 if (!window.PandansariAPI || typeof PandansariAPI.siapkanGoogleScript !== 'function') return false;
@@ -180,7 +167,8 @@ function loginForm() {
             this.errorMessage = '';
 
             try {
-                const res = await PandansariAPI.login(this.email, this.kata_sandi);
+                const pwd = this.password || this.kata_sandi;
+                const res = await PandansariAPI.login(this.email, pwd);
 
                 if (res.ok) {
                     const token = res.data?.data?.token ?? res.data?.token ?? res.data?.access_token;
@@ -202,10 +190,6 @@ function loginForm() {
             }
         },
 
-        /**
-         * Arahkan ke panel sesuai peran: admin → /admin/dashboard, teknisi → /teknisi, lainnya → /.
-         * Sebelum redirect, sinkronkan cookie panel HttpOnly agar route /admin & /teknisi lolos.
-         */
         async arahkanSetelahLogin(user = null) {
             const api = window.PandansariAPI;
             const u = user ?? api?.getUser?.() ?? {};
@@ -224,61 +208,15 @@ function loginForm() {
                 return;
             }
 
-            // Customer: pastikan cookie panel lama (jika ada) tidak tertinggal.
             if (typeof api?.hapusPanel === 'function') await api.hapusPanel();
             window.location.href = api?.berandaPeran?.(u) ?? '/';
         },
 
-        /* ---------- Login via Google (ID Token → POST /api/auth/google) ---------- */
-        async loginViaGoogle() {
-            this.errorMessage = '';
-            this.googleFallback = false;
-            this.googleHint = '';
-
-            if (!this.googleSiap) {
-                const siap = await this.siapkanGoogle();
-                if (!siap) {
-                    this.errorMessage = 'Google Client SDK belum termuat. Periksa koneksi internet Anda, muat ulang halaman, lalu coba lagi.';
-                    return;
-                }
-            }
-
+        loginViaGoogle() {
             this.loadingGoogle = true;
-
-            // Jaring aman: jangan biarkan tombol menggantung bila prompt tak pernah dijawab.
-            clearTimeout(this.googleTimeout);
-            this.googleTimeout = setTimeout(() => {
-                if (!this.loadingGoogle) return;
-                this.lepasLoadingGoogle();
-                this.tampilkanFallbackGoogle('Google tidak merespons. Silakan pilih akun lewat tombol di bawah.');
-            }, 60000);
-
-            try {
-                // Prompt GIS memakai sesi Google di browser → mengembalikan ID Token via callback initialize.
-                window.google.accounts.id.prompt((notifikasi) => {
-                    const alasan = notifikasi.getDismissedReason?.();
-                    // Credential sudah diterima lewat callback initialize — tidak perlu fallback.
-                    if (alasan === 'credential_returned') return;
-
-                    if (notifikasi.isNotDisplayed?.() === true) {
-                        this.lepasLoadingGoogle();
-                        this.tampilkanFallbackGoogle('Google One Tap tidak dapat ditampilkan di browser ini.');
-                    } else if (notifikasi.isSkippedMoment?.() === true) {
-                        this.lepasLoadingGoogle();
-                        this.tampilkanFallbackGoogle('Google meminta konfirmasi langsung dari Anda.');
-                    } else if (notifikasi.isDismissedMoment?.() === true) {
-                        this.lepasLoadingGoogle();
-                        this.tampilkanFallbackGoogle('Prompt Google ditutup sebelum akun dipilih.');
-                    }
-                });
-            } catch (err) {
-                this.lepasLoadingGoogle();
-                console.warn('[LoginGoogle] gagal membuka prompt:', err?.message || err);
-                this.tampilkanFallbackGoogle('Prompt Google gagal dibuka. Silakan pilih akun lewat tombol di bawah.');
-            }
+            window.location.href = '/auth/google';
         },
 
-        /** Callback initialize: `response.credential` berisi ID Token (JWT). */
         async terimaGoogleCredential(response) {
             const idToken = response?.credential;
 
@@ -293,7 +231,6 @@ function loginForm() {
             await this.kirimGoogleIdToken(idToken);
         },
 
-        /** Kirim ID Token (bukan access token) ke backend. */
         async kirimGoogleIdToken(idToken) {
             this.loadingGoogle = true;
             this.errorMessage = '';
@@ -305,9 +242,8 @@ function loginForm() {
                     const token = res.data?.data?.token ?? res.data?.token ?? res.data?.access_token;
                     if (token) {
                         PandansariAPI.setToken(token);
-                        // Pastikan peran user tersedia sebelum menentukan panel tujuan.
                         if (!PandansariAPI.getUser()?.peran) {
-                            try { await PandansariAPI.me(); } catch { /* lanjut ke beranda customer */ }
+                            try { await PandansariAPI.me(); } catch { }
                         }
                         await this.arahkanSetelahLogin();
                     } else {
@@ -324,7 +260,6 @@ function loginForm() {
             }
         },
 
-        /** Tampilkan area fallback + tombol resmi Google (butuh klik langsung pengguna). */
         tampilkanFallbackGoogle(pesan) {
             this.googleHint = pesan || '';
             this.googleFallback = true;
@@ -334,7 +269,7 @@ function loginForm() {
         renderTombolGoogle() {
             const target = this.$refs.googleFallbackButton;
             if (!target || !window.google?.accounts?.id) return;
-            if (target.dataset.rendered === '1') return;   // cukup dirender sekali
+            if (target.dataset.rendered === '1') return;
 
             window.google.accounts.id.renderButton(target, {
                 type: 'standard',

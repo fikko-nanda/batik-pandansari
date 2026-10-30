@@ -1,8 +1,15 @@
 <?php
 
+use App\Http\Controllers\HomeController;
 use App\Http\Controllers\MediaProxyController;
 use App\Http\Controllers\PanelSessionController;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 
 /*
 |--------------------------------------------------------------------------
@@ -10,10 +17,8 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
-// 1. Landing Page
-Route::get('/', function () {
-    return view('landing');
-})->name('home');
+// 1. Landing / Home Page
+Route::get('/', [HomeController::class, 'index'])->name('home');
 
 // 2. Modul Shop / Toko (Public & Belanja)
 Route::get('/katalog', function () {
@@ -109,6 +114,104 @@ Route::get('/login', function () {
     return view('auth.login');
 })->name('login');
 
+// Alur Redirect Langsung Google OAuth
+Route::get('/auth/google', function () {
+    $clientId = config('services.google.client_id');
+    if (! $clientId) {
+        return redirect('/login')->with('error', 'Google Client ID belum dikonfigurasi di server.');
+    }
+
+    $redirectUri = url('/auth/google/callback');
+    $state = Str::random(40);
+    session(['oauth_state' => $state]);
+
+    $query = http_build_query([
+        'client_id' => $clientId,
+        'redirect_uri' => $redirectUri,
+        'response_type' => 'code',
+        'scope' => 'openid email profile',
+        'access_type' => 'online',
+        'state' => $state,
+        'prompt' => 'select_account',
+    ]);
+
+    return redirect('https://accounts.google.com/o/oauth2/v2/auth?'.$query);
+})->name('auth.google');
+
+Route::get('/auth/google/callback', function (Request $request) {
+    $code = $request->input('code');
+    if (! $code) {
+        return redirect('/login')->with('error', 'Login Google dibatalkan atau tidak mendapatkan izin.');
+    }
+
+    $clientId = config('services.google.client_id');
+    $clientSecret = config('services.google.client_secret');
+    $redirectUri = url('/auth/google/callback');
+
+    try {
+        $response = Http::asForm()->post('https://oauth2.googleapis.com/token', [
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'code' => $code,
+            'grant_type' => 'authorization_code',
+            'redirect_uri' => $redirectUri,
+        ]);
+
+        if (! $response->successful()) {
+            return redirect('/login')->with('error', 'Gagal memvalidasi token dari Google.');
+        }
+
+        $tokenData = $response->json();
+        $accessToken = $tokenData['access_token'] ?? null;
+
+        $userInfo = Http::withToken($accessToken)
+            ->get('https://www.googleapis.com/oauth2/v3/userinfo')
+            ->json();
+
+        if (! $userInfo || empty($userInfo['email'])) {
+            return redirect('/login')->with('error', 'Gagal mengambil informasi profil dari akun Google.');
+        }
+
+        $googleId = (string) $userInfo['sub'];
+        $email = (string) $userInfo['email'];
+
+        $user = User::where('google_id', $googleId)->first();
+        if ($user === null) {
+            $user = User::where('email', $email)->first();
+            if ($user === null) {
+                $user = User::create([
+                    'id_user' => (string) Str::uuid(),
+                    'nama_pengguna' => $userInfo['name'] ?? explode('@', $email)[0],
+                    'email' => $email,
+                    'google_id' => $googleId,
+                    'avatar' => $userInfo['picture'] ?? null,
+                    'peran' => 'pelanggan',
+                    'email_verified_at' => now(),
+                ]);
+            } else {
+                $user->google_id = $googleId;
+                if (! $user->avatar && ! empty($userInfo['picture'])) {
+                    $user->avatar = $userInfo['picture'];
+                }
+                $user->email_verified_at = now();
+                $user->save();
+            }
+        }
+
+        Auth::login($user);
+        $plainToken = $user->createToken('auth_token')->plainTextToken;
+
+        return view('auth.google-callback', [
+            'token' => $plainToken,
+            'user' => $user,
+        ]);
+    } catch (Throwable $e) {
+        Log::error('[GoogleOAuth] Callback error: '.$e->getMessage());
+
+        return redirect('/login')->with('error', 'Terjadi kesalahan sistem saat memproses login Google.');
+    }
+})->name('auth.google.callback');
+
 Route::get('/register', function () {
     return view('auth.register');
 })->name('register');
@@ -125,7 +228,7 @@ Route::post('/session/logout', [PanelSessionController::class, 'destroy'])
 // 3b. Lupa Password (3 langkah: email → OTP → sandi baru)
 Route::get('/forgot-password', function () {
     return view('auth.forgot-password');
-})->name('forgot-password');
+})->name('password.request');
 
 // 4. Modul Admin Dashboard (wajib cookie panel admin)
 Route::prefix('admin')->middleware('panel:admin')->group(function () {
@@ -156,10 +259,6 @@ Route::prefix('admin')->middleware('panel:admin')->group(function () {
     Route::get('/sales-report', function () {
         return view('admin.sales-report');
     })->name('admin.sales-report');
-
-    Route::get('/shipping', function () {
-        return view('admin.shipping');
-    })->name('admin.shipping');
 
     Route::get('/settings', function () {
         return view('admin.settings');

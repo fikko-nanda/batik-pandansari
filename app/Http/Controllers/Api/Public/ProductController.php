@@ -42,11 +42,88 @@ class ProductController extends Controller
             ->when(
                 ! empty($validated['category']),
                 function ($query) use ($validated) {
-                    $val = $validated['category'];
-                    $query->where(function ($inner) use ($val) {
-                        $inner->where('id_category', $val)
-                            ->orWhereHas('categories', fn ($q) => $q->where('categories.id_category', $val)->orWhere('categories.slug', $val))
-                            ->orWhereHas('category', fn ($q) => $q->where('id_category', $val)->orWhere('slug', $val));
+                    $val = trim($validated['category']);
+                    $slugs = [$val];
+                    $lower = strtolower($val);
+
+                    // Normalisasi & isolasi ketat kategori busana pria
+                    if (in_array($lower, ['pria', 'mens-wear', 'men', 'pakaian-pria'])) {
+                        $slugs = ['pakaian-pria', 'mens-wear', 'pria', 'men'];
+                        $query->where(function ($inner) use ($slugs) {
+                            $inner->whereIn('id_category', $slugs)
+                                ->orWhereHas('category', function ($catQuery) use ($slugs) {
+                                    $catQuery->whereIn('slug', $slugs)
+                                        ->orWhere('nama_kategori', 'like', '%pria%');
+                                })
+                                ->orWhere(function ($sub) use ($slugs) {
+                                    $sub->whereHas('categories', function ($catQuery) use ($slugs) {
+                                        $catQuery->whereIn('slug', $slugs)
+                                            ->orWhere('nama_kategori', 'like', '%pria%');
+                                    })->whereDoesntHave('category', function ($catQuery) {
+                                        $catQuery->whereIn('slug', ['pakaian-wanita', 'womens-wear', 'wanita'])
+                                            ->orWhere('nama_kategori', 'like', '%wanita%');
+                                    });
+                                });
+                        })
+                            ->whereDoesntHave('category', function ($q) {
+                                $q->whereIn('slug', ['sarimbit', 'couple'])
+                                    ->orWhere('nama_kategori', 'like', '%sarimbit%')
+                                    ->orWhere('nama_kategori', 'like', '%couple%');
+                            })
+                            ->whereDoesntHave('categories', function ($q) {
+                                $q->whereIn('slug', ['sarimbit', 'couple'])
+                                    ->orWhere('nama_kategori', 'like', '%sarimbit%')
+                                    ->orWhere('nama_kategori', 'like', '%couple%');
+                            });
+
+                        return;
+                    }
+
+                    // Normalisasi & isolasi ketat kategori busana wanita
+                    if (in_array($lower, ['wanita', 'womens-wear', 'women', 'pakaian-wanita'])) {
+                        $slugs = ['pakaian-wanita', 'womens-wear', 'wanita', 'women'];
+                        $query->where(function ($inner) use ($slugs) {
+                            $inner->whereIn('id_category', $slugs)
+                                ->orWhereHas('category', function ($catQuery) use ($slugs) {
+                                    $catQuery->whereIn('slug', $slugs)
+                                        ->orWhere('nama_kategori', 'like', '%wanita%');
+                                })
+                                ->orWhere(function ($sub) use ($slugs) {
+                                    $sub->whereHas('categories', function ($catQuery) use ($slugs) {
+                                        $catQuery->whereIn('slug', $slugs)
+                                            ->orWhere('nama_kategori', 'like', '%wanita%');
+                                    })->whereDoesntHave('category', function ($catQuery) {
+                                        $catQuery->whereIn('slug', ['pakaian-pria', 'mens-wear', 'pria'])
+                                            ->orWhere('nama_kategori', 'like', '%pria%');
+                                    });
+                                });
+                        })
+                            ->whereDoesntHave('category', function ($q) {
+                                $q->whereIn('slug', ['sarimbit', 'couple'])
+                                    ->orWhere('nama_kategori', 'like', '%sarimbit%')
+                                    ->orWhere('nama_kategori', 'like', '%couple%');
+                            })
+                            ->whereDoesntHave('categories', function ($q) {
+                                $q->whereIn('slug', ['sarimbit', 'couple'])
+                                    ->orWhere('nama_kategori', 'like', '%sarimbit%')
+                                    ->orWhere('nama_kategori', 'like', '%couple%');
+                            });
+
+                        return;
+                    }
+
+                    // Kategori umum lainnya
+                    $query->where(function ($inner) use ($val, $slugs) {
+                        $inner->whereIn('id_category', $slugs)
+                            ->orWhere('id_category', $val)
+                            ->orWhereHas('categories', function ($q) use ($slugs) {
+                                $q->whereIn('categories.id_category', $slugs)
+                                    ->orWhereIn('categories.slug', $slugs);
+                            })
+                            ->orWhereHas('category', function ($q) use ($slugs) {
+                                $q->whereIn('id_category', $slugs)
+                                    ->orWhereIn('slug', $slugs);
+                            });
                     });
                 }
             )

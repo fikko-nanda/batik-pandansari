@@ -207,6 +207,12 @@
                         </div>
 
                         <form @submit.prevent="simpan()" class="p-5 space-y-3 text-xs">
+                            <!-- Alert Error Modal -->
+                            <div x-show="modalError" x-cloak class="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-start gap-2">
+                                <i class="fa-solid fa-circle-exclamation mt-0.5 shrink-0"></i>
+                                <span x-text="modalError"></span>
+                            </div>
+
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-600 mb-1">Label Alamat <span class="text-rose-500">*</span></label>
                                 <input type="text" x-model="form.label_alamat" placeholder="cth: Rumah, Kantor" required
@@ -470,10 +476,10 @@
                             <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                                 <button type="button" @click="showAddModal = false"
                                         class="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 transition cursor-pointer">BATAL</button>
-                                <button type="submit" :disabled="saving"
-                                        class="bg-[#0F1A24] hover:bg-slate-800 text-white font-bold px-5 py-2.5 rounded-xl transition flex items-center gap-2 cursor-pointer disabled:opacity-60">
-                                    <span x-show="!saving" x-text="isEdit ? 'SIMPAN PERUBAHAN' : 'SIMPAN ALAMAT'"></span>
-                                    <span x-show="saving"><i class="fa-solid fa-circle-notch fa-spin"></i> MENYIMPAN…</span>
+                                <button type="submit" :disabled="saving || isSubmitting"
+                                        class="bg-[#0F1A24] hover:bg-slate-800 text-white font-bold px-5 py-2.5 rounded-xl transition flex items-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                                    <span x-show="!saving && !isSubmitting" x-text="isEdit ? 'SIMPAN PERUBAHAN' : 'SIMPAN ALAMAT'"></span>
+                                    <span x-show="saving || isSubmitting"><i class="fa-solid fa-circle-notch fa-spin"></i> MENYIMPAN…</span>
                                 </button>
                             </div>
                         </form>
@@ -503,6 +509,8 @@
             needLogin: false,
             errorMsg: '',
             saving: false,
+            isSubmitting: false,
+            modalError: '',
             msg: '',
             msgOk: false,
             user: null,
@@ -626,6 +634,9 @@
 
             bukaTambah() {
                 this.editingId = null;
+                this.modalError = '';
+                this.saving = false;
+                this.isSubmitting = false;
                 this.form = {
                     label_alamat: '',
                     nama_penerima: '',
@@ -642,11 +653,18 @@
                 this.osmResults = [];
                 this.osmActiveField = '';
                 this.osmLoading = false;
+                this.pencarianLokasi = '';
+                this.pesanLokasi = '';
+                this.lokasiError = false;
+                this.hasilLokasi = [];
                 this.showAddModal = true;
             },
 
             bukaUbah(a) {
                 this.editingId = a.id_user_address;
+                this.modalError = '';
+                this.saving = false;
+                this.isSubmitting = false;
                 this.form = {
                     label_alamat: a.label_alamat ?? '',
                     nama_penerima: a.nama_penerima ?? '',
@@ -663,6 +681,10 @@
                 this.osmResults = [];
                 this.osmActiveField = '';
                 this.osmLoading = false;
+                this.pencarianLokasi = a.alamat_lengkap ?? '';
+                this.pesanLokasi = (a.latitude && a.longitude) ? 'Koordinat telah terpasang.' : '';
+                this.lokasiError = false;
+                this.hasilLokasi = [];
                 this.showAddModal = true;
             },
 
@@ -744,23 +766,52 @@
             },
 
             async simpan() {
-                const payload = { ...this.form };
+                this.isSubmitting = true;
                 this.saving = true;
+                this.modalError = '';
+
+                // Sesuaikan objek payload agar nama atribut persis sesuai aturan validasi backend & DB
+                const payload = {
+                    label_alamat: this.form.label_alamat || this.form.label || 'Rumah',
+                    nama_penerima: this.form.nama_penerima,
+                    nomor_telepon: this.form.nomor_telepon,
+                    telepon: this.form.nomor_telepon, // alias fallback
+                    nama_provinsi: this.form.nama_provinsi,
+                    provinsi: this.form.nama_provinsi, // alias fallback
+                    nama_kota: this.form.nama_kota,
+                    kota: this.form.nama_kota, // alias fallback
+                    nama_kecamatan: this.form.nama_kecamatan,
+                    kecamatan: this.form.nama_kecamatan, // alias fallback
+                    kode_pos: this.form.kode_pos,
+                    alamat_lengkap: this.form.alamat_lengkap,
+                    latitude: this.form.latitude != null ? Number(this.form.latitude) : null,
+                    longitude: this.form.longitude != null ? Number(this.form.longitude) : null,
+                    alamat_utama: Boolean(this.form.alamat_utama),
+                    is_primary: Boolean(this.form.alamat_utama), // alias fallback
+                };
+
                 try {
                     const res = this.isEdit
                         ? await PandansariAPI.updateAddress(this.editingId, payload)
                         : await PandansariAPI.addAddress(payload);
-                    this.saving = false;
+
                     if (res && res.ok) {
                         this.showAddModal = false;
                         this.tampil(this.isEdit ? 'Alamat berhasil diperbarui.' : 'Alamat berhasil ditambahkan.', true);
                         await this.load();
                     } else {
-                        this.tampil((res?.message || 'Gagal menyimpan alamat.') + (Object.values(res?.errors ?? {}).flat().join(' ') || ''), false);
+                        const errDetails = res?.errors ? Object.values(res.errors).flat().join(' ') : '';
+                        const msg = (res?.message || 'Gagal menyimpan alamat.') + (errDetails ? ' (' + errDetails + ')' : '');
+                        this.modalError = msg;
+                        this.tampil(msg, false);
                     }
                 } catch (e) {
+                    console.error('[Address] Simpan error:', e);
+                    this.modalError = 'Terjadi kesalahan sistem saat menyimpan alamat. Silakan coba lagi.';
+                    this.tampil(this.modalError, false);
+                } finally {
                     this.saving = false;
-                    this.tampil('Terjadi kesalahan saat menyimpan alamat.', false);
+                    this.isSubmitting = false;
                 }
             },
 

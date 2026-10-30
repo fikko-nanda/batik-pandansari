@@ -94,15 +94,19 @@ return [
     'osm' => [
         'nominatim_url' => rtrim(env('OSM_NOMINATIM_URL', 'https://nominatim.openstreetmap.org'), '/'),
         'osrm_url' => rtrim(env('OSM_OSRM_URL', 'https://router.project-osrm.org'), '/'),
-        'user_agent' => env('OSM_USER_AGENT', 'BatikPandansari/1.0'),
-        'timeout' => (int) env('OSM_TIMEOUT', 8),
-        'connect_timeout' => (int) env('OSM_CONNECT_TIMEOUT', 3),
+        'photon_url' => rtrim(env('OSM_PHOTON_URL', 'https://photon.komoot.io/api'), '/'),
+        'user_agent' => env('OSM_USER_AGENT', 'BatikPandansariApp/1.0 (admin@batikpandansari.com)'),
+        'email' => env('OSM_EMAIL', 'admin@batikpandansari.com'),
+        'timeout' => (int) env('OSM_TIMEOUT', 12),
+        'connect_timeout' => (int) env('OSM_CONNECT_TIMEOUT', 8),
         'geocode_cache_ttl' => (int) env('OSM_GEOCODE_CACHE_TTL', 2592000),
         'route_cache_ttl' => (int) env('OSM_ROUTE_CACHE_TTL', 604800),
         'nominatim_min_interval_seconds' => (int) env('OSM_NOMINATIM_MIN_INTERVAL_SECONDS', 1),
         'allow_public_demo' => (bool) env('OSM_ALLOW_PUBLIC_DEMO', false),
         'search_per_minute' => (int) env('OSM_SEARCH_PER_MINUTE', 20),
         'quote_per_minute' => (int) env('OSM_QUOTE_PER_MINUTE', 30),
+        'verify_ssl' => env('OSM_VERIFY_SSL', false),
+        'ca_bundle' => env('OSM_CA_BUNDLE', env('API_CA_BUNDLE')),
     ],
 
     'google' => [
