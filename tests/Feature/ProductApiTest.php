@@ -216,7 +216,7 @@ class ProductApiTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
-    public function test_public_variant_list_only_returns_available_variants(): void
+    public function test_public_variant_list_returns_active_variants_including_sold_out_variants(): void
     {
         $this->seedCategory();
         $product = $this->makeProduct('Produk Multi Varian', 'aktif', 0);
@@ -233,8 +233,9 @@ class ProductApiTest extends TestCase
 
         $this->getJson('/api/products/'.$product->id_product.'/variants')
             ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.id_variant', $availableVariant->id_variant);
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.stok', 0)
+            ->assertJsonPath('data.1.id_variant', $availableVariant->id_variant);
     }
 
     public function test_admin_index_requires_authentication(): void

@@ -5,14 +5,18 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Services\OrderService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderController extends Controller
 {
-    public function adminIndex(Request $request): JsonResponse
+    public function adminIndex(Request $request, OrderService $orderService): JsonResponse
     {
+        $orderService->expirePendingOrders();
+
         $validated = $request->validate([
             'status' => ['nullable', 'string', Rule::in(OrderService::STATUSES)],
             'search' => ['nullable', 'string', 'max:150'],
@@ -24,30 +28,8 @@ class OrderController extends Controller
 
         $perPage = $validated['per_page'] ?? 15;
 
-        $orders = Order::with(['items', 'user'])
-            ->when(
-                ! empty($validated['status']),
-                fn ($query) => $query->where('status_pesanan', $validated['status'])
-            )
-            ->when(
-                ! empty($validated['search']),
-                function ($query) use ($validated) {
-                    $term = $validated['search'];
-                    $query->where(function ($inner) use ($term) {
-                        $inner->where('nomor_pesanan', 'like', "%{$term}%")
-                            ->orWhere('nama_penerima', 'like', "%{$term}%");
-                    });
-                }
-            )
-            ->when(
-                ! empty($validated['dari']),
-                fn ($query) => $query->whereDate('dibuat_pada', '>=', $validated['dari'])
-            )
-            ->when(
-                ! empty($validated['sampai']),
-                fn ($query) => $query->whereDate('dibuat_pada', '<=', $validated['sampai'])
-            )
-            ->orderByDesc('dibuat_pada')
+        $orders = $this->adminOrdersQuery($validated)
+            ->with(['items', 'user'])
             ->paginate($perPage);
 
         return response()->json([
@@ -58,8 +40,58 @@ class OrderController extends Controller
         ]);
     }
 
-    public function adminShow(string $id): JsonResponse
+    public function adminExport(Request $request, OrderService $orderService): StreamedResponse
     {
+        $orderService->expirePendingOrders();
+
+        $validated = $request->validate([
+            'status' => ['nullable', 'string', Rule::in(OrderService::STATUSES)],
+            'search' => ['nullable', 'string', 'max:150'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+        ]);
+
+        $validated['dari'] = $validated['start_date'] ?? null;
+        $validated['sampai'] = $validated['end_date'] ?? null;
+
+        $filename = 'pesanan-'.now()->format('Y-m-d').'.csv';
+
+        return response()->streamDownload(function () use ($validated) {
+            $output = fopen('php://output', 'w');
+
+            fputcsv($output, [
+                'nomor_pesanan',
+                'dibuat_pada',
+                'nama_penerima',
+                'kode_tujuan_pengiriman',
+                'total_pembayaran',
+                'biaya_pengiriman',
+                'status_pesanan',
+            ], ',', '"', '');
+
+            $this->adminOrdersQuery($validated)
+                ->chunk(200, function ($orders) use ($output) {
+                    foreach ($orders as $order) {
+                        fputcsv($output, [
+                            $order->nomor_pesanan,
+                            $order->dibuat_pada?->format('Y-m-d H:i:s'),
+                            $order->nama_penerima,
+                            $order->kode_tujuan_pengiriman,
+                            $order->total_pembayaran,
+                            $order->biaya_pengiriman,
+                            $order->status_pesanan,
+                        ], ',', '"', '');
+                    }
+                });
+
+            fclose($output);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    public function adminShow(string $id, OrderService $orderService): JsonResponse
+    {
+        $orderService->expirePendingOrders();
+
         $order = Order::with([
             'user',
             'items.variant.product',
@@ -109,8 +141,10 @@ class OrderController extends Controller
     /**
      * Ringkasan pesanan untuk admin (dapat difilter rentang tanggal/status).
      */
-    public function adminSummary(Request $request): JsonResponse
+    public function adminSummary(Request $request, OrderService $orderService): JsonResponse
     {
+        $orderService->expirePendingOrders();
+
         $validated = $request->validate([
             'status' => ['nullable', 'string', Rule::in(OrderService::STATUSES)],
             'dari' => ['nullable', 'date'],
@@ -147,9 +181,43 @@ class OrderController extends Controller
                 'total_pesanan' => $totalPesanan,
                 'total_nilai' => $totalNilai,
                 'rata_rata_nilai' => $totalPesanan > 0 ? round($totalNilai / $totalPesanan, 2) : 0,
+                'pesanan_perlu_diproses' => (int) (clone $query)->whereIn('status_pesanan', ['dibayar', 'diproses'])->count(),
                 'per_status' => $perStatus,
             ],
         ]);
+    }
+
+    /**
+     * Query dasar daftar dan ekspor pesanan admin.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function adminOrdersQuery(array $validated): Builder
+    {
+        return Order::query()
+            ->when(
+                ! empty($validated['status']),
+                fn ($query) => $query->where('status_pesanan', $validated['status'])
+            )
+            ->when(
+                ! empty($validated['search']),
+                function ($query) use ($validated) {
+                    $term = $validated['search'];
+                    $query->where(function ($inner) use ($term) {
+                        $inner->where('nomor_pesanan', 'like', "%{$term}%")
+                            ->orWhere('nama_penerima', 'like', "%{$term}%");
+                    });
+                }
+            )
+            ->when(
+                ! empty($validated['dari']),
+                fn ($query) => $query->whereDate('dibuat_pada', '>=', $validated['dari'])
+            )
+            ->when(
+                ! empty($validated['sampai']),
+                fn ($query) => $query->whereDate('dibuat_pada', '<=', $validated['sampai'])
+            )
+            ->orderByDesc('dibuat_pada');
     }
 
     /**

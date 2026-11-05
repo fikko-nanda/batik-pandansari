@@ -45,7 +45,7 @@
     <div x-show="!loading && !needLogin && !notAdmin" x-cloak class="space-y-6">
 
         <!-- 1. HEADER BANNER -->
-        <div class="bg-[#0A192F] text-white p-6 sm:p-8 rounded-2xl relative overflow-hidden shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div class="bg-[#0A192F] text-white p-6 sm:p-8 rounded-2xl relative overflow-hidden shadow-sm flex flex-col md:flex-row md:items-start justify-between gap-6">
             <div class="space-y-3 max-w-2xl relative z-10">
                 <span class="text-[10px] font-bold tracking-[0.2em] uppercase text-sky-400 block">LOGISTIK &amp; KALKULASI RUTE</span>
                 <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight">
@@ -55,7 +55,7 @@
                     Atur titik koordinat toko/gudang asal pengiriman (OpenStreetMap) dan kelola rentang tarif zona berbasis rute OSRM.
                 </p>
             </div>
-            <div class="relative z-10 flex flex-wrap items-center gap-2">
+            <div class="relative z-10 flex flex-wrap items-center justify-end gap-2 md:self-start shrink-0">
                 <button type="button" @click="bukaModalZona()"
                         class="bg-sky-400 hover:bg-sky-300 text-slate-900 font-bold text-xs px-4 py-3 rounded-xl transition flex items-center gap-2 shadow-sm cursor-pointer">
                     <i class="fa-solid fa-plus text-xs"></i>

@@ -43,11 +43,7 @@
  *   - Tail 'api' diakhir '/api' → semua panggilan jadi '.../api/me', dll.
  *   - Ubah .env → WAJIB restart Vite (composer dev) atau build ulang (npm run build).
  */
-const API_URL = String(
-    (typeof window !== 'undefined' && window.__PANDANSARI_API_URL__) ||
-    import.meta.env?.VITE_API_URL ||
-    '/api'
-).trim().replace(/\/+$/, '');
+const API_URL = String(import.meta.env?.VITE_API_URL || '/api').trim().replace(/\/+$/, '');
 if (!API_URL) {
     console.debug('[PandansariAPI] Default API URL aktif: /api');
 }
@@ -698,6 +694,7 @@ window.PandansariAPI = {
      */
     _pastikanSnapScript(clientKey, scriptUrl = this._snapUrl()) {
         if (!clientKey) throw new Error('client_key tidak ada');
+        if (window.snap?.pay) return window.snap;
         const idScript = 'midtrans-snap-script';
         const existing = document.getElementById(idScript);
         if (existing && existing.dataset.clientKey === clientKey && existing.dataset.snapUrl === scriptUrl) {
@@ -719,12 +716,11 @@ window.PandansariAPI = {
     /**
      * Buka popup Midtrans Snap utk satu transaksi pembayaran.
      * Callback (opsional): onSuccess, onPending, onError, onClose.
-     * redirectFallback (default true): bila script Snap gagal termuat, alihkan
-     * ke redirect_url (alur lama). Kirim false agar caller (mis. checkout)
-     * TETAP di halaman dan menangani error sendiri — tanpa pengalihan halaman.
+     * Jika snap_token/client_key tidak ada ATAU script gagal termuat →
+     * fallback ke redirect_url (alur lama) agar tombol bayar tetap bekerja.
      * Return: 'snap' (popup dibuka) | 'redirect' (dialihkan).
      */
-    async bayarSnap(payment, { onSuccess, onPending, onError, onClose, redirectFallback = true } = {}) {
+    async bayarSnap(payment, { onSuccess, onPending, onError, onClose, fallbackRedirect = true } = {}) {
         const url = payment?.redirect_url ?? payment?.payment_url;
         const token = payment?.snap_token ?? payment?.token;
         const key = payment?.client_key;
@@ -740,10 +736,9 @@ window.PandansariAPI = {
                 onClose: () => { onClose ? onClose() : null; },
             });
             return 'snap';
-        } catch (err) {
-            console.error('[Midtrans] Pop-up Snap gagal dimuat:', err);
-            if (redirectFallback && url) { window.location.href = url; return 'redirect'; }
-            throw new Error('Pop-up pembayaran Midtrans gagal dimuat. Muat ulang halaman lalu coba lagi.');
+        } catch (error) {
+            if (fallbackRedirect && url) { window.location.href = url; return 'redirect'; }
+            throw new Error(error?.message || 'Midtrans Snap tidak tersedia. Periksa koneksi dan izin domain Snap Midtrans.');
         }
     },
 
@@ -877,7 +872,7 @@ window.PandansariAPI = {
         /** POST /users — wajib: nama_pengguna, email, kata_sandi (+kata_sandi_confirmation), peran. */
         createUser(payload) { return PandansariAPI.fetch('/users', { method: 'POST', body: payload }); },
         usersSummary() { return PandansariAPI.fetch('/admin/users/summary'); },
-        usersExport() { return PandansariAPI.downloadCsv('/users/export', 'pengguna.csv'); },
+        usersExport(params = {}) { return PandansariAPI.downloadCsv('/admin/users/export', 'pengguna.csv', params); },
 
         /* -- 4.2 Produk, varian & gambar -- */
         /** GET /admin/products — query: search, status, category, page, per_page. */
@@ -886,7 +881,7 @@ window.PandansariAPI = {
         createProduct(payload) { return PandansariAPI.fetch('/products', { method: 'POST', body: payload }); },
         updateProduct(id, payload) { return PandansariAPI.fetch(`/products/${id}`, { method: 'PUT', body: payload }); },
         deleteProduct(id) { return PandansariAPI.fetch(`/products/${id}`, { method: 'DELETE' }); },
-        productsExport() { return PandansariAPI.downloadCsv('/admin/products/export', 'produk.csv'); },
+        productsExport(params = {}) { return PandansariAPI.downloadCsv('/admin/products/export', 'produk.csv', params); },
         createVariant(id_product, payload) { return PandansariAPI.fetch(`/products/${id_product}/variants`, { method: 'POST', body: payload }); },
         updateVariant(id, payload) { return PandansariAPI.fetch(`/variants/${id}`, { method: 'PUT', body: payload }); },
         deleteVariant(id) { return PandansariAPI.fetch(`/variants/${id}`, { method: 'DELETE' }); },
@@ -1048,10 +1043,12 @@ window.PandansariAPI = {
             });
         },
         orderFulfillments(params = {}) { return PandansariAPI.fetch('/admin/order-fulfillments' + this._qs(params)); },
+        ordersExport(params = {}) { return PandansariAPI.downloadCsv('/admin/orders/export', 'pesanan.csv', params); },
 
         /* -- 4.6 Pembayaran -- */
         payments(params = {}) { return PandansariAPI.fetch('/admin/payments' + this._qs(params)); },
         paymentsSummary() { return PandansariAPI.fetch('/admin/payments/summary'); },
+        paymentsExport(params = {}) { return PandansariAPI.downloadCsv('/admin/payments/export', 'pembayaran.csv', params); },
 
         /* -- 4.7 Pengiriman -- */
         shipments(params = {}) { return PandansariAPI.fetch('/admin/shipments' + this._qs(params)); },
@@ -1065,10 +1062,11 @@ window.PandansariAPI = {
         /* -- 4.9 Inventaris -- */
         /** GET /admin/inventory/low-stock — varian dengan stok <= threshold. */
         inventoryLowStock() { return PandansariAPI.fetch('/admin/inventory/low-stock'); },
+        inventorySummary() { return PandansariAPI.fetch('/admin/inventory/summary'); },
         /** GET /admin/inventory/valuation — { total_nilai_modal, total_nilai_jual, margin_potensial }. */
         inventoryValuation() { return PandansariAPI.fetch('/admin/inventory/valuation'); },
         /** GET /admin/inventory/export — CSV export. */
-        inventoryExport() { return PandansariAPI.downloadCsv('/admin/inventory/export', 'inventaris.csv'); },
+        inventoryExport(params = {}) { return PandansariAPI.downloadCsv('/admin/inventory/export', 'inventaris.csv', params); },
         /** POST /admin/inventory/adjustments — { id_variant, tipe: 'masuk'|'keluar'|'koreksi', jumlah, catatan? }. */
         inventoryAdjustment(payload) { return PandansariAPI.fetch('/admin/inventory/adjustments', { method: 'POST', body: payload }); },
 
@@ -1081,14 +1079,14 @@ window.PandansariAPI = {
 
     /**
      * Unduh file CSV yang butuh header Authorization (export admin).
-     * Dipanggil: PandansariAPI.downloadCsv('/users/export', 'pengguna.csv').
+     * Dipanggil: PandansariAPI.downloadCsv('/admin/users/export', 'pengguna.csv', { start_date, end_date }).
      */
-    async downloadCsv(path, filename = 'export.csv') {
+    async downloadCsv(path, filename = 'export.csv', params = {}) {
         const headers = { 'Accept': 'text/csv', 'ngrok-skip-browser-warning': 'true' };
         const token = this.getToken();
         if (token) headers.Authorization = `Bearer ${token}`;
         try {
-            const res = await fetch(buildUrl(path), { headers });
+            const res = await fetch(buildUrl(path + this.admin._qs(params)), { headers });
             if (!res.ok) return { ok: false, status: res.status, message: `Gagal mengunduh (${res.status}).` };
             const url = URL.createObjectURL(await res.blob());
             const a = document.createElement('a');
@@ -1378,83 +1376,6 @@ window.PandansariAPI = {
 };
 
 window.PandansariAPI._init();
-
-/**
- * Global Handler Toggle Wishlist / Like:
- * Mencegah event bubbling, menangani optimis UI state, validasi autentikasi,
- * sinkronisasi API backend (add/remove), dan rollback jika terjadi kegagalan.
- */
-window.toggleWishlist = async function (product) {
-    if (!product) return;
-    const pid = product.id_product || product.product_id || product.id;
-    if (!pid) return;
-
-    if (!window.PandansariAPI?.getToken?.()) {
-        if (typeof window.PandansariAPI?.toast === 'function') {
-            window.PandansariAPI.toast('Silakan login terlebih dahulu untuk menyukai produk', false);
-        } else {
-            alert('Silakan login terlebih dahulu untuk menyukai produk');
-        }
-        setTimeout(() => {
-            window.location.href = '/login';
-        }, 1200);
-        return;
-    }
-
-    if (product.isLoading || product.isLoadingWishlist) return;
-    product.isLoading = true;
-    product.isLoadingWishlist = true;
-
-    const previousState = !!product.is_liked;
-    const newState = !previousState;
-
-    // Optimistic UI update
-    product.is_liked = newState;
-
-    try {
-        if (previousState) {
-            // UN-LIKE: Hapus dari wishlist via DELETE /api/wishlist/{productId}
-            const res = await window.PandansariAPI.removeWishlist(pid);
-            if (!res.ok && res.status !== 404) {
-                // Rollback jika request gagal
-                product.is_liked = previousState;
-                if (typeof window.PandansariAPI?.toast === 'function') {
-                    window.PandansariAPI.toast(res.message || 'Gagal menghapus dari wishlist.', false);
-                }
-            } else {
-                product.is_liked = false;
-                if (typeof window.PandansariAPI?.toast === 'function') {
-                    window.PandansariAPI.toast('Produk dihapus dari wishlist', true);
-                }
-            }
-        } else {
-            // LIKE: Tambah ke wishlist via POST /api/wishlist
-            const res = await window.PandansariAPI.addWishlist(pid);
-            if (res.ok || res.status === 422) {
-                product.is_liked = true;
-                if (typeof window.PandansariAPI?.toast === 'function') {
-                    window.PandansariAPI.toast('Produk ditambahkan ke wishlist', true);
-                }
-            } else {
-                // Rollback jika request gagal
-                product.is_liked = previousState;
-                if (typeof window.PandansariAPI?.toast === 'function') {
-                    window.PandansariAPI.toast(res.message || 'Gagal menambahkan ke wishlist.', false);
-                }
-            }
-        }
-    } catch (err) {
-        product.is_liked = previousState;
-        console.error('[Wishlist] Toggle error:', err);
-    } finally {
-        product.isLoading = false;
-        product.isLoadingWishlist = false;
-        if (typeof window.PandansariAPI?.jadwalLencana === 'function') {
-            window.PandansariAPI.jadwalLencana();
-        }
-    }
-};
-window.toggleLike = window.toggleWishlist;
 
 // Store global untuk badge navbar (Keranjang & Wishlist) — dibaca via $store.lencana.
 document.addEventListener('alpine:init', () => {

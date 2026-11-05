@@ -27,7 +27,6 @@ class ProductVariantController extends Controller
 
         $variants = ProductVariant::where('id_product', $product->id_product)
             ->where('status_varian', 'aktif')
-            ->where('stok', '>', 0)
             ->orderBy('dibuat_pada')
             ->get();
 

@@ -115,12 +115,16 @@
                 Userlist
             </h1>
             <p class="text-xs text-slate-500 mt-0.5">
-                GET /users — cari & filter peran; tambah pengguna via POST /users (peran: pelanggan/admin).
+                Cari pengguna, filter peran, dan tambahkan akun pelanggan atau admin.
             </p>
         </div>
 
         <div class="flex items-center gap-2 self-start sm:self-auto">
-            <button type="button" @click="PandansariAPI.admin.usersExport()"
+            <button type="button"
+                    @click="$dispatch('buka-export-csv', {
+                        path: '/admin/users/export',
+                        filename: 'pengguna.csv',
+                    })"
                     class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-download text-slate-500"></i>
                 <span>Ekspor CSV</span>
@@ -297,7 +301,7 @@
             <i class="fa-solid fa-shield-halved text-sky-700"></i>
             <span>Data pelanggan bersifat rahasia. API saat ini hanya mendukung lihat & tambah pengguna (belum ada ubah/hapus).</span>
         </div>
-        <span class="text-[10px] text-slate-400 shrink-0">GET /users • POST /users</span>
+        <span class="text-[10px] text-slate-400 shrink-0">Kelola akun pengguna</span>
     </div>
 
     </div>
@@ -311,7 +315,7 @@
             <div class="bg-[#0A192F] text-white p-5 px-6 rounded-t-2xl flex items-center justify-between">
                 <div>
                     <h3 class="font-extrabold text-base">Tambah Pengguna</h3>
-                    <p class="text-[11px] text-slate-300">POST /users — peran hanya pelanggan atau admin.</p>
+                    <p class="text-[11px] text-slate-300">Peran akun dapat diatur sebagai pelanggan atau admin.</p>
                 </div>
                 <button type="button" @click="showModalTambah = false" class="w-8 h-8 rounded-xl bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition flex items-center justify-center cursor-pointer">
                     <i class="fa-solid fa-xmark"></i>

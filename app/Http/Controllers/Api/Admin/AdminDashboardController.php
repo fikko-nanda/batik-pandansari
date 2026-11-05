@@ -22,7 +22,8 @@ use Illuminate\Http\Request;
 class AdminDashboardController extends Controller
 {
     public function __construct(
-        private readonly PaymentMetricService $metrics
+        private readonly PaymentMetricService $metrics,
+        private readonly OrderService $orderService
     ) {}
 
     /**
@@ -30,6 +31,8 @@ class AdminDashboardController extends Controller
      */
     public function summary(): JsonResponse
     {
+        $this->orderService->expirePendingOrders();
+
         $variantAggregate = ProductVariant::query()
             ->selectRaw('COUNT(*) as total_varian')
             ->selectRaw('SUM(CASE WHEN stok = 0 THEN 1 ELSE 0 END) as varian_kritis')
@@ -55,6 +58,11 @@ class AdminDashboardController extends Controller
                 'varian_menipis' => (int) $variantAggregate->varian_menipis,
                 'total_pembayaran' => (int) Payment::count(),
                 'total_pendapatan' => $revenue['total_pendapatan'],
+                'biaya_midtrans' => $revenue['biaya_midtrans'],
+                'dana_bersih' => $revenue['dana_bersih'],
+                'tarif_midtrans_persen' => $revenue['tarif_midtrans_persen'],
+                'tarif_midtrans_tetap' => $revenue['tarif_midtrans_tetap'],
+                'biaya_midtrans_terkonfigurasi' => $revenue['biaya_midtrans_terkonfigurasi'],
                 'keterangan_pendapatan' => 'Pendapatan dihitung dari pembayaran berstatus "dibayar" sepanjang waktu.',
             ],
         ]);
@@ -65,6 +73,8 @@ class AdminDashboardController extends Controller
      */
     public function revenue(Request $request): JsonResponse
     {
+        $this->orderService->expirePendingOrders();
+
         $validated = $this->validatePeriode($request);
 
         $group = $validated['group'] ?? 'hari';
@@ -97,6 +107,8 @@ class AdminDashboardController extends Controller
      */
     public function orders(Request $request): JsonResponse
     {
+        $this->orderService->expirePendingOrders();
+
         $validated = $this->validatePeriode($request);
 
         $group = $validated['group'] ?? 'hari';
@@ -154,6 +166,8 @@ class AdminDashboardController extends Controller
      */
     public function aov(Request $request): JsonResponse
     {
+        $this->orderService->expirePendingOrders();
+
         $validated = $request->validate([
             'dari' => ['nullable', 'date'],
             'sampai' => ['nullable', 'date', 'after_or_equal:dari'],

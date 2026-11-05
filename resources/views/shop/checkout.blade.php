@@ -401,13 +401,6 @@
             isLoading: false,
             submitMsg: '',
             submitOk: false,
-            // === Pop-Up Midtrans Snap (Embed Mode) ===
-            // ID pesanan yang sudah dibuat di sesi checkout ini — dipakai ulang
-            // agar pop-up bisa dibuka lagi tanpa membuat pesanan baru (keranjang
-            // sudah dikonsumsi backend saat checkout).
-            createdOrderId: null,
-            createdOrderKey: '',
-            snapOpen: false,
             fallbackImage: '{{ asset('images/katalog1.webp') }}',
 
             voucherCode: '',
@@ -442,7 +435,6 @@
 
             get canCheckout() {
                 return !this.isLoading &&
-                       !this.snapOpen &&
                        !this.loadingShipping &&
                        !this.originNotConfigured &&
                        Boolean(this.selectedAddress) &&
@@ -733,67 +725,39 @@
                     catatan: this.catatan.trim() || undefined,
                 };
 
-                // Kunci identitas pesanan: payload + isi keranjang. Bila berubah
-                // setelah pop-up pernah dibuka, pesanan lama tidak dipakai ulang.
-                const payloadKey = JSON.stringify([
-                    payload,
-                    (this.items || []).map(i => [(i.id_variant || i.variant?.id_variant || ''), Number(i.jumlah ?? 1)]),
-                ]);
-
-                // Pesanan sudah dibuat dengan konfigurasi berbeda → arahkan user
-                // ke Pesanan Saya, jangan buat pesanan kedua dari keranjang yang sama.
-                if (this.createdOrderId && this.createdOrderKey !== payloadKey) {
-                    this.submitMsg = 'Pesanan Anda sudah dibuat dengan pengiriman yang berbeda. Silakan selesaikan pembayaran melalui menu Pesanan Saya.';
-                    return;
-                }
-
                 this.isLoading = true;
-                let orderId = this.createdOrderId;
                 try {
                     // 1. Buat pesanan: POST /api/checkout
-                    //    Dilewati bila pesanan sudah ada (pop-up sempat ditutup) —
-                    //    backend mengonsumsi keranjang saat checkout, jadi pesanan
-                    //    lama dipakai ulang agar tidak ganda/kosong.
-                    if (!orderId) {
-                        const res = await PandansariAPI.checkout(payload);
-                        if (!res.ok) {
-                            if (res.status === 401) {
-                                this.submitMsg = 'Sesi Anda berakhir. Silakan login kembali.';
-                                setTimeout(() => { window.location.href = '/login'; }, 1200);
-                            } else if (res.code === 'SHIPPING_ORIGIN_NOT_CONFIGURED' || (res.message && res.message.includes('asal pengiriman belum dikonfigurasi'))) {
-                                this.originNotConfigured = true;
-                                this.submitMsg = 'Lokasi asal pengiriman belum dikonfigurasi oleh admin.';
-                            } else {
-                                this.submitMsg = res.message || 'Pesanan gagal dibuat. Silakan coba lagi.';
-                            }
-                            return;
+                    const res = await PandansariAPI.checkout(payload);
+                    if (!res.ok) {
+                        if (res.status === 401) {
+                            this.submitMsg = 'Sesi Anda berakhir. Silakan login kembali.';
+                            setTimeout(() => { window.location.href = '/login'; }, 1200);
+                        } else if (res.code === 'SHIPPING_ORIGIN_NOT_CONFIGURED' || (res.message && res.message.includes('asal pengiriman belum dikonfigurasi'))) {
+                            this.originNotConfigured = true;
+                            this.submitMsg = 'Lokasi asal pengiriman belum dikonfigurasi oleh admin.';
+                        } else {
+                            this.submitMsg = res.message || 'Pesanan gagal dibuat. Silakan coba lagi.';
                         }
-
-                        const order = res.data ?? {};
-                        orderId = order.id_order ?? order.id ?? order.nomor_pesanan;
-                        this.createdOrderId = orderId;
-                        this.createdOrderKey = payloadKey;
+                        return;
                     }
+
+                    const order = res.data ?? {};
+                    const orderId = order.id_order ?? order.id ?? order.nomor_pesanan;
 
                     // 2. Minta Snap Token pembayaran Midtrans: POST /api/orders/{id}/payment
                     const payRes = await PandansariAPI.payOrder(orderId);
-                    if (!payRes.ok || !payRes.data?.snap_token) {
-                        this.submitMsg = (payRes.message || 'Gagal menyiapkan pembayaran Midtrans.')
-                            + ' Pesanan tetap tersimpan — klik tombol bayar untuk mencoba lagi.';
+                    if (!payRes.ok || !payRes.data) {
+                        this.submitMsg = payRes.message || 'Pesanan berhasil dibuat, namun pembayaran belum dapat dibuka. Tetap di halaman ini dan coba lagi.';
                         return;
                     }
 
                     this.submitOk = true;
-                    this.submitMsg = '';
 
-                    // 3. Buka Pop-Up Modal Midtrans Snap (Embed Mode) TANPA pengalihan
-                    //    halaman. redirectFallback:false mematikan alur lama pengalihan
-                    //    ke halaman Midtrans bila script Snap gagal termuat.
-                    this.snapOpen = true;
+                    // 3. Tampilkan Pop-Up Modal Midtrans Snap (Embed Mode) langsung tanpa redirect
                     await PandansariAPI.bayarSnap(payRes.data, {
-                        redirectFallback: false,
+                        fallbackRedirect: false,
                         onSuccess: async () => {
-                            this.snapOpen = false;
                             let statusSynchronized = false;
 
                             try {
@@ -814,37 +778,25 @@
                             }
                             setTimeout(() => { window.location.href = '/orders'; }, 1000);
                         },
-                        onPending: () => {
-                            this.snapOpen = false;
+                        onPending: (result) => {
+                            this.submitMsg = 'Pembayaran belum selesai. Anda tetap berada di halaman checkout dan dapat mencoba lagi.';
                             if (typeof PandansariAPI.toast === 'function') {
                                 PandansariAPI.toast('Pesanan dicatat. Menunggu penyelesaian pembayaran...', true);
                             }
-                            setTimeout(() => { window.location.href = '/orders'; }, 1000);
                         },
                         onError: (result) => {
-                            // Tetap di halaman checkout (tanpa redirect) — pesanan tetap
-                            // tersimpan sehingga tombol bayar bisa dipakai untuk coba lagi.
-                            this.snapOpen = false;
-                            this.submitMsg = result?.status_message || result?.message
-                                || 'Pembayaran gagal atau dibatalkan. Klik tombol bayar untuk mencoba lagi.';
-                            if (typeof PandansariAPI.toast === 'function') {
-                                PandansariAPI.toast('Pembayaran gagal atau dibatalkan.', false);
-                            }
+                            this.submitMsg = result?.message || 'Pembayaran gagal atau dibatalkan.';
                         },
                         onClose: () => {
-                            // Pop-up ditutup sebelum selesai → tetap di halaman ini,
-                            // tanpa pengalihan halaman.
-                            this.snapOpen = false;
-                            this.submitMsg = 'Anda menutup pop-up pembayaran sebelum menyelesaikan transaksi. Pesanan tetap tersimpan — klik tombol bayar untuk melanjutkan.';
+                            // Pengguna menutup pop-up modal sebelum menyelesaikan pembayaran
                             if (typeof PandansariAPI.toast === 'function') {
-                                PandansariAPI.toast(this.submitMsg, false);
+                                PandansariAPI.toast('Jendela pembayaran ditutup. Anda tetap di checkout dan dapat mencoba lagi.', false);
                             }
-                        },
+                        }
                     });
                 } catch (err) {
                     console.error('[Checkout] Error checkout:', err);
-                    this.snapOpen = false;
-                    this.submitMsg = err?.message || 'Pop-up pembayaran gagal dimuat. Muat ulang halaman lalu coba lagi.';
+                    this.submitMsg = err?.message || 'Terjadi kesalahan saat memproses pesanan. Silakan coba lagi.';
                 } finally {
                     this.isLoading = false;
                 }

@@ -19,7 +19,7 @@
     notice: '', noticeOk: true,
 
     STATUS_LIST: ['menunggu', 'dibayar', 'ditolak', 'kedaluwarsa', 'dibatalkan'],
-    PROVIDER_LIST: ['midtrans', 'sandbox'],
+    PROVIDER_LIST: ['midtrans'],
 
     fmt(n) { return PandansariAPI.formatRp(n); },
     num(n) { return Number(n ?? 0).toLocaleString('id-ID'); },
@@ -37,7 +37,7 @@
         }[s] ?? 'bg-slate-100 text-slate-700';
     },
     providerStyle(p) {
-        return p === 'midtrans' ? 'bg-sky-100 text-sky-800' : 'bg-violet-100 text-violet-800';
+        return 'bg-sky-100 text-sky-800';
     },
     expired(p) {
         return p.expires_at && new Date(p.expires_at) < new Date() && p.status_pembayaran === 'menunggu';
@@ -66,23 +66,6 @@
     setProvider(p) { this.selectedProvider = p; this.page = 1; this.loadPayments(); },
     goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadPayments(); },
     resetFilter() { this.selectedStatus = 'ALL'; this.selectedProvider = 'ALL'; this.page = 1; this.loadPayments(); },
-
-    // === Ekspor CSV client-side (halaman aktif) ===
-    eksporCsv() {
-        const Q = '\x22';
-        const head = ['nomor_pesanan', 'provider', 'metode', 'jumlah', 'status', 'dibuat_pada', 'paid_at'];
-        const rows = this.payments.map(p => [
-            p.order?.nomor_pesanan, p.provider, p.metode_pembayaran,
-            p.jumlah_pembayaran, p.status_pembayaran, p.dibuat_pada, p.paid_at,
-        ]);
-        const csv = [head, ...rows].map(r => r.map(c => Q + String(c ?? '').split(Q).join(Q + Q) + Q).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'pembayaran.csv';
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-    },
 
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
@@ -113,12 +96,21 @@
                 Rekonsiliasi Pembayaran Midtrans
             </h1>
             <p class="text-xs text-slate-500 mt-1">
-                GET /admin/payments — status transaksi diperbarui otomatis oleh webhook Midtrans.
+                Daftar pembayaran Midtrans dengan status yang diperbarui otomatis. Ringkasan uang masuk dan dana bersih ada di menu Laporan Penjualan.
             </p>
         </div>
-        <button type="button" @click="eksporCsv()" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
+        <button type="button"
+                @click="$dispatch('buka-export-csv', {
+                    path: '/admin/payments/export',
+                    filename: 'pembayaran.csv',
+                    extraParams: {
+                        status: selectedStatus !== 'ALL' ? selectedStatus : undefined,
+                        provider: selectedProvider !== 'ALL' ? selectedProvider : undefined,
+                    },
+                })"
+                class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
             <i class="fa-solid fa-file-export text-xs"></i>
-            <span>Ekspor CSV (halaman ini)</span>
+            <span>Ekspor CSV</span>
         </button>
     </div>
 
@@ -129,7 +121,7 @@
          x-text="notice"></div>
 
     <!-- 2. SUMMARY CARDS -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+    <div class="hidden grid grid-cols-1 sm:grid-cols-5 gap-4 text-xs">
         <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex items-center justify-between">
             <div>
                 <span class="text-[9px] font-black uppercase tracking-widest text-slate-400 block">TOTAL TRANSAKSI</span>
@@ -148,11 +140,27 @@
         </div>
         <div class="bg-emerald-50 rounded-2xl border border-emerald-200 shadow-sm p-5 flex items-center justify-between">
             <div>
-                <span class="text-[9px] font-black uppercase tracking-widest text-emerald-700 block">SUDAH DIBAYAR</span>
+                <span class="text-[9px] font-black uppercase tracking-widest text-emerald-700 block">UANG DITERIMA</span>
                 <div class="text-2xl font-black text-emerald-800" x-text="summary ? fmt(summary.nilai_dibayar) : '…'"></div>
-                <span class="text-[10px] font-bold text-emerald-700 block mt-0.5" x-text="summary ? ('provider: ' + Object.keys(summary.per_provider ?? {}).map(k => k + ' ' + summary.per_provider[k]).join(' • ')) : '…'"></span>
+                <span class="text-[10px] font-bold text-emerald-700 block mt-0.5" x-text="summary ? ((summary.per_status?.dibayar ?? 0) + ' pembayaran berhasil') : '…'"></span>
             </div>
             <div class="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-700 text-lg"><i class="fa-solid fa-circle-check"></i></div>
+        </div>
+        <div class="bg-rose-50 rounded-2xl border border-rose-200 shadow-sm p-5 flex items-center justify-between">
+            <div>
+                <span class="text-[9px] font-black uppercase tracking-widest text-rose-700 block">BIAYA MIDTRANS</span>
+                <div class="text-2xl font-black text-rose-800" x-text="summary ? fmt(summary.biaya_midtrans) : 'â€¦'"></div>
+                <span class="text-[10px] font-bold text-rose-700 block mt-0.5">Perkiraan biaya admin</span>
+            </div>
+            <div class="w-10 h-10 bg-rose-100 rounded-xl flex items-center justify-center text-rose-700 text-lg"><i class="fa-solid fa-percent"></i></div>
+        </div>
+        <div class="bg-indigo-50 rounded-2xl border border-indigo-200 shadow-sm p-5 flex items-center justify-between">
+            <div>
+                <span class="text-[9px] font-black uppercase tracking-widest text-indigo-700 block">DANA BERSIH</span>
+                <div class="text-2xl font-black text-indigo-800" x-text="summary ? fmt(summary.dana_bersih) : 'â€¦'"></div>
+                <span class="text-[10px] font-bold text-indigo-700 block mt-0.5">Setelah biaya Midtrans</span>
+            </div>
+            <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-700 text-lg"><i class="fa-solid fa-wallet"></i></div>
         </div>
     </div>
 
@@ -178,12 +186,12 @@
 
         <button @click="setProvider('ALL')"
                 :class="selectedProvider === 'ALL' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
-                class="px-3 py-2 rounded-xl transition cursor-pointer">Semua provider</button>
+                class="px-3 py-2 rounded-xl transition cursor-pointer">Semua pembayaran</button>
         <template x-for="p in PROVIDER_LIST" :key="p">
             <button @click="setProvider(p)"
                     :class="selectedProvider === p ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
                     class="px-3 py-2 rounded-xl transition cursor-pointer flex items-center gap-1.5">
-                <span x-text="p"></span>
+                <span x-text="'Midtrans'"></span>
                 <span class="px-1.5 py-0.5 text-[10px] rounded-md font-black"
                       :class="selectedProvider === p ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'"
                       x-text="summary ? num(summary.per_provider?.[p] ?? 0) : '…'"></span>
@@ -225,7 +233,7 @@
                                 <span class="text-[10px] text-slate-500 block" x-text="p.order?.user?.email ?? ''"></span>
                             </td>
                             <td class="py-3.5 px-4">
-                                <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase inline-block" :class="providerStyle(p.provider)" x-text="p.provider"></span>
+                                <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase inline-block" :class="providerStyle(p.provider)" x-text="'Midtrans'"></span>
                                 <span class="block text-[10px] text-slate-500 mt-1" x-text="p.metode_pembayaran ?? 'menunggu snap/VA dipilih'"></span>
                             </td>
                             <td class="py-3.5 px-4 text-right">
@@ -270,7 +278,7 @@
     <!-- 5. INFO WEBHOOK -->
     <div class="p-3 bg-slate-100 rounded-xl border border-slate-200/80 flex items-start gap-2 text-[11px] font-bold text-slate-700">
         <i class="fa-solid fa-link text-slate-500 mt-0.5"></i>
-        <span>Status transaksi berubah otomatis saat webhook <span class="font-mono">POST /payments/midtrans/notification</span> diterima — halaman ini tidak perlu sinkronisasi manual.</span>
+        <span>Status transaksi berubah otomatis saat menerima konfirmasi pembayaran dari Midtrans.</span>
     </div>
 
     </div>

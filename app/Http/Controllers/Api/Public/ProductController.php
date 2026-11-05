@@ -169,8 +169,7 @@ class ProductController extends Controller
             'category',
             'categories',
             'variants' => fn ($query) => $query
-                ->where('status_varian', 'aktif')
-                ->where('stok', '>', 0),
+                ->where('status_varian', 'aktif'),
             'images' => fn ($query) => $query
                 ->where('type', ProductImage::TYPE_PRODUK)
                 ->orderByDesc('is_primary')

@@ -6,23 +6,24 @@
         <button type="button" @click="sidebarOpen = true" class="lg:hidden w-9 h-9 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 active:scale-[0.98] transition flex items-center justify-center shrink-0" aria-label="Buka menu">
             <i class="fa-solid fa-bars text-sm"></i>
         </button>
-
-        <!-- Search Input Header -->
-        <div class="relative w-full max-w-[220px] xs:max-w-[260px] sm:max-w-xs md:max-w-sm lg:max-w-md">
-            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[11px] sm:text-xs"></i>
-            <input type="text" 
-                   placeholder="Cari wastra, no. resi, ID pesanan..." 
-                   class="w-full text-[11px] sm:text-xs font-medium border border-slate-200 rounded-xl pl-8 sm:pl-9 pr-3 py-1.5 sm:py-2 bg-slate-50/80 text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500">
-        </div>
     </div>
 
     <!-- Right Action Items -->
     <div class="flex items-center gap-1.5 sm:gap-2 md:gap-2.5 lg:gap-3 shrink-0 text-[11px] sm:text-xs">
         
-        <!-- Month Selector -->
-        <div class="hidden md:flex bg-slate-100 text-slate-700 px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-xl font-bold items-center gap-1.5">
+        <!-- Tanggal berjalan -->
+        <div x-data="{
+                waktuSekarang: new Date(),
+                interval: null,
+                init() { this.interval = setInterval(() => this.waktuSekarang = new Date(), 1000); },
+                destroy() { clearInterval(this.interval); },
+                formatTanggal() { return this.waktuSekarang.toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }); },
+                formatJam() { return this.waktuSekarang.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+            }"
+            class="hidden md:flex bg-slate-100 text-slate-700 px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-xl font-bold items-center gap-1.5">
             <i class="fa-regular fa-calendar text-slate-500"></i>
-            <span>{{ now()->locale('id')->translatedFormat('M Y') }}</span>
+            <span class="capitalize" x-text="formatTanggal()"></span>
+            <span class="text-slate-400" x-text="formatJam()"></span>
         </div>
 
         <!-- Live Midtrans Status Badge -->
@@ -94,18 +95,6 @@
                             judul: nMenunggu + ' pesanan menunggu pembayaran',
                             keterangan: 'Kirim pengingat atau periksa status transaksi kolektor.',
                             tautan: '/admin/orders?status=menunggu_pembayaran',
-                        });
-                    }
-
-                    const nDiproses = Number(statusOrder.diproses ?? 0);
-                    if (nDiproses > 0) {
-                        daftar.push({
-                            kunci: 'order:diproses:' + nDiproses,
-                            ikon: 'fa-box-open',
-                            warna: 'bg-sky-100 text-sky-700',
-                            judul: nDiproses + ' pesanan siap diproses',
-                            keterangan: 'Pesanan sudah dibayar dan menunggu dikemas.',
-                            tautan: '/admin/orders?status=diproses',
                         });
                     }
 

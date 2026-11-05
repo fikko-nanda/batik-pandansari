@@ -61,5 +61,7 @@
             </main>
         </div>
     </div>
+
+    <x-admin.export-csv-modal />
 </body>
 </html>

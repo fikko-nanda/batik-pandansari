@@ -72,6 +72,30 @@ class OrderService
     }
 
     /**
+     * Batalkan seluruh pesanan pembayaran yang sudah melewati batas waktu.
+     *
+     * @return int jumlah pesanan yang benar-benar dibatalkan
+     */
+    public function expirePendingOrders(): int
+    {
+        $jumlah = 0;
+
+        Order::query()
+            ->where('status_pesanan', 'menunggu_pembayaran')
+            ->whereNotNull('kedaluwarsa_pada')
+            ->where('kedaluwarsa_pada', '<=', now())
+            ->chunkById(100, function ($orders) use (&$jumlah): void {
+                foreach ($orders as $order) {
+                    if ($this->expireIfUnpaid($order)) {
+                        $jumlah++;
+                    }
+                }
+            }, 'id_order');
+
+        return $jumlah;
+    }
+
+    /**
      * Batalkan pesanan yang menunggu pembayaran bila batas waktu sudah lewat,
      * dengan memverifikasi ulang status DI DALAM lock.
      *

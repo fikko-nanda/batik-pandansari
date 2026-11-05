@@ -13,7 +13,7 @@
     page: 1,
     perPage: 8,
     searchQuery: '',
-    selectedTab: 'ALL',        // '' | menunggu_pembayaran | dibayar | diproses | dikirim | selesai | dibatalkan
+    selectedTab: 'ALL',        // '' | menunggu_pembayaran | dibayar | selesai | dibatalkan
     summary: null,
     loading: true,
     notice: '', noticeOk: true,
@@ -23,10 +23,9 @@
     detailBusy: false,
     newStatus: '',
     statusNote: '',
-    fulfillStatus: 'dikemas',
     statusBusy: false,
 
-    STATUS_LIST: ['menunggu_pembayaran','dibayar','diproses','dikirim','selesai','dibatalkan'],
+    STATUS_LIST: ['menunggu_pembayaran','dibayar','selesai','dibatalkan'],
 
     fmt(n) { return PandansariAPI.formatRp(n); },
     num(n) { return Number(n ?? 0).toLocaleString('id-ID'); },
@@ -38,8 +37,6 @@
         return {
             menunggu_pembayaran: 'bg-amber-100 text-amber-800',
             dibayar: 'bg-emerald-100 text-emerald-800',
-            diproses: 'bg-sky-100 text-sky-800',
-            dikirim: 'bg-indigo-100 text-indigo-800',
             selesai: 'bg-emerald-100 text-emerald-800',
             dibatalkan: 'bg-rose-100 text-rose-800',
         }[s] ?? 'bg-slate-100 text-slate-700';
@@ -114,46 +111,6 @@
         }
     },
 
-    // === Tambah fulfillment (packing) ===
-    async tambahFulfillment() {
-        if (!this.detail) return;
-        this.statusBusy = true;
-        const res = await PandansariAPI.admin.addFulfillment(this.detail.id_order, this.fulfillStatus);
-        if (res.ok) {
-            this.pesan(true, 'Fulfillment (' + this.fulfillStatus + ') tercatat untuk pesanan ini.');
-            // muat daftar fulfillment milik pesanan ini
-            const f = await PandansariAPI.admin.orderFulfillments({ per_page: 50 });
-            if (f.ok) {
-                this.detail.fulfillments = (f.data ?? []).filter(x => x.id_order === this.detail.id_order);
-            } else {
-                this.detail.fulfillments = this.detail.fulfillments ?? [];
-            }
-            this.loadOrders();
-            this.loadSummary();
-        } else {
-            const errs = Object.values(res.errors ?? {}).flat();
-            this.pesan(false, errs[0] ?? res.message);
-        }
-        this.statusBusy = false;
-    },
-
-    // === Ekspor CSV (client-side, dari halaman aktif) ===
-    eksporCsv() {
-        const Q = '\x22';
-        const head = ['nomor_pesanan','tanggal','penerima','kota','total','ongkir','status'];
-        const rows = this.orders.map(o => [
-            o.nomor_pesanan, o.dibuat_pada, o.nama_penerima, o.kode_tujuan_pengiriman,
-            o.total_pembayaran, o.biaya_pengiriman, o.status_pesanan,
-        ]);
-        const csv = [head, ...rows].map(r => r.map(c => Q + String(c ?? '').split(Q).join(Q + Q) + Q).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'pesanan.csv';
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-    },
-
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
         const me = await PandansariAPI.me();
@@ -189,16 +146,25 @@
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
             <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                Pesanan Masuk & Logistik Transaksi
+                Pesanan Masuk
             </h1>
             <p class="text-xs text-slate-500 mt-1">
-                GET /admin/orders — cari, filter status, ubah status pesanan, dan catat fulfillment packing.
+                Cari pesanan, lihat status pembayaran, dan proses pesanan dari satu halaman.
             </p>
         </div>
 
-        <button type="button" @click="eksporCsv()" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
+        <button type="button"
+                @click="$dispatch('buka-export-csv', {
+                    path: '/admin/orders/export',
+                    filename: 'pesanan.csv',
+                    extraParams: {
+                        status: selectedTab !== 'ALL' ? selectedTab : undefined,
+                        search: searchQuery.trim() || undefined,
+                    },
+                })"
+                class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#94d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer">
             <i class="fa-solid fa-file-export text-xs"></i>
-            <span>Ekspor CSV (halaman ini)</span>
+            <span>Ekspor CSV</span>
         </button>
     </div>
 
@@ -208,34 +174,7 @@
          :class="noticeOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'"
          x-text="notice"></div>
 
-    <!-- 2. ANTREAN PACKING & PICK-UP SUMMARY CARDS (dari summary API) -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
-
-        <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-            <div class="space-y-0.5">
-                <span class="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">ANTREAN PACKING (DIPROSES)</span>
-                <div class="text-2xl font-black text-slate-900"><span x-text="summary ? num(summary.per_status?.diproses ?? 0) : '…'"></span> <span class="text-base font-bold text-slate-700">Pesanan</span></div>
-                <p class="text-[10px] font-bold text-sky-700">Siap diproses admin</p>
-            </div>
-            <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-600 text-base">
-                <i class="fa-solid fa-box"></i>
-            </div>
-        </div>
-
-        <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-            <div class="space-y-0.5">
-                <span class="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">MENUNGGU PICK-UP (DIKIRIM)</span>
-                <div class="text-2xl font-black text-slate-900"><span x-text="summary ? num(summary.per_status?.dikirim ?? 0) : '…'"></span> <span class="text-base font-bold text-slate-700">Paket</span></div>
-                <p class="text-[10px] font-bold text-slate-500">Sedang dalam perjalanan</p>
-            </div>
-            <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-600 text-base">
-                <i class="fa-solid fa-truck-ramp-box"></i>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- 3. STATUS TABS (filter server-side) -->
+    <!-- 2. STATUS TABS (filter server-side) -->
     <div class="bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-sm inline-flex flex-wrap items-center gap-1 text-xs font-bold">
         <button @click="setTab('ALL')"
                 :class="selectedTab === 'ALL' ? 'bg-[#0A192F] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
@@ -244,7 +183,7 @@
             <span class="px-1.5 py-0.5 text-[10px] rounded-md font-black" :class="selectedTab === 'ALL' ? 'bg-sky-500/30 text-sky-300' : 'bg-slate-100 text-slate-600'" x-text="summary ? num(summary.total_pesanan) : '…'"></span>
         </button>
 
-        <template x-for="s in ['menunggu_pembayaran','dibayar','diproses','dikirim','selesai','dibatalkan']" :key="s">
+        <template x-for="s in STATUS_LIST" :key="s">
             <button @click="setTab(s)"
                     :class="selectedTab === s ? 'bg-[#0A192F] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'"
                     class="px-4 py-2 rounded-xl transition cursor-pointer flex items-center gap-2">
@@ -498,7 +437,7 @@
 
                         <!-- Aksi: ubah status -->
                         <div class="border border-slate-200 rounded-xl p-4 space-y-3">
-                            <span class="block text-[9px] font-bold uppercase text-slate-400">UBAH STATUS PESANAN (PUT /admin/orders/{id}/status)</span>
+                            <span class="block text-[9px] font-bold uppercase text-slate-400">UBAH STATUS PESANAN</span>
                             <div class="flex flex-col sm:flex-row gap-2">
                                 <select x-model="newStatus" class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400">
                                     <template x-for="s in STATUS_LIST" :key="s">
@@ -512,30 +451,6 @@
                                     <span x-show="!statusBusy">SIMPAN STATUS</span>
                                     <span x-show="statusBusy"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
                                 </button>
-                            </div>
-
-                            <div class="pt-3 border-t border-slate-100 space-y-2">
-                                <span class="block text-[9px] font-bold uppercase text-slate-400">CATAT FULFILLMENT (PACKING) — POST /admin/orders/{id}/fulfillments</span>
-                                <div class="flex flex-col sm:flex-row gap-2">
-                                    <select x-model="fulfillStatus" class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400">
-                                        <option value="dikemas">dikemas (sedang dipacking)</option>
-                                        <option value="selesai">selesai (siap/kirim selesai)</option>
-                                    </select>
-                                    <button type="button" @click="tambahFulfillment()" :disabled="statusBusy"
-                                            class="bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold px-5 py-2.5 rounded-xl transition cursor-pointer disabled:opacity-60">
-                                        <span x-show="!statusBusy">CATAT</span>
-                                        <span x-show="statusBusy"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
-                                    </button>
-                                </div>
-                                <div x-show="(detail.fulfillments ?? []).length" class="pt-2 space-y-1">
-                                    <template x-for="(f, i) in (detail.fulfillments ?? [])" :key="i">
-                                        <p class="text-[10px] text-slate-500">
-                                            <i class="fa-solid fa-box text-sky-500 mr-1"></i>
-                                            <span class="font-bold uppercase" x-text="f.status_fulfillment"></span>
-                                            <span x-text="waktu(f.dibuat_pada ?? f.created_at)"></span>
-                                        </p>
-                                    </template>
-                                </div>
                             </div>
                         </div>
 
