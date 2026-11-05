@@ -74,15 +74,47 @@ class PaymentMetricService
     /**
      * Ringkasan pendapatan pada rentang tanggal.
      *
-     * @return array{total_pendapatan: float, jumlah_transaksi_bayar: int}
+     * @return array{total_pendapatan: float, jumlah_transaksi_bayar: int, biaya_midtrans: ?float, dana_bersih: ?float, tarif_midtrans_persen: float, tarif_midtrans_tetap: float, biaya_midtrans_terkonfigurasi: bool}
      */
     public function revenue(?string $dari = null, ?string $sampai = null): array
     {
         $query = $this->paidInRange($dari, $sampai);
+        $gross = round((float) (clone $query)->sum('jumlah_pembayaran'), 2);
+        $financial = $this->financialValues($gross, (int) (clone $query)->count());
 
         return [
-            'total_pendapatan' => round((float) (clone $query)->sum('jumlah_pembayaran'), 2),
-            'jumlah_transaksi_bayar' => (int) (clone $query)->count(),
+            'total_pendapatan' => $gross,
+            'jumlah_transaksi_bayar' => $financial['jumlah_transaksi'],
+            'biaya_midtrans' => $financial['biaya_midtrans'],
+            'dana_bersih' => $financial['dana_bersih'],
+            'tarif_midtrans_persen' => $financial['tarif_persen'],
+            'tarif_midtrans_tetap' => $financial['tarif_tetap'],
+            'biaya_midtrans_terkonfigurasi' => $financial['terkonfigurasi'],
+        ];
+    }
+
+    /**
+     * Hitung biaya gateway dan dana bersih dari pembayaran yang benar-benar sukses.
+     *
+     * @return array{jumlah_transaksi: int, biaya_midtrans: ?float, dana_bersih: ?float, tarif_persen: float, tarif_tetap: float, terkonfigurasi: bool}
+     */
+    private function financialValues(float $gross, int $jumlahTransaksi): array
+    {
+        $percentage = max(0, (float) config('services.midtrans.fee_percentage', 0));
+        $fixed = max(0, (float) config('services.midtrans.fee_fixed', 0));
+        $sandbox = ! (bool) config('services.midtrans.is_production', false);
+        $configured = $percentage > 0 || $fixed > 0 || $sandbox;
+        $fee = $configured
+            ? round(($gross * $percentage / 100) + ($fixed * $jumlahTransaksi), 2)
+            : null;
+
+        return [
+            'jumlah_transaksi' => $jumlahTransaksi,
+            'biaya_midtrans' => $fee,
+            'dana_bersih' => $fee === null ? null : round(max(0, $gross - $fee), 2),
+            'tarif_persen' => $percentage,
+            'tarif_tetap' => $fixed,
+            'terkonfigurasi' => $configured,
         ];
     }
 

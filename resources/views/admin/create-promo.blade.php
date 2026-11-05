@@ -234,7 +234,7 @@
             Buat Promo & Kelola Voucher
         </h1>
         <p class="text-xs text-slate-500 mt-1">
-            POST /vouchers — buat voucher nyata; aktif/nonaktifkan lewat publish/unpublish.
+            Buat voucher, lalu aktifkan atau nonaktifkan sesuai kebutuhan.
         </p>
     </div>
 
@@ -334,7 +334,7 @@
                             Tidak ada produk yang cocok.
                         </div>
                     </div>
-                    <p class="text-[10px] text-slate-400 mt-1">Pencarian real-time by nama & SKU; semua produk dimuat sekali ke dropdown (GET /admin/products).</p>
+                    <p class="text-[10px] text-slate-400 mt-1">Cari produk berdasarkan nama atau SKU.</p>
                 </div>
             </div>
 
@@ -600,7 +600,7 @@
     <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-bold">
         <div class="flex items-center gap-2 text-slate-400 text-[11px]">
             <i class="fa-regular fa-circle-check"></i>
-            <span>Voucher dibuat via POST /vouchers — pilih terbit aktif atau draf nonaktif.</span>
+            <span>Voucher dapat diterbitkan sebagai aktif atau disimpan sebagai draf.</span>
         </div>
 
         <div class="flex items-center gap-2.5 self-end sm:self-auto">
@@ -625,7 +625,7 @@
             <div>
                 <h2 class="text-base font-extrabold text-slate-900">Kelola Voucher</h2>
                 <span class="text-[11px] font-bold text-slate-400">
-                    GET /vouchers — halaman <span x-text="meta?.current_page ?? 1"></span>/<span x-text="meta?.last_page ?? 1"></span> • total <span x-text="num(meta?.total ?? 0)"></span>
+                    Halaman <span x-text="meta?.current_page ?? 1"></span>/<span x-text="meta?.last_page ?? 1"></span> • total <span x-text="num(meta?.total ?? 0)"></span> voucher
                 </span>
             </div>
             <button type="button" @click="muatSemua()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer">

@@ -53,6 +53,13 @@ class Payment extends Model
         ];
     }
 
+    public function getProviderAttribute($value): string
+    {
+        return in_array(strtolower((string) $value), ['midtrans', 'sandbox'], true)
+            ? 'midtrans'
+            : (string) $value;
+    }
+
     public function order()
     {
         return $this->belongsTo(

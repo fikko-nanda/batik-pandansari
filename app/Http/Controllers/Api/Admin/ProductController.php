@@ -150,9 +150,36 @@ class ProductController extends Controller
             $query->with('variants');
         }
 
+        if (! empty($adminFilters['start_date'])) {
+            $query->whereDate('dibuat_pada', '>=', $adminFilters['start_date']);
+        }
+
+        if (! empty($adminFilters['end_date'])) {
+            $query->whereDate('dibuat_pada', '<=', $adminFilters['end_date']);
+        }
+
         if (! empty($adminFilters['status'])) {
             $query->where('status_produk', $adminFilters['status']);
         }
+
+        $stockStatus = $adminFilters['stock_status'] ?? null;
+        if ($stockStatus === 'stok_10') {
+            $query->whereHas('variants', fn ($variantQuery) => $variantQuery
+                ->where('status_varian', 'aktif')
+                ->whereBetween('stok', [1, 10]));
+        } elseif ($stockStatus === 'stok_3') {
+            $query->whereHas('variants', fn ($variantQuery) => $variantQuery
+                ->where('status_varian', 'aktif')
+                ->whereBetween('stok', [1, 3]));
+        } elseif ($stockStatus === 'habis') {
+            $query->whereHas('variants', fn ($variantQuery) => $variantQuery
+                ->where('status_varian', 'aktif'))
+                ->whereDoesntHave('variants', fn ($variantQuery) => $variantQuery
+                    ->where('status_varian', 'aktif')
+                    ->where('stok', '>', 0));
+        }
+
+        $query->orderByRaw("CASE WHEN status_produk = 'aktif' THEN 0 ELSE 1 END");
 
         if (! empty($adminFilters['sort'])) {
             $query->orderBy($adminFilters['sort'], $adminFilters['order'] ?? 'asc');
@@ -172,6 +199,9 @@ class ProductController extends Controller
             'status' => ['nullable', 'string', 'in:draft,aktif,nonaktif'],
             'sort' => ['nullable', 'string', 'in:nama_produk,dibuat_pada,status_produk'],
             'order' => ['nullable', 'string', 'in:asc,desc'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'stock_status' => ['nullable', 'string', 'in:stok_10,stok_3,habis'],
         ]);
     }
 

@@ -52,24 +52,6 @@
     },
     goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadKas(); },
 
-    // === Ekspor CSV client-side ===
-    eksporCsv() {
-        const Q = '\x22';
-        const head = ['nomor_pesanan', 'pelanggan', 'provider', 'metode', 'jumlah', 'status', 'dibuat_pada', 'paid_at'];
-        const rows = this.payments.map(p => [
-            p.order?.nomor_pesanan, p.order?.user?.nama_pengguna, p.provider,
-            p.metode_pembayaran, p.jumlah_pembayaran, p.status_pembayaran, p.dibuat_pada, p.paid_at,
-        ]);
-        const csv = [head, ...rows].map(r => r.map(c => Q + String(c ?? '').split(Q).join(Q + Q) + Q).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'buku-kas.csv';
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        this.pesan(true, 'CSV buku kas (halaman aktif) terunduh.');
-    },
-
     async init() {
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
         const me = await PandansariAPI.me();
@@ -100,11 +82,15 @@
                 Konsolidasi Pembukuan & Tata Kelola Atelier
             </h1>
             <p class="text-xs text-slate-500 mt-1">
-                Ringkasan pesanan & pembayaran (summary API) + buku kas termutakhir dari /admin/payments.
+                Ringkasan pesanan, uang masuk, biaya Midtrans, dan dana bersih.
             </p>
         </div>
 
-        <button type="button" @click="eksporCsv()"
+        <button type="button"
+                @click="$dispatch('buka-export-csv', {
+                    path: '/admin/payments/export',
+                    filename: 'buku-kas.csv',
+                })"
                 class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer border border-slate-200/80">
             <i class="fa-solid fa-file-csv text-emerald-600 text-sm"></i>
             <span>Ekspor CSV Buku Kas</span>
@@ -118,10 +104,24 @@
          x-text="notice"></div>
 
     <!-- 2. RINGKASAN ANGKA -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+    <div class="mb-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-xs text-sky-900">
+        <div class="flex items-start gap-3">
+            <i class="fa-solid fa-circle-info mt-0.5 text-sky-600"></i>
+            <div>
+                <strong class="block">Kenapa jumlah pesanan dan pembayaran bisa berbeda?</strong>
+                <p class="mt-1 leading-relaxed">
+                    <span x-text="orderSummary ? num(orderSummary.total_pesanan) : '…'"></span> pesanan adalah jumlah order yang dibuat pelanggan.
+                    <span x-text="paySummary ? num(paySummary.total_pembayaran) : '…'"></span> transaksi adalah jumlah catatan pembayaran.
+                    Satu pesanan bisa belum memiliki pembayaran, atau memiliki lebih dari satu catatan pembayaran karena mencoba membayar ulang.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 text-xs">
 
         <!-- Total nilai pesanan -->
-        <div class="bg-[#0A192F] text-white rounded-2xl p-5 relative overflow-hidden shadow-md flex flex-col justify-between">
+        <div class="hidden bg-[#0A192F] text-white rounded-2xl p-5 relative overflow-hidden shadow-md flex flex-col justify-between">
             <div class="relative z-10 space-y-1">
                 <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block">NILAI PESANAN (SEMUA STATUS)</span>
                 <div class="text-2xl font-black text-white tracking-tight pt-1" x-text="orderSummary ? fmt(orderSummary.total_nilai) : '…'"></div>
@@ -135,19 +135,37 @@
         <!-- Nilai sudah dibayar -->
         <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
             <div class="space-y-1">
-                <span class="text-[10px] font-black text-emerald-700 uppercase tracking-widest block">KAS MASUK (SUDAH DIBAYAR)</span>
+                <span class="text-[10px] font-black text-emerald-700 uppercase tracking-widest block">PEMBAYARAN BERHASIL</span>
                 <div class="text-2xl font-black text-emerald-800 tracking-tight pt-1" x-text="paySummary ? fmt(paySummary.nilai_dibayar) : '…'"></div>
-                <p class="text-[10px] text-emerald-700 font-bold pt-1" x-text="paySummary ? ((paySummary.per_status?.dibayar ?? 0) + ' dari ' + paySummary.total_pembayaran + ' transaksi') : '…'"></p>
+                <p class="text-[10px] text-emerald-700 font-bold pt-1" x-text="paySummary ? ((paySummary.jumlah_pesanan_dibayar ?? 0) + ' pesanan • ' + (paySummary.per_status?.dibayar ?? 0) + ' catatan pembayaran') : '…'"></p>
             </div>
             <div class="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-700 text-base mt-3"><i class="fa-solid fa-sack-dollar"></i></div>
+        </div>
+
+        <div class="bg-rose-50 border border-rose-200 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
+            <div class="space-y-1">
+                <span class="text-[10px] font-black text-rose-700 uppercase tracking-widest block">BIAYA MIDTRANS</span>
+                <div class="text-2xl font-black text-rose-800 tracking-tight pt-1" x-text="paySummary?.biaya_midtrans_terkonfigurasi ? fmt(paySummary.biaya_midtrans) : 'Belum tersedia'"></div>
+                <p class="text-[10px] text-rose-700 font-bold pt-1" x-text="paySummary?.midtrans_sandbox ? 'Sandbox: biaya sementara Rp0' : 'Perkiraan biaya admin pembayaran'"></p>
+            </div>
+            <div class="w-9 h-9 bg-rose-100 rounded-xl flex items-center justify-center text-rose-700 text-base mt-3"><i class="fa-solid fa-percent"></i></div>
+        </div>
+
+        <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
+            <div class="space-y-1">
+                <span class="text-[10px] font-black text-indigo-700 uppercase tracking-widest block">DANA BERSIH</span>
+                <div class="text-2xl font-black text-indigo-800 tracking-tight pt-1" x-text="paySummary?.biaya_midtrans_terkonfigurasi ? fmt(paySummary.dana_bersih) : 'Belum dihitung'"></div>
+                <p class="text-[10px] text-indigo-700 font-bold pt-1" x-text="paySummary?.midtrans_sandbox ? 'Uang diterima dikurangi Rp0' : 'Uang diterima setelah biaya Midtrans'"></p>
+            </div>
+            <div class="w-9 h-9 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-700 text-base mt-3"><i class="fa-solid fa-wallet"></i></div>
         </div>
 
         <!-- Total nilai transaksi -->
         <div class="bg-white border border-slate-200/80 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
             <div class="space-y-1">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block">NILAI TRANSAKSI PEMBAYARAN</span>
+                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block">NILAI CATATAN PEMBAYARAN</span>
                 <div class="text-2xl font-black text-slate-900 tracking-tight pt-1" x-text="paySummary ? fmt(paySummary.total_nilai) : '…'"></div>
-                <p class="text-[10px] text-slate-500 font-bold pt-1" x-text="paySummary ? ('menunggu: ' + (paySummary.per_status?.menunggu ?? 0) + ' • ditolak/kadaluarsa: ' + ((paySummary.per_status?.ditolak ?? 0) + (paySummary.per_status?.kedaluwarsa ?? 0) + (paySummary.per_status?.dibatalkan ?? 0))) : '…'"></p>
+                <p class="text-[10px] text-slate-500 font-bold pt-1" x-text="paySummary ? ('belum berhasil: ' + ((paySummary.per_status?.menunggu ?? 0) + (paySummary.per_status?.ditolak ?? 0) + (paySummary.per_status?.kedaluwarsa ?? 0) + (paySummary.per_status?.dibatalkan ?? 0))) : '…'"></p>
             </div>
             <div class="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center text-slate-600 text-base mt-3"><i class="fa-solid fa-receipt"></i></div>
         </div>
@@ -155,7 +173,7 @@
         <!-- Kanal provider -->
         <div class="bg-[#1EABF1] text-white rounded-2xl p-5 relative overflow-hidden shadow-md flex flex-col justify-between">
             <div class="relative z-10 space-y-1">
-                <span class="text-[10px] font-black text-white/80 uppercase tracking-widest block">KANAL PEMBAYARAN</span>
+                <span class="text-[10px] font-black text-white/80 uppercase tracking-widest block">CATATAN PEMBAYARAN VIA</span>
                 <div class="text-sm font-black text-white pt-1 leading-snug">
                     <template x-for="(v, k) in (paySummary?.per_provider ?? {})" :key="k">
                         <span class="block" x-text="k.toUpperCase() + ': ' + v + ' transaksi'"></span>
@@ -194,7 +212,7 @@
                 <h2 class="text-base font-extrabold text-slate-900">Buku Kas Pembayaran (Real-Time)</h2>
             </div>
             <span class="text-[11px] font-bold text-slate-400">
-                GET /admin/payments — halaman <span x-text="meta?.current_page ?? 1"></span>/<span x-text="meta?.last_page ?? 1"></span> • total <span x-text="num(meta?.total ?? 0)"></span>
+                Halaman <span x-text="meta?.current_page ?? 1"></span>/<span x-text="meta?.last_page ?? 1"></span> • total <span x-text="num(meta?.total ?? 0)"></span> transaksi
             </span>
         </div>
 
@@ -279,7 +297,8 @@
     <!-- 5. CATATAN -->
     <div class="p-3 bg-slate-100 rounded-xl border border-slate-200/80 flex items-start gap-2 text-[11px] font-bold text-slate-700">
         <i class="fa-solid fa-circle-info text-slate-500 mt-0.5"></i>
-        <span>Nilai MDR/kurir belum tersedia di API — kolom kas keluar (fee gateway) akan ditambahkan saat endpoint laporan tersedia.</span>
+        <span x-show="paySummary && !paySummary.biaya_midtrans_terkonfigurasi">Tarif biaya Midtrans belum diisi. Isi MIDTRANS_FEE_PERCENTAGE atau MIDTRANS_FEE_FIXED agar dana bersih dapat dihitung lebih tepat.</span>
+        <span x-show="paySummary?.biaya_midtrans_terkonfigurasi">Dana bersih = uang yang diterima dikurangi biaya Midtrans. Saat ini mode Sandbox, jadi biaya dihitung Rp0 sementara.</span>
     </div>
 
     </div>

@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Order;
 use App\Services\OrderService;
 use Illuminate\Console\Command;
 
@@ -23,20 +22,7 @@ class ExpireOrdersCommand extends Command
 
     public function handle(OrderService $orderService): int
     {
-        $now = now();
-
-        $orders = Order::where('status_pesanan', 'menunggu_pembayaran')
-            ->whereNotNull('kedaluwarsa_pada')
-            ->where('kedaluwarsa_pada', '<=', $now)
-            ->get();
-
-        $jumlah = 0;
-
-        foreach ($orders as $order) {
-            if ($orderService->expireIfUnpaid($order)) {
-                $jumlah++;
-            }
-        }
+        $jumlah = $orderService->expirePendingOrders();
 
         $this->info("Pesanan kedaluwarsa dibatalkan: {$jumlah}.");
 

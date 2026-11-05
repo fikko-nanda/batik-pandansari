@@ -1516,7 +1516,7 @@
                 </div>
                 <div>
                     <h2 class="text-base font-extrabold text-slate-900">Profil Admin</h2>
-                    <span class="text-[10px] text-slate-400 font-bold">GET /me • PUT /me</span>
+                        <span class="text-[10px] text-slate-400 font-bold">Data profil akun</span>
                 </div>
             </div>
 
@@ -1562,7 +1562,7 @@
                 </div>
                 <div>
                     <h2 class="text-base font-extrabold text-slate-900">Ganti Kata Sandi</h2>
-                    <span class="text-[10px] text-slate-400 font-bold">PUT /me/password</span>
+                        <span class="text-[10px] text-slate-400 font-bold">Perubahan kata sandi</span>
                 </div>
             </div>
 
@@ -1781,7 +1781,7 @@
                     </div>
                     <div>
                         <h2 class="text-base font-extrabold text-slate-900">Kategori Produk</h2>
-                        <span class="text-[10px] text-slate-400 font-bold">GET /categories • POST/PUT/DELETE /admin/categories</span>
+                        <span class="text-[10px] text-slate-400 font-bold">Kelola kategori produk</span>
                     </div>
                 </div>
                 <button type="button" @click="loadKategori()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition cursor-pointer">
@@ -2453,7 +2453,7 @@
         <div x-show="!promoEndpointSiap" class="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl px-4 py-3 text-xs font-semibold flex items-start gap-2">
             <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
             <span>
-                Backend belum menyediakan <code class="font-mono">GET/POST/PUT/DELETE /admin/cms/promos</code>. Tab ini
+                Fitur promosi pada bagian ini
                 siap dipakai setelah endpoint multi-promo tersedia (lihat
                 <code class="font-mono">docs/ADENDUM-CMS-PROMO-MULTI.md</code>). Sementara itu voucher tetap bisa
                 dikelola lewat <a href="{{ route('admin.create-promo') }}" class="underline font-bold">Buat Promo</a>.
@@ -2473,7 +2473,7 @@
                     </div>
                     <div>
                         <h2 class="text-base font-extrabold text-slate-900">Banner Promo Beranda</h2>
-                        <span class="text-[10px] text-slate-400 font-bold">GET/POST /admin/cms/promos • PUT/DELETE /admin/cms/promos/{id}</span>
+                        <span class="text-[10px] text-slate-400 font-bold">Kelola promosi</span>
                     </div>
                 </div>
                 <button type="button" @click="bukaTambahPromo()" :disabled="loadingPromo || !promoEndpointSiap"

@@ -10,8 +10,6 @@
 
         // === Ringkasan (GET /admin/{orders,payments,users}/summary) ===
         orderSummary: null,
-        paySummary: null,
-        userSummary: null,
 
         // === Tabel transaksi terbaru (GET /admin/orders) ===
         orders: [],
@@ -53,14 +51,10 @@
         },
 
         async loadSummary() {
-            const [o, p, u] = await Promise.all([
+            const [o] = await Promise.all([
                 PandansariAPI.admin.ordersSummary(),
-                PandansariAPI.admin.paymentsSummary(),
-                PandansariAPI.admin.usersSummary(),
             ]);
             if (o.ok) this.orderSummary = o.data;
-            if (p.ok) this.paySummary = p.data;
-            if (u.ok) this.userSummary = u.data;
         },
         async loadOrders() {
             const res = await PandansariAPI.admin.orders({ page: this.page, per_page: this.perPage, status: this.filter || undefined });
@@ -109,7 +103,7 @@
                 Sugeng Rawuh, <span class="italic font-normal" x-text="user?.nama_pengguna ?? 'Admin'"></span>
             </h1>
             <p class="text-xs text-slate-300 leading-relaxed font-normal">
-                Ikhtisar perputaran wastra, status gerbang bayar Midtrans, serta data langsung dari API backend.
+                Ringkasan penjualan, pembayaran, stok, dan pelanggan untuk membantu pekerjaan harian admin.
             </p>
         </div>
 
@@ -142,7 +136,7 @@
             </div>
 
             <div>
-                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">TOTAL NILAI PESANAN</span>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">NILAI SEMUA PESANAN</span>
                 <div class="text-2xl sm:text-3xl font-extrabold tracking-tight">
                     <span class="text-lg font-bold text-slate-400">Rp</span>
                     <span x-text="orderSummary ? num(Math.round(orderSummary.total_nilai)) : '…'">0</span>
@@ -162,7 +156,7 @@
             </div>
 
             <div>
-                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">MENUNGGU PEMBAYARAN</span>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">BELUM DIBAYAR</span>
                 <div class="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-baseline gap-1.5">
                     <span x-text="orderSummary ? num(orderSummary.per_status?.menunggu_pembayaran ?? 0) : '…'"></span>
                     <span class="text-xs font-normal text-slate-400">Transaksi</span>
@@ -170,22 +164,22 @@
             </div>
         </div>
 
-        <!-- Metric 3: Pembayaran Dibayar & Pengguna -->
+        <!-- Metric 3: Pesanan yang perlu diproses -->
         <div class="bg-[#0A192F] text-white p-6 rounded-2xl border border-slate-800 shadow-sm relative space-y-3">
             <div class="flex items-center justify-between">
                 <div class="w-9 h-9 bg-slate-800 text-sky-400 rounded-xl flex items-center justify-center text-sm">
-                    <i class="fa-solid fa-bag-shopping"></i>
+                    <i class="fa-solid fa-truck-fast"></i>
                 </div>
-                <span class="text-[9px] bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
+                <span class="hidden text-[9px] bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
                     <span x-text="userSummary ? num(userSummary.total_pengguna) + ' pengguna' : '…'"></span>
                 </span>
             </div>
 
             <div>
-                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">NILAI PEMBAYARAN DIBAYAR</span>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">SIAP DIPROSES</span>
                 <div class="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                    <span class="text-lg font-bold text-slate-400">Rp</span>
-                    <span x-text="paySummary ? num(Math.round(paySummary.nilai_dibayar)) : '…'">0</span>
+                    <span x-text="orderSummary ? num(orderSummary.pesanan_perlu_diproses ?? 0) : '…'">0</span>
+                    <span class="text-xs font-normal text-slate-400">pesanan</span>
                 </div>
             </div>
         </div>
@@ -203,7 +197,7 @@
                 </div>
                 <div>
                     <h3 class="text-base font-bold text-[#0F1A24]">Transaksi Terbaru</h3>
-                    <p class="text-xs text-slate-500">GET /admin/orders — filter status server-side</p>
+                    <p class="text-xs text-slate-500">Daftar pesanan terbaru dan status pembayarannya</p>
                 </div>
             </div>
 

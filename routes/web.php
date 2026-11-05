@@ -236,6 +236,10 @@ Route::prefix('admin')->middleware('panel:admin')->group(function () {
         return view('admin.dashboard');
     })->name('admin.dashboard');
 
+    Route::get('/guide', function () {
+        return view('admin.guide');
+    })->name('admin.guide');
+
     Route::get('/products', function () {
         return view('admin.products');
     })->name('admin.products');

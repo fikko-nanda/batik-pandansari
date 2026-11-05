@@ -14,10 +14,13 @@
     perPage: 10,
     categories: [],
     selectedCategory: 'ALL',
+    stockFilter: 'ALL',
     searchQuery: '',
     loading: true,
     notice: '',
     noticeOk: true,
+    stock10Count: 0,
+    stock3Count: 0,
 
     // === Form produk (dipakai komponen x-admin.modal-add-product) ===
     photoMax: 5,
@@ -131,6 +134,8 @@
             per_page: this.perPage,
             search: this.searchQuery.trim() || undefined,
             category: this.selectedCategory !== 'ALL' ? this.selectedCategory : undefined,
+            status: ['aktif', 'nonaktif', 'draft'].includes(this.stockFilter) ? this.stockFilter : undefined,
+            stock_status: ['stok_10', 'stok_3', 'habis'].includes(this.stockFilter) ? this.stockFilter : undefined,
         });
         this.loading = false;
         if (res.ok) {
@@ -153,6 +158,18 @@
             return ia - ib;
         });
         this.categories = list;
+    },
+    setStockFilter(value) {
+        this.stockFilter = value;
+        this.page = 1;
+        this.loadProduk();
+    },
+    async loadStockSummary() {
+        const res = await PandansariAPI.admin.inventorySummary();
+        if (res.ok) {
+            this.stock10Count = Number(res.data?.varian_stok_10 ?? 0);
+            this.stock3Count = Number(res.data?.varian_stok_3 ?? 0);
+        }
     },
     setKategori(id) { this.selectedCategory = id; this.page = 1; this.loadProduk(); },
     goto(p) {
@@ -695,7 +712,7 @@
         if (!PandansariAPI.getToken()) { this.needLogin = true; this.loading = false; return; }
         const me = await PandansariAPI.me();
         if (!me.ok || me.data?.peran !== 'admin') { this.notAdmin = true; this.loading = false; return; }
-        await Promise.all([this.loadProduk(), this.loadKategori()]);
+        await Promise.all([this.loadProduk(), this.loadKategori(), this.loadStockSummary()]);
         this.loading = false;
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -745,7 +762,17 @@
                                placeholder="Saring nama / deskripsi..."
                                class="w-full text-xs font-semibold bg-[#AEE2F0] text-slate-900 placeholder-slate-600 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-sky-400 border-none">
                     </div>
-                    <button type="button" @click="PandansariAPI.admin.productsExport()"
+                    <button type="button"
+                            @click="$dispatch('buka-export-csv', {
+                                path: '/admin/products/export',
+                                filename: 'produk.csv',
+                                extraParams: {
+                                    search: searchQuery.trim() || undefined,
+                                    category: selectedCategory !== 'ALL' ? selectedCategory : undefined,
+                                    status: ['aktif', 'nonaktif', 'draft'].includes(stockFilter) ? stockFilter : undefined,
+                                    stock_status: ['stok_10', 'stok_3', 'habis'].includes(stockFilter) ? stockFilter : undefined,
+                                },
+                            })"
                             class="bg-[#AEE2F0] hover:bg-[#97d7e8] text-slate-900 p-2.5 px-3 rounded-xl transition cursor-pointer shrink-0 font-bold" title="Unduh CSV (export produk)">
                         <i class="fa-solid fa-download text-xs"></i>
                     </button>
@@ -764,6 +791,20 @@
                                 x-text="c.nama_kategori">
                         </button>
                     </template>
+                </div>
+
+                <div class="flex items-center gap-2 pt-1">
+                    <label for="product-stock-filter" class="text-[10px] font-extrabold uppercase tracking-wider text-slate-300">Filter stok</label>
+                    <select id="product-stock-filter" x-model="stockFilter" @change="setStockFilter(stockFilter)"
+                            class="rounded-xl border-0 bg-[#AEE2F0] px-3 py-2 text-[10px] font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-400">
+                        <option value="ALL">Semua status</option>
+                        <option value="aktif">Produk aktif</option>
+                        <option value="nonaktif">Produk nonaktif</option>
+                        <option value="draft">Produk draft</option>
+                        <option value="stok_10">Stok ≤ 10</option>
+                        <option value="stok_3">Stok ≤ 3</option>
+                        <option value="habis">Stok habis</option>
+                    </select>
                 </div>
             </div>
 
@@ -787,6 +828,17 @@
                 </button>
             </div>
         </template>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" x-show="stock10Count > 0 || stock3Count > 0" x-cloak>
+            <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                <span x-text="stock10Count + ' varian memiliki stok 10 unit atau kurang.'"></span>
+            </div>
+            <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
+                <i class="fa-solid fa-bell mr-1"></i>
+                <span x-text="stock3Count + ' varian memiliki stok 3 unit atau kurang.'"></span>
+            </div>
+        </div>
 
         <!-- 2. STATS SUMMARY CARDS -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -813,7 +865,7 @@
 
             <div class="bg-sky-100/60 border border-sky-200/80 p-5 rounded-2xl flex items-center justify-between">
                 <div>
-                    <span class="text-[10px] font-bold text-sky-800 uppercase tracking-wider block mb-1">TOTAL STOK FISIK</span>
+                    <span class="text-[10px] font-bold text-sky-800 uppercase tracking-wider block mb-1">JUMLAH STOK TERSEDIA</span>
                     <div class="text-2xl font-extrabold text-slate-800"><span x-text="num(products.reduce((s, p) => s + stokOf(p), 0))"></span> <span class="text-xs font-semibold text-slate-500">unit</span></div>
                 </div>
                 <div class="w-10 h-10 bg-white text-sky-600 rounded-xl flex items-center justify-center text-base shadow-sm">

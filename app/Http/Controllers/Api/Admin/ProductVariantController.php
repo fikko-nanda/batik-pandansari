@@ -137,7 +137,9 @@ class ProductVariantController extends Controller
                         ->lockForUpdate()
                         ->firstOrFail();
 
-                    $this->pastikanStokTidakDiBawahReservasi($variant, $data['stok'] ?? null, "items.{$index}.stok");
+                    if (array_key_exists('stok', $data)) {
+                        $data['stok_dipesan'] = min((int) $variant->stok_dipesan, (int) $data['stok']);
+                    }
 
                     $variant->update($data);
                     $diperbarui++;
@@ -217,7 +219,9 @@ class ProductVariantController extends Controller
                 return null;
             }
 
-            $this->pastikanStokTidakDiBawahReservasi($variant, $validated['stok'] ?? null, 'stok');
+            if (array_key_exists('stok', $validated)) {
+                $validated['stok_dipesan'] = min((int) $variant->stok_dipesan, (int) $validated['stok']);
+            }
 
             $variant->update($validated);
 
@@ -376,26 +380,6 @@ class ProductVariantController extends Controller
 
         throw ValidationException::withMessages([
             'ukuran' => ['Produk harus memiliki minimal 1 varian dengan ukuran yang valid.'],
-        ]);
-    }
-
-    private function pastikanStokTidakDiBawahReservasi(
-        ProductVariant $variant,
-        mixed $stokBaru,
-        string $field
-    ): void {
-        if ($stokBaru === null) {
-            return;
-        }
-
-        $dipesan = (int) $variant->stok_dipesan;
-
-        if ((int) $stokBaru >= $dipesan) {
-            return;
-        }
-
-        throw ValidationException::withMessages([
-            $field => ["Stok tidak boleh lebih kecil dari jumlah yang sedang dipesan ({$dipesan})."],
         ]);
     }
 

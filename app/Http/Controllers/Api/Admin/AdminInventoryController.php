@@ -31,6 +31,8 @@ class AdminInventoryController extends Controller
             'status_stok' => ['nullable', 'string', 'in:semua,aman,menipis,kritis'],
             'sort' => ['nullable', 'string', 'in:stok,stok_minimum,harga,sku,dibuat_pada'],
             'order' => ['nullable', 'string', 'in:asc,desc'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -274,6 +276,8 @@ class AdminInventoryController extends Controller
             ->selectRaw('COUNT(DISTINCT id_product) as total_produk')
             ->selectRaw('COALESCE(SUM(stok), 0) as total_unit_stok')
             ->selectRaw('SUM(CASE WHEN stok = 0 THEN 1 ELSE 0 END) as varian_kritis')
+            ->selectRaw('SUM(CASE WHEN stok > 0 AND stok <= 10 THEN 1 ELSE 0 END) as varian_stok_10')
+            ->selectRaw('SUM(CASE WHEN stok > 0 AND stok <= 3 THEN 1 ELSE 0 END) as varian_stok_3')
             ->selectRaw(
                 'SUM(CASE WHEN stok_minimum > 0 AND stok > 0 AND stok <= stok_minimum THEN 1 ELSE 0 END) as varian_menipis'
             )
@@ -294,6 +298,8 @@ class AdminInventoryController extends Controller
                 'total_produk' => (int) $aggregate->total_produk,
                 'total_unit_stok' => (int) $aggregate->total_unit_stok,
                 'varian_kritis' => (int) $aggregate->varian_kritis,
+                'varian_stok_10' => (int) $aggregate->varian_stok_10,
+                'varian_stok_3' => (int) $aggregate->varian_stok_3,
                 'varian_menipis' => (int) $aggregate->varian_menipis,
                 'varian_aman' => (int) $aggregate->varian_aman,
                 'jumlah_produk_dihitung_terpisah' => true,
@@ -388,6 +394,8 @@ class AdminInventoryController extends Controller
             'search' => ['nullable', 'string', 'max:150'],
             'category' => ['nullable', 'string', 'max:36'],
             'status_stok' => ['nullable', 'string', 'in:semua,aman,menipis,kritis'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
         ]);
 
         $filename = 'inventaris-'.now()->format('Y-m-d').'.csv';
@@ -474,6 +482,14 @@ class AdminInventoryController extends Controller
                         $validated['category']
                     )
                 )
+            )
+            ->when(
+                ! empty($validated['start_date']),
+                fn ($query) => $query->whereDate('dibuat_pada', '>=', $validated['start_date'])
+            )
+            ->when(
+                ! empty($validated['end_date']),
+                fn ($query) => $query->whereDate('dibuat_pada', '<=', $validated['end_date'])
             )
             ->when(
                 $statusStok === 'kritis',

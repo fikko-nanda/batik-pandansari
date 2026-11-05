@@ -64,6 +64,10 @@ return [
         'server_key' => env('MIDTRANS_SERVER_KEY'),
         'is_production' => env('MIDTRANS_IS_PRODUCTION', false),
         'webhook_throttle' => env('MIDTRANS_WEBHOOK_THROTTLE', 60),
+        // Tarif ini dipakai untuk estimasi biaya admin pada ringkasan keuangan.
+        // Isi sesuai kontrak merchant karena tarif dapat berbeda menurut metode bayar.
+        'fee_percentage' => (float) env('MIDTRANS_FEE_PERCENTAGE', 0),
+        'fee_fixed' => (float) env('MIDTRANS_FEE_FIXED', 0),
 
         // URL pengalihan (callbacks) yang dikirim ke Snap saat membuat
         // transaksi. Bila kosong, Midtrans memakai finish_redirect_url bawaan

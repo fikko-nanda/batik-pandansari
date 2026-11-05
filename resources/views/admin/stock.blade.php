@@ -13,11 +13,14 @@
     page: 1,
     perPage: 10,
     searchQuery: '',
+    stockFilter: 'ALL',
     loading: true,
     notice: '', noticeOk: true,
 
     // === Inventory summary ===
     lowStockCount: 0,
+    stock10Count: 0,
+    stock3Count: 0,
     valuation: null,
     loadingSummary: true,
 
@@ -37,13 +40,18 @@
     // === Load inventory summary ===
     async loadInventorySummary() {
         this.loadingSummary = true;
-        const [low, val] = await Promise.all([
+        const [low, val, summary] = await Promise.all([
             PandansariAPI.admin.inventoryLowStock(),
             PandansariAPI.admin.inventoryValuation(),
+            PandansariAPI.admin.inventorySummary(),
         ]);
         this.loadingSummary = false;
         if (low.ok) this.lowStockCount = (low.data ?? []).length;
         if (val.ok) this.valuation = val.data;
+        if (summary.ok) {
+            this.stock10Count = Number(summary.data?.varian_stok_10 ?? 0);
+            this.stock3Count = Number(summary.data?.varian_stok_3 ?? 0);
+        }
     },
 
     activeVariants(p) {
@@ -184,6 +192,8 @@
         const res = await PandansariAPI.admin.adminProducts({
             page: this.page, per_page: this.perPage,
             search: this.searchQuery.trim() || undefined,
+            status: ['aktif', 'nonaktif', 'draft'].includes(this.stockFilter) ? this.stockFilter : undefined,
+            stock_status: ['stok_10', 'stok_3', 'habis'].includes(this.stockFilter) ? this.stockFilter : undefined,
         });
         this.loading = false;
         if (res.ok) {
@@ -191,6 +201,11 @@
             this.meta = res.meta;
             this.page = res.meta?.current_page ?? this.page;
         } else this.pesan(false, res.message);
+    },
+    setStockFilter(value) {
+        this.stockFilter = value;
+        this.page = 1;
+        this.loadProduk();
     },
     goto(p) { if (p < 1 || (this.meta && p > this.meta.last_page)) return; this.page = p; this.loadProduk(); },
 
@@ -223,20 +238,24 @@
                 Kurasi Stok & Varian Cepat
             </h1>
             <p class="text-xs text-slate-500 mt-1">
-                Klik Atur Stok untuk membuka popup per produk; saldo varian disimpan via PUT /variants/{id} dan status toko via PUT /products/{id}.
+                Klik Atur Stok untuk membuka pengaturan setiap produk dan variannya.
             </p>
         </div>
 
         <div class="flex flex-wrap items-center gap-3 shrink-0">
-            <button type="button" @click="PandansariAPI.admin.inventoryExport()"
+            <button type="button"
+                    @click="$dispatch('buka-export-csv', {
+                        path: '/admin/inventory/export',
+                        filename: 'inventaris.csv',
+                        extraParams: {
+                            search: searchQuery.trim() || undefined,
+                            status: ['aktif', 'nonaktif', 'draft'].includes(stockFilter) ? stockFilter : undefined,
+                            stock_status: ['stok_10', 'stok_3', 'habis'].includes(stockFilter) ? stockFilter : undefined,
+                        },
+                    })"
                     class="px-4 py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-file-export text-emerald-600"></i>
                 <span>Export Inventaris</span>
-            </button>
-            <button type="button" @click="PandansariAPI.admin.productsExport()"
-                    class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition shadow-sm flex items-center gap-2 cursor-pointer">
-                <i class="fa-solid fa-download text-slate-500"></i>
-                <span>Unduh CSV Produk</span>
             </button>
             <a href="/admin/products" class="px-5 py-2.5 bg-[#AEE2F0] hover:bg-[#96d7e8] text-slate-900 font-extrabold text-xs rounded-xl transition shadow-sm flex items-center gap-2">
                 <i class="fa-solid fa-bolt text-slate-800"></i>
@@ -251,12 +270,23 @@
          :class="noticeOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'"
          x-text="notice"></div>
 
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" x-show="stock10Count > 0 || stock3Count > 0" x-cloak>
+        <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+            <span x-text="stock10Count + ' varian memiliki stok 10 unit atau kurang.'"></span>
+        </div>
+        <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
+            <i class="fa-solid fa-bell mr-1"></i>
+            <span x-text="stock3Count + ' varian memiliki stok 3 unit atau kurang.'"></span>
+        </div>
+    </div>
+
     <!-- 2. SUMMARY CARDS (dari API) -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
 
         <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-4 sm:p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
-                <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">TOTAL PRODUK TERCATAT</span>
+                <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">JUMLAH PRODUK</span>
                 <div class="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900"><span x-text="meta ? num(meta.total) : '…'"></span> SKU</div>
             </div>
 
@@ -275,7 +305,7 @@
 
         <div class="bg-[#AEE2F0]/50 border border-sky-200/80 rounded-2xl p-4 sm:p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
-                <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">TOTAL UNIT DI HALAMAN INI</span>
+                <span class="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest">JUMLAH STOK DI HALAMAN INI</span>
                 <div class="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900"><span x-text="num(products.reduce((s, p) => s + totalStok(p), 0))"></span> <span class="text-lg sm:text-xl font-bold text-slate-700">unit</span></div>
             </div>
 
@@ -295,7 +325,7 @@
         <!-- Stok Kritis (Low Stock) -->
         <div class="bg-rose-50 border border-rose-200/80 rounded-2xl p-4 sm:p-6 relative overflow-hidden flex flex-col justify-between shadow-sm">
             <div class="relative z-10 space-y-1">
-                <span class="text-[10px] font-extrabold text-rose-700 uppercase tracking-widest">STOK KRITIS (≤3)</span>
+                <span class="text-[10px] font-extrabold text-rose-700 uppercase tracking-widest">STOK SANGAT SEDIKIT (≤3)</span>
                 <div class="text-2xl sm:text-3xl lg:text-4xl font-black text-rose-600" x-text="loadingSummary ? '…' : num(lowStockCount)"></div>
             </div>
 
@@ -329,6 +359,20 @@
             <i class="fa-solid fa-rotate text-sky-500"></i>
             <span>Menampilkan <strong class="text-slate-900" x-text="products.length"></strong> produk (hal. <span x-text="meta?.current_page ?? 1"></span>/<span x-text="meta?.last_page ?? 1"></span>)</span>
         </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+        <label for="stock-filter" class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Filter stok</label>
+        <select id="stock-filter" x-model="stockFilter" @change="setStockFilter(stockFilter)"
+                class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400">
+            <option value="ALL">Semua status</option>
+            <option value="aktif">Produk aktif</option>
+            <option value="nonaktif">Produk nonaktif</option>
+            <option value="draft">Produk draft</option>
+            <option value="stok_10">Stok ≤ 10</option>
+            <option value="stok_3">Stok ≤ 3</option>
+            <option value="habis">Stok habis</option>
+        </select>
     </div>
 
     <!-- 4. TABLE STOK & VARIAN CEPAT -->

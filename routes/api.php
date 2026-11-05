@@ -223,9 +223,11 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     // Endpoint hapus gambar voucher (didaftarkan sebelum wildcard /vouchers/{id})
     Route::delete('/vouchers/{id}/gambar', [VoucherController::class, 'destroyImage']);
 
-    // API Ringkasan (admin) - sebelum /admin/orders/{id}
+    // API Ringkasan & ekspor (admin) - sebelum /admin/orders/{id}
     Route::get('/admin/orders/summary', [OrderController::class, 'adminSummary']);
+    Route::get('/admin/orders/export', [OrderController::class, 'adminExport']);
     Route::get('/admin/payments/summary', [PaymentController::class, 'adminSummary']);
+    Route::get('/admin/payments/export', [PaymentController::class, 'adminExport']);
 
     // API Manajemen Pengguna (admin)
     Route::get('/admin/users/summary', [UserController::class, 'summary']);

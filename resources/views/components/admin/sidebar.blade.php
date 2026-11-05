@@ -113,6 +113,11 @@
                     <span>Dashboard Customer</span>
                     <i class="fa-solid fa-arrow-up-right-from-square ml-auto text-[10px] opacity-70"></i>
                 </a>
+                <a href="{{ route('admin.guide') }}" @click="if (window.innerWidth < 1024) { sidebarOpen = false }"
+                   class="mt-2 flex items-center gap-2.5 sm:gap-3 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl transition {{ request()->routeIs('admin.guide') ? 'bg-sky-500/10 text-sky-400 font-bold border-l-4 border-sky-400' : 'text-slate-400 hover:text-white hover:bg-slate-800/50' }}">
+                    <i class="fa-solid fa-book-open text-sm"></i>
+                    <span>Panduan Website</span>
+                </a>
             </div>
         </nav>
 

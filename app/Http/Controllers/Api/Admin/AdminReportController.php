@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Services\OrderService;
 use App\Services\PaymentMetricService;
 use App\Services\ReportPdfService;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,7 +24,8 @@ use Symfony\Component\HttpFoundation\Response;
 class AdminReportController extends Controller
 {
     public function __construct(
-        private readonly PaymentMetricService $metrics
+        private readonly PaymentMetricService $metrics,
+        private readonly OrderService $orderService
     ) {}
 
     /**
@@ -30,6 +33,8 @@ class AdminReportController extends Controller
      */
     public function summary(Request $request): JsonResponse
     {
+        $this->orderService->expirePendingOrders();
+
         $validated = $this->validatePeriode($request);
 
         $dari = $validated['dari'] ?? null;
@@ -63,6 +68,11 @@ class AdminReportController extends Controller
                 'pendapatan' => [
                     'total_pendapatan' => $pendapatan['total_pendapatan'],
                     'jumlah_transaksi_bayar' => $pendapatan['jumlah_transaksi_bayar'],
+                    'biaya_midtrans' => $pendapatan['biaya_midtrans'],
+                    'dana_bersih' => $pendapatan['dana_bersih'],
+                    'tarif_midtrans_persen' => $pendapatan['tarif_midtrans_persen'],
+                    'tarif_midtrans_tetap' => $pendapatan['tarif_midtrans_tetap'],
+                    'biaya_midtrans_terkonfigurasi' => $pendapatan['biaya_midtrans_terkonfigurasi'],
                 ],
                 'pembayaran' => [
                     'total_transaksi' => $totalTransaksi,
@@ -83,6 +93,8 @@ class AdminReportController extends Controller
      */
     public function transactions(Request $request): JsonResponse
     {
+        $this->orderService->expirePendingOrders();
+
         $validated = $request->validate([
             'dari' => ['nullable', 'date'],
             'sampai' => ['nullable', 'date', 'after_or_equal:dari'],
@@ -173,6 +185,8 @@ class AdminReportController extends Controller
      */
     public function transactionDetail(string $id): JsonResponse
     {
+        $this->orderService->expirePendingOrders();
+
         $payment = Payment::with([
             'order:id_order,id_user,nomor_pesanan,status_pesanan,subtotal,biaya_pengiriman,diskon,total_pembayaran,nama_penerima,dibuat_pada',
             'order.items:id_order_item,id_order,id_variant,nama_produk,sku,harga_satuan,jumlah,subtotal',
@@ -219,6 +233,8 @@ class AdminReportController extends Controller
      */
     public function exportPdf(Request $request, ReportPdfService $pdfService): Response
     {
+        $this->orderService->expirePendingOrders();
+
         $validated = $request->validate([
             'dari' => ['nullable', 'date'],
             'sampai' => ['nullable', 'date', 'after_or_equal:dari'],
@@ -235,7 +251,10 @@ class AdminReportController extends Controller
 
         $filtered = Payment::query()
             ->when(! empty($validated['status']), fn ($q) => $q->where('status_pembayaran', $validated['status']))
-            ->when(! empty($validated['provider']), fn ($q) => $q->where('provider', $validated['provider']))
+            ->when(
+                ! empty($validated['provider']),
+                fn ($q) => $this->applyProviderFilter($q, $validated['provider'])
+            )
             ->when($dari !== null, fn ($q) => $q->where('dibuat_pada', '>=', $dari))
             ->when(
                 $sampai !== null,
@@ -265,7 +284,10 @@ class AdminReportController extends Controller
         $transactionsQuery = Payment::query()
             ->with('order:id_order,nomor_pesanan')
             ->when(! empty($validated['status']), fn ($q) => $q->where('status_pembayaran', $validated['status']))
-            ->when(! empty($validated['provider']), fn ($q) => $q->where('provider', $validated['provider']))
+            ->when(
+                ! empty($validated['provider']),
+                fn ($q) => $this->applyProviderFilter($q, $validated['provider'])
+            )
             ->when($dari !== null, fn ($q) => $q->where('dibuat_pada', '>=', $dari))
             ->when(
                 $sampai !== null,
@@ -363,5 +385,12 @@ class AdminReportController extends Controller
         $kanan = $sampai ?? 'Sekarang';
 
         return $kiri.' s.d. '.$kanan;
+    }
+
+    private function applyProviderFilter(Builder $query, string $provider): Builder
+    {
+        return in_array($provider, ['midtrans', 'sandbox'], true)
+            ? $query->whereIn('provider', ['midtrans', 'sandbox'])
+            : $query->where('provider', $provider);
     }
 }

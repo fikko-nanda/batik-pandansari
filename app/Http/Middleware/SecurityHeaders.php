@@ -51,11 +51,14 @@ class SecurityHeaders
      */
     private function webContentSecurityPolicy(): string
     {
-        $script = "'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://accounts.google.com https://cdn.tailwindcss.com";
+        $midtransScript = 'https://app.midtrans.com https://app.sandbox.midtrans.com';
+        $midtransApi = 'https://api.midtrans.com https://api.sandbox.midtrans.com';
+        $script = "'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://accounts.google.com https://cdn.tailwindcss.com {$midtransScript}";
         $style = "'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com";
-        $connect = "'self' https: http:";
+        $connect = "'self' https: http: {$midtransApi}";
         $img = "'self' data: https: http: blob:";
         $font = "'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com";
+        $frame = "'self' {$midtransScript} https://*.midtrans.com";
 
         if (! app()->environment('production')) {
             $dev = 'http://localhost:5173 http://127.0.0.1:5173';
@@ -67,6 +70,6 @@ class SecurityHeaders
             $font .= ' '.$dev;
         }
 
-        return "default-src 'self'; img-src {$img}; style-src {$style}; script-src {$script}; font-src {$font}; connect-src {$connect}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+        return "default-src 'self'; img-src {$img}; style-src {$style}; script-src {$script}; font-src {$font}; connect-src {$connect}; frame-src {$frame}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
     }
 }
